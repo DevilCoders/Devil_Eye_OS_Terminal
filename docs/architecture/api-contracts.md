@@ -211,7 +211,7 @@ The C shell core is a separate implementation component. Rust owns application/s
 
 Every ABI function returns a stable status code. Output parameters are initialized to safe defaults before work begins. Error details are retrieved through a bounded diagnostic buffer and never include secrets. Unknown status codes map to a generic FFI error in Rust.
 
-The current `DeStatus` values in `de-ffi` are the initial stable values. New values are appended; existing numeric assignments are never reused or changed. The exact C declarations and safe Rust wrapper are implemented by DE-008.
+The current `DeStatus` values in `de-ffi` are the initial stable values. New values are appended; existing numeric assignments are never reused or changed. The exact C declarations and safe Rust wrapper will be implemented by DE-008.
 
 ## 9. Renderer and GUI contract
 
