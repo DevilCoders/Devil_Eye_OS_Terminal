@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::num::{NonZeroU64, NonZeroUsize};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Barrier, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -27,6 +27,7 @@ struct MockProcessState {
     graceful_terminates: bool,
     wait_fails: bool,
     shutdown_thread: Option<thread::ThreadId>,
+    wait_gate: Option<(Arc<Barrier>, Arc<Barrier>)>,
 }
 
 #[derive(Debug, Default)]
@@ -136,12 +137,19 @@ impl RuntimeProcess for MockProcess {
     }
 
     fn try_wait(&mut self) -> Result<Option<ProcessExit>, ServiceError> {
-        let mut state = self.state.lock().unwrap();
-        state.shutdown_thread = Some(thread::current().id());
-        if state.wait_fails {
+        let (wait_fails, exit, wait_gate) = {
+            let mut state = self.state.lock().unwrap();
+            state.shutdown_thread = Some(thread::current().id());
+            (state.wait_fails, state.exit, state.wait_gate.take())
+        };
+        if let Some((entered, release)) = wait_gate {
+            entered.wait();
+            release.wait();
+        }
+        if wait_fails {
             return Err(ServiceError::new("mock wait failure"));
         }
-        Ok(state.exit)
+        Ok(exit)
     }
 }
 
@@ -261,6 +269,48 @@ fn asynchronous_close_runs_blocking_shutdown_on_a_worker_thread() {
         "blocking process cleanup must run away from the caller thread"
     );
     assert!(process_state.lock().unwrap().dropped);
+}
+
+#[test]
+fn manager_shutdown_waits_for_async_close_workers_before_runtime_shutdown() {
+    let state = Arc::new(Mutex::new(MockRuntimeState::default()));
+    let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
+    let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    process_state.lock().unwrap().wait_gate = Some((Arc::clone(&entered), Arc::clone(&release)));
+
+    let close = manager
+        .close_session_async(id)
+        .expect("start asynchronous close");
+    entered.wait();
+
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let shutdown_worker = thread::spawn(move || {
+        let result = manager.shutdown();
+        completed_tx.send(result).expect("send shutdown result");
+    });
+
+    assert!(
+        completed_rx.recv_timeout(Duration::from_millis(25)).is_err(),
+        "runtime shutdown must wait while a session-close worker owns a process handle"
+    );
+
+    release.wait();
+    completed_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("shutdown should finish after the close worker")
+        .expect("manager shutdown");
+    shutdown_worker.join().expect("shutdown worker must not panic");
+    close
+        .join()
+        .expect("close worker must not panic")
+        .expect("session close");
+    assert!(process_state.lock().unwrap().dropped);
+    assert_eq!(state.lock().unwrap().shutdown_count, 1);
 }
 
 #[test]
