@@ -208,6 +208,10 @@ fn round_trip(
 }
 
 fn main() {
+    if cfg!(debug_assertions) {
+        eprintln!("benchmark target skipped in debug/test profile; use cargo bench");
+        return;
+    }
     metadata();
     let size = terminal_size();
 
