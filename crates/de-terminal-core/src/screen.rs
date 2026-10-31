@@ -38,7 +38,7 @@ impl Grapheme {
             return Err(ScreenGridError::ControlCharacterInGrapheme);
         }
 
-        let mut bytes = [0U8; MAX_GRAPHEME_BYTES];
+        let mut bytes = [0u8; MAX_GRAPHEME_BYTES];
         bytes[..value.len()].copy_from_slice(value.as_bytes());
 
         Ok(Self {
@@ -75,17 +75,17 @@ pub enum Color {
 pub struct StyleFlags(u16);
 
 impl StyleFlags {
-    pub const BOLD: Self = Self(1U16 << 0U32);
-    pub const DIM: Self = Self(1U16 << 1U32);
-    pub const ITALIC: Self = Self(1U16 << 2U32);
-    pub const UNDERLINE: Self = Self(1U16 << 3U32);
-    pub const BLINK: Self = Self(1U16 << 4U32);
-    pub const INVERSE: Self = Self(1U16 << 5U32);
-    pub const HIDDEN: Self = Self(1U16 << 6U32);
-    pub const STRIKETHROUGH: Self = Self(1U16 << 7U32);
+    pub const BOLD: Self = Self(1u16 << 0u32);
+    pub const DIM: Self = Self(1u16 << 1u32);
+    pub const ITALIC: Self = Self(1u16 << 2u32);
+    pub const UNDERLINE: Self = Self(1u16 << 3u32);
+    pub const BLINK: Self = Self(1u16 << 4u32);
+    pub const INVERSE: Self = Self(1u16 << 5u32);
+    pub const HIDDEN: Self = Self(1u16 << 6u32);
+    pub const STRIKETHROUGH: Self = Self(1u16 << 7u32);
 
     pub const fn empty() -> Self {
-        Self(0U16)
+        Self(0u16)
     }
 
     pub const fn bits(self) -> u16 {
@@ -223,7 +223,7 @@ pub struct ScreenGrid {
 impl ScreenGrid {
     /// Allocates a screen only if its dimensions fit within max_cells.
     pub fn new(size: TerminalSize, max_cells: usize) -> Result<Self, ScreenGridError> {
-        if max_cells == 0Usize {
+        if max_cells == 0usize {
             return Err(ScreenGridError::ZeroCellLimit);
         }
 
@@ -285,13 +285,13 @@ impl ScreenGrid {
             .ok_or(ScreenGridError::OutOfBounds)?;
         let grapheme = Grapheme::new(value)?;
 
-        if width == GraphemeWidth::Wide && column + 1U16 >= self.size.columns() {
+        if width == GraphemeWidth::Wide && column + 1u16 >= self.size.columns() {
             return Err(ScreenGridError::WideGraphemeAtRightEdge);
         }
 
         self.clear_cell_pair(index);
         if width == GraphemeWidth::Wide {
-            self.clear_cell_pair(index + 1Usize);
+            self.clear_cell_pair(index + 1usize);
         }
 
         self.cells[index] = Cell {
@@ -303,7 +303,7 @@ impl ScreenGrid {
         };
 
         if width == GraphemeWidth::Wide {
-            self.cells[index + 1Usize] = Cell {
+            self.cells[index + 1usize] = Cell {
                 content: CellContent::Continuation,
                 attributes,
             };
@@ -345,7 +345,7 @@ impl ScreenGrid {
             }
 
             if new_size.columns() < self.size.columns() {
-                let edge_index = row * new_columns + new_columns - 1Usize;
+                let edge_index = row * new_columns + new_columns - 1usize;
                 if matches!(
                     new_cells[edge_index].content,
                     CellContent::Grapheme {
@@ -379,11 +379,11 @@ impl ScreenGrid {
             CellContent::Grapheme {
                 width: GraphemeWidth::Wide,
                 ..
-            } if column + 1Usize < columns => {
-                self.cells[index + 1Usize] = Cell::default();
+            } if column + 1usize < columns => {
+                self.cells[index + 1usize] = Cell::default();
             }
-            CellContent::Continuation if column > 0Usize => {
-                let previous = index - 1Usize;
+            CellContent::Continuation if column > 0usize => {
+                let previous = index - 1usize;
                 if matches!(
                     self.cells[previous].content,
                     CellContent::Grapheme {
@@ -430,23 +430,23 @@ mod tests {
 
     #[test]
     fn allocates_bounded_row_major_empty_grid() {
-        let grid = ScreenGrid::new(size(4U16, 2U16), 8Usize).expect("grid allocation");
+        let grid = ScreenGrid::new(size(4u16, 2u16), 8usize).expect("grid allocation");
 
-        assert_eq!(grid.cell_count(), 8Usize);
-        assert_eq!(grid.size(), size(4U16, 2U16));
+        assert_eq!(grid.cell_count(), 8usize);
+        assert_eq!(grid.size(), size(4u16, 2u16));
         assert!(grid.cells().iter().all(|cell| cell.is_empty()));
-        assert_eq!(grid.row_cells(1U16).expect("second row").len(), 4Usize);
-        assert!(grid.row_cells(2U16).is_none());
+        assert_eq!(grid.row_cells(1u16).expect("second row").len(), 4usize);
+        assert!(grid.row_cells(2u16).is_none());
     }
 
     #[test]
     fn rejects_zero_limit_and_excessive_dimensions() {
         assert_eq!(
-            ScreenGrid::new(size(2U16, 2U16), 0Usize),
+            ScreenGrid::new(size(2u16, 2u16), 0usize),
             Err(ScreenGridError::ZeroCellLimit)
         );
         assert_eq!(
-            ScreenGrid::new(size(4U16, 2U16), 7Usize),
+            ScreenGrid::new(size(4u16, 2u16), 7usize),
             Err(ScreenGridError::CapacityExceeded)
         );
     }
@@ -455,10 +455,10 @@ mod tests {
     fn stores_combining_sequence_as_one_grapheme() {
         let value = "e\u{301}";
         let grapheme = Grapheme::new(value).expect("valid combining grapheme");
-        let mut grid = ScreenGrid::new(size(4U16, 1U16), 4Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 1u16), 4usize).expect("grid");
         grid.set_grapheme(
-            0U16,
-            0U16,
+            0u16,
+            0u16,
             value,
             GraphemeWidth::Single,
             CellAttributes::default(),
@@ -468,14 +468,14 @@ mod tests {
         assert_eq!(grapheme.as_str(), value);
         assert_eq!(grapheme.byte_length(), value.len());
         assert!(matches!(
-            grid.get_cell(0U16, 0U16).expect("cell").content(),
+            grid.get_cell(0u16, 0u16).expect("cell").content(),
             CellContent::Grapheme {
                 width: GraphemeWidth::Single,
                 ..
             }
         ));
         if let CellContent::Grapheme { value: stored, .. } =
-            grid.get_cell(0U16, 0U16).expect("cell").content()
+            grid.get_cell(0u16, 0u16).expect("cell").content()
         {
             assert_eq!(stored.as_str(), value);
         } else {
@@ -485,33 +485,33 @@ mod tests {
 
     #[test]
     fn wide_grapheme_occupies_leading_and_continuation_cells() {
-        let mut grid = ScreenGrid::new(size(4U16, 1U16), 4Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 1u16), 4usize).expect("grid");
         let attributes = CellAttributes::new(
-            Color::Indexed(2U8),
+            Color::Indexed(2u8),
             Color::Rgb {
-                red: 10U8,
-                green: 20U8,
-                blue: 30U8,
+                red: 10u8,
+                green: 20u8,
+                blue: 30u8,
             },
             StyleFlags::empty().with(StyleFlags::BOLD),
         );
 
-        grid.set_grapheme(0U16, 1U16, "界", GraphemeWidth::Wide, attributes)
+        grid.set_grapheme(0u16, 1u16, "界", GraphemeWidth::Wide, attributes)
             .expect("wide grapheme");
 
         assert!(matches!(
-            grid.get_cell(0U16, 1U16).expect("leading").content(),
+            grid.get_cell(0u16, 1u16).expect("leading").content(),
             CellContent::Grapheme {
                 width: GraphemeWidth::Wide,
                 ..
             }
         ));
         assert!(grid
-            .get_cell(0U16, 2U16)
+            .get_cell(0u16, 2u16)
             .expect("continuation")
             .is_continuation());
         assert_eq!(
-            grid.get_cell(0U16, 2U16)
+            grid.get_cell(0u16, 2u16)
                 .expect("continuation")
                 .attributes(),
             attributes
@@ -521,10 +521,10 @@ mod tests {
 
     #[test]
     fn overwriting_continuation_clears_previous_wide_grapheme() {
-        let mut grid = ScreenGrid::new(size(4U16, 1U16), 4Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 1u16), 4usize).expect("grid");
         grid.set_grapheme(
-            0U16,
-            1U16,
+            0u16,
+            1u16,
             "界",
             GraphemeWidth::Wide,
             CellAttributes::default(),
@@ -532,17 +532,17 @@ mod tests {
         .expect("wide grapheme");
 
         grid.set_grapheme(
-            0U16,
-            2U16,
+            0u16,
+            2u16,
             "x",
             GraphemeWidth::Single,
             CellAttributes::default(),
         )
         .expect("overwrite continuation");
 
-        assert!(grid.get_cell(0U16, 1U16).expect("old lead").is_empty());
+        assert!(grid.get_cell(0u16, 1u16).expect("old lead").is_empty());
         assert!(matches!(
-            grid.get_cell(0U16, 2U16).expect("new cell").content(),
+            grid.get_cell(0u16, 2u16).expect("new cell").content(),
             CellContent::Grapheme {
                 width: GraphemeWidth::Single,
                 ..
@@ -552,79 +552,79 @@ mod tests {
 
     #[test]
     fn rejects_wide_grapheme_at_right_edge_without_mutation() {
-        let mut grid = ScreenGrid::new(size(2U16, 1U16), 2Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(2u16, 1u16), 2usize).expect("grid");
 
         assert_eq!(
             grid.set_grapheme(
-                0U16,
-                1U16,
+                0u16,
+                1u16,
                 "界",
                 GraphemeWidth::Wide,
                 CellAttributes::default()
             ),
             Err(ScreenGridError::WideGraphemeAtRightEdge)
         );
-        assert!(grid.get_cell(0U16, 1U16).expect("edge").is_empty());
+        assert!(grid.get_cell(0u16, 1u16).expect("edge").is_empty());
     }
 
     #[test]
     fn clearing_leading_cell_clears_wide_continuation() {
-        let mut grid = ScreenGrid::new(size(3U16, 1U16), 3Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(3u16, 1u16), 3usize).expect("grid");
         grid.set_grapheme(
-            0U16,
-            0U16,
+            0u16,
+            0u16,
             "界",
             GraphemeWidth::Wide,
             CellAttributes::default(),
         )
         .expect("wide grapheme");
 
-        grid.set_empty(0U16, 0U16).expect("clear wide grapheme");
+        grid.set_empty(0u16, 0u16).expect("clear wide grapheme");
 
-        assert!(grid.get_cell(0U16, 0U16).expect("lead").is_empty());
-        assert!(grid.get_cell(0U16, 1U16).expect("continuation").is_empty());
+        assert!(grid.get_cell(0u16, 0u16).expect("lead").is_empty());
+        assert!(grid.get_cell(0u16, 1u16).expect("continuation").is_empty());
     }
 
     #[test]
     fn resize_preserves_intersection_and_clears_cut_wide_cluster() {
-        let mut grid = ScreenGrid::new(size(4U16, 2U16), 8Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 2u16), 8usize).expect("grid");
         grid.set_grapheme(
-            0U16,
-            0U16,
+            0u16,
+            0u16,
             "A",
             GraphemeWidth::Single,
             CellAttributes::default(),
         )
         .expect("single grapheme");
         grid.set_grapheme(
-            0U16,
-            2U16,
+            0u16,
+            2u16,
             "界",
             GraphemeWidth::Wide,
             CellAttributes::default(),
         )
         .expect("wide grapheme");
 
-        grid.resize(size(3U16, 2U16)).expect("shrink width");
+        grid.resize(size(3u16, 2u16)).expect("shrink width");
 
-        assert_eq!(grid.size(), size(3U16, 2U16));
+        assert_eq!(grid.size(), size(3u16, 2u16));
         assert!(matches!(
-            grid.get_cell(0U16, 0U16).expect("preserved").content(),
+            grid.get_cell(0u16, 0u16).expect("preserved").content(),
             CellContent::Grapheme { .. }
         ));
-        assert!(grid.get_cell(0U16, 2U16).expect("cut wide lead").is_empty());
+        assert!(grid.get_cell(0u16, 2u16).expect("cut wide lead").is_empty());
 
-        grid.resize(size(4U16, 3U16)).expect("grow screen");
-        assert_eq!(grid.size(), size(4U16, 3U16));
-        assert!(grid.get_cell(2U16, 3U16).expect("new cell").is_empty());
+        grid.resize(size(4u16, 3u16)).expect("grow screen");
+        assert_eq!(grid.size(), size(4u16, 3u16));
+        assert!(grid.get_cell(2u16, 3u16).expect("new cell").is_empty());
     }
 
     #[test]
     fn failed_resize_is_atomic_when_cell_limit_would_be_exceeded() {
-        let mut grid = ScreenGrid::new(size(2U16, 2U16), 4Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(2u16, 2u16), 4usize).expect("grid");
         grid.set_grapheme(
-            0U16,
-            0U16,
+            0u16,
+            0u16,
             "x",
             GraphemeWidth::Single,
             CellAttributes::default(),
@@ -633,7 +633,7 @@ mod tests {
         let original = grid.clone();
 
         assert_eq!(
-            grid.resize(size(3U16, 2U16)),
+            grid.resize(size(3u16, 2u16)),
             Err(ScreenGridError::CapacityExceeded)
         );
         assert_eq!(grid, original);
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_grapheme_values_and_out_of_bounds_access() {
-        let mut grid = ScreenGrid::new(size(2U16, 2U16), 4Usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(2u16, 2u16), 4usize).expect("grid");
 
         assert_eq!(Grapheme::new(""), Err(ScreenGridError::EmptyGrapheme));
         assert_eq!(
@@ -649,19 +649,19 @@ mod tests {
             Err(ScreenGridError::ControlCharacterInGrapheme)
         );
         assert_eq!(
-            Grapheme::new(&"x".repeat(MAX_GRAPHEME_BYTES + 1Usize)),
+            Grapheme::new(&"x".repeat(MAX_GRAPHEME_BYTES + 1usize)),
             Err(ScreenGridError::GraphemeTooLong)
         );
         assert_eq!(
             grid.set_grapheme(
-                2U16,
-                0U16,
+                2u16,
+                0u16,
                 "x",
                 GraphemeWidth::Single,
                 CellAttributes::default()
             ),
             Err(ScreenGridError::OutOfBounds)
         );
-        assert!(grid.get_cell(0U16, 2U16).is_none());
+        assert!(grid.get_cell(0u16, 2u16).is_none());
     }
 }
