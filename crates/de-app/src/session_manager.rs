@@ -609,6 +609,16 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
         }
         result
     }
+
+    fn close_session_async(
+        &mut self,
+        id: SessionId,
+    ) -> Result<thread::JoinHandle<Result<(), ServiceError>>, ServiceError>
+    where
+        Self::Session: Send + 'static,
+    {
+        SessionManager::close_session_async(self, id)
+    }
 }
 
 impl<R: RuntimeService> Drop for SessionManager<R> {
