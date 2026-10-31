@@ -247,8 +247,7 @@ fn asynchronous_close_runs_blocking_shutdown_on_a_worker_thread() {
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
     let caller_thread = thread::current().id();
 
-    let shutdown = manager
-        .close_session_async(id)
+    let shutdown = SessionManagerService::close_session_async(&mut manager, id)
         .expect("start asynchronous close");
 
     assert!(manager.session_state(id).is_err());
