@@ -17,12 +17,10 @@ use std::time::{Duration, Instant};
 
 use de_terminal_core::parser::VtParser;
 use de_terminal_core::render::{
-    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette,
-    Renderer, SoftwareRenderer,
+    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette, Renderer,
+    SoftwareRenderer,
 };
-use de_terminal_core::screen::{
-    CellAttributes, GraphemeWidth, TerminalScreen,
-};
+use de_terminal_core::screen::{CellAttributes, GraphemeWidth, TerminalScreen};
 use de_terminal_core::TerminalSize;
 
 fn setting(name: &str, default: u64, minimum: u64, maximum: u64) -> u64 {
@@ -110,11 +108,9 @@ fn benchmark(name: &str, units_per_op: u64, mut operation: impl FnMut()) {
 }
 
 fn make_screen(size: TerminalSize) -> TerminalScreen {
-    let mut screen = TerminalScreen::new(
-        size,
-        usize::from(size.columns()) * usize::from(size.rows()),
-    )
-    .expect("allocate bounded terminal screen");
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate bounded terminal screen");
     let attributes = CellAttributes::default();
     for row in 0..size.rows() {
         for column in 0..size.columns() {
@@ -163,22 +159,30 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
         renderer.surface().pixels().len()
     );
 
-    benchmark(&format!("render_full_{label}"), u64::from(size.rows()) * u64::from(size.columns()), || {
-        damage.mark_all();
-        let frame = Frame::new(&screen, &damage, 1).expect("full frame");
-        renderer.render(frame, None).expect("full render");
-        damage.clear();
-        black_box(renderer.surface().pixels().len());
-    });
+    benchmark(
+        &format!("render_full_{label}"),
+        u64::from(size.rows()) * u64::from(size.columns()),
+        || {
+            damage.mark_all();
+            let frame = Frame::new(&screen, &damage, 1).expect("full frame");
+            renderer.render(frame, None).expect("full render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
 
     let dirty = CellRect::new(size.rows() / 2, 0, 1, size.columns()).expect("dirty row");
-    benchmark(&format!("render_dirty_row_{label}"), u64::from(size.columns()), || {
-        damage.mark_rect(dirty).expect("mark dirty row");
-        let frame = Frame::new(&screen, &damage, 2).expect("dirty frame");
-        renderer.render(frame, None).expect("dirty render");
-        damage.clear();
-        black_box(renderer.surface().pixels().len());
-    });
+    benchmark(
+        &format!("render_dirty_row_{label}"),
+        u64::from(size.columns()),
+        || {
+            damage.mark_rect(dirty).expect("mark dirty row");
+            let frame = Frame::new(&screen, &damage, 2).expect("dirty frame");
+            renderer.render(frame, None).expect("dirty render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
     black_box(full_rect);
 }
 
@@ -188,14 +192,18 @@ fn main() {
     let parser_payload = b"hello terminal \x1b[38;2;120;180;240mcolor\x1b[0m \xe7\x95\x8c\r\n";
     let mut parser = VtParser::new();
     benchmark("parser_mixed_stream", parser_payload.len() as u64, || {
-        let events = parser.process(black_box(parser_payload)).expect("bounded parser input");
+        let events = parser
+            .process(black_box(parser_payload))
+            .expect("bounded parser input");
         black_box(events);
     });
 
     let input_payload = b"typed-input-0123456789";
     let mut input_parser = VtParser::new();
     benchmark("input_parse_proxy", input_payload.len() as u64, || {
-        let events = input_parser.process(black_box(input_payload)).expect("bounded input");
+        let events = input_parser
+            .process(black_box(input_payload))
+            .expect("bounded input");
         black_box(events);
     });
 
@@ -205,7 +213,13 @@ fn main() {
         for row in 0..size.rows() {
             for column in 0..size.columns() {
                 screen
-                    .set_grapheme(row, column, "x", GraphemeWidth::Single, CellAttributes::default())
+                    .set_grapheme(
+                        row,
+                        column,
+                        "x",
+                        GraphemeWidth::Single,
+                        CellAttributes::default(),
+                    )
                     .expect("update terminal cell");
             }
         }
