@@ -41,9 +41,9 @@ cargo llvm-cov --workspace --lcov --output-path target/coverage/rust.lcov
 
 ## Native C prerequisites and validation
 
-Install CMake 3.25+ and either GCC 13 or Clang 18 with C17 support. The C build is maintained by CMake independently of Cargo until the Rust/C API and FFI ownership contracts are approved.
+Install CMake 3.25+, either GCC 13 or Clang 18 with C17 support, and `ar` (normally from binutils). The C source is built through two independent entry points: the `de-ffi` Cargo build script compiles and links it for Rust callers, while CMake builds it for native C tests. Both use the system C17 compiler; Cargo selects it through `CC` and the archiver through `AR`.
 
-Once the CMake integration task (#27) is merged:
+After installing the native C toolchain:
 
 ```sh
 cmake --version
