@@ -9,3 +9,7 @@ path = "src/lib.rs"
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "terminal_core"
+harness = false
