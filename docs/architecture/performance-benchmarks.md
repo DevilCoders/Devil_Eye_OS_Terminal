@@ -63,7 +63,7 @@ These are provisional targets for the first Linux x86_64 release profile. They b
 | Screen memory | 80×24 cell backing storage | ≤ 256 KiB |
 | Renderer memory | 80×24 RGBA surface at 8×16 pixels/cell | ≤ 1 MiB |
 | Renderer memory | 160×48 RGBA surface at 8×16 pixels/cell | ≤ 4 MiB |
-| Renderer memory | 240×80 RGBA surface at 8×16 pixels/cell | ≤ 8 MiB |
+| Renderer memory | 240×80 RGBA surface at 8×16 pixels/cell | ≤ 10 MiB |
 
 The budgets are acceptance targets, not claims that the current implementation already meets them. A target miss must be reported with its measured value and environment; do not hide or normalize a regression.
 
