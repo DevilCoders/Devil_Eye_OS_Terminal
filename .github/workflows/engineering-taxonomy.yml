@@ -256,9 +256,13 @@ jobs:
               const target = issueText.match(
                 /Target milestone:\*{0,2}\s*([^\r\n]+)/i
               );
-              const milestoneTitle = target
-                ? target[1].trim()
-                : (epicId ? epicMilestones[epicId] : null);
+              const rawMilestoneTarget = target ? target[1].trim() : null;
+              const milestoneCode = rawMilestoneTarget
+                ? rawMilestoneTarget.match(/\bM(?:10|[0-9])\b/)?.[0]
+                : null;
+              const milestoneTitle = milestoneCode
+                ? (milestones.find(([title]) => title.startsWith(\`${milestoneCode} \`)) || [null])[0]
+                : (rawMilestoneTarget || (epicId ? epicMilestones[epicId] : null));
               if (milestoneTitle) {
                 const number = milestoneByTitle.get(milestoneTitle);
                 if (number && (!issue.milestone || issue.milestone.number !== number)) {
