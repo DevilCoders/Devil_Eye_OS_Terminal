@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn resize_preserves_intersection_and_clears_cut_wide_cluster() {
-        let mut grid = ScreenGrid::new(size(4u16, 2u16), 8usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 2u16), 12usize).expect("grid");
         grid.set_grapheme(
             0u16,
             0u16,
