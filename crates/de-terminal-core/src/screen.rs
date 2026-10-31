@@ -534,6 +534,7 @@ impl ScrollbackBuffer {
     }
 
     fn clear(&mut self) {
+        self.cells.fill(Cell::default());
         self.row_count = 0usize;
         self.start_row = 0usize;
     }
@@ -1131,9 +1132,11 @@ mod tests {
             )
             .expect("write row");
         enabled.scroll_up(1u16).expect("scroll");
+        let visible_before_clear = enabled.grid().cells().to_vec();
         enabled.clear_scrollback();
         assert_eq!(enabled.scrollback_row_count(), 0usize);
         assert_eq!(enabled.scrollback_cell_count(), 0usize);
+        assert_eq!(enabled.grid().cells(), visible_before_clear);
     }
 
     #[test]
@@ -1157,6 +1160,15 @@ mod tests {
 
         screen.resize(size(3u16, 3u16)).expect("resize columns");
         assert_eq!(screen.scrollback_row_count(), 0usize);
+    }
+
+    #[test]
+    fn rejects_unallocatable_scrollback_capacity_without_panicking() {
+        assert_eq!(
+            TerminalScreen::new_with_scrollback(size(1u16, 1u16), 1usize, usize::MAX)
+                .err(),
+            Some(ScreenGridError::AllocationFailed)
+        );
     }
 
     #[test]
