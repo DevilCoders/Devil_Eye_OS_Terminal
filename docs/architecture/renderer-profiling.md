@@ -175,3 +175,24 @@ Both report Ubuntu 24.04, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74
 Color/style and selection workloads also improved by approximately 20.8–21.7% in median sample means across all three sizes. Cursor movement improved by approximately 21.0%. Resize time was effectively unchanged, as expected because the glyph hot path is not involved.
 
 The before/after pair supports a repeatable ~20–23% reduction in the measured CPU-renderer workloads on this runner class. These are microbenchmark results, not GUI frame-rate or end-user latency guarantees. The allocation probe was subsequently moved into a separate executable so the timed benchmark process has no allocator instrumentation at all.
+
+### Final isolated allocation and timing capture — 2026-10-31
+
+The final reproducible artifact is [workflow run 41252857758](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41252857758), source commit `239415c504d8e5cfd940f778c731e453f673e7ee`.
+
+**Environment:** Ubuntu 24.04, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74 80-Core Processor, Rust/Cargo 1.99.1.
+
+The separate allocation-only executable confirmed **0 allocation calls / 0 requested bytes** for both a warmed full-frame render and a warmed dirty-row render at 80×24. The timed throughput executable does not include the counting allocator.
+
+Compared with the pre-glyph-optimization run 41251178845 on the same CPU model and toolchain:
+
+| Workload | Before median | Final median | Median improvement | Before p95 | Final p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full frame, 80×24 | 2.140 ms | 1.641 ms | 23.3% | 2.159 ms | 1.688 ms |
+| Dirty row, 80×24 | 89.16 µs | 68.16 µs | 23.6% | 89.35 µs | 68.43 µs |
+| Full frame, 160×48 | 8.549 ms | 6.562 ms | 23.2% | 8.589 ms | 6.705 ms |
+| Dirty row, 160×48 | 178.10 µs | 140.86 µs | 20.9% | 178.23 µs | 140.90 µs |
+| Full frame, 240×80 | 21.500 ms | 16.777 ms | 22.0% | 21.742 ms | 16.926 ms |
+| Dirty row, 240×80 | 267.84 µs | 211.88 µs | 20.9% | 275.77 µs | 212.78 µs |
+
+The before run used the earlier in-process allocator counters, but the timed renderer workloads had zero allocations and therefore did not invoke those counters. The final run uses the separate allocation-only process, eliminating allocator instrumentation from all timed workloads. These measurements support an approximately 21–24% improvement for the deterministic CPU renderer on this runner. They do not imply equivalent gains for a future GPU/window-system/font-backed renderer or end-user frame rate.
