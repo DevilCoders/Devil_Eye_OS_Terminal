@@ -7,6 +7,9 @@ description = "Platform-neutral process launch specifications and OS runtime con
 [dependencies]
 de-terminal-core = { path = "../de-terminal-core" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "=0.2.191"
+
 [lib]
 path = "src/lib.rs"
 
