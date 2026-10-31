@@ -283,7 +283,9 @@ fn asynchronous_shutdown_returns_application_when_cleanup_fails() {
         .expect("register runtime");
     app.start().expect("application starts");
 
-    let shutdown = app.shutdown_async().expect("spawn shutdown worker");
+    let shutdown = app.shutdown_async().unwrap_or_else(|(_app, error)| {
+        panic!("spawn shutdown worker: {error}");
+    });
     let (mut app, error) = match shutdown.join().expect("shutdown worker must not panic") {
         Ok(()) => panic!("first shutdown attempt must report the injected failure"),
         Err(failure) => failure,
