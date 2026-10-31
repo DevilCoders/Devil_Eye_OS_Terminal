@@ -2,6 +2,7 @@
 
 pub mod process;
 pub mod pty;
+pub mod runtime;
 
 #[cfg(test)]
 use std::sync::{Mutex, MutexGuard};
