@@ -645,13 +645,10 @@ mod tests {
                 Some(&mut executor),
             )
             .expect_err("callback panic must be contained");
-        let ShellError::Execution { status, .. } = error else {
+        let ShellError::Execution { status, diagnostic } = error else {
             panic!("unexpected error: {error:?}");
         };
         assert_eq!(status, DeStatus::EXTERNAL_EXECUTION_FAILED);
-        let ShellError::Execution { diagnostic, .. } = error else {
-            unreachable!();
-        };
         assert_eq!(diagnostic.code, DeStatus::INTERNAL_ERROR.as_raw());
     }
 }
