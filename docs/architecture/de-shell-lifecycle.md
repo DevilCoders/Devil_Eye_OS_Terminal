@@ -2,15 +2,15 @@
 
 ## Scope
 
-DE-004-01 introduces the independent C library boundary and its minimal lifecycle API. It does not implement shell input buffering, lexical analysis, parsing, command dispatch, process execution, or terminal emulation.
+DE-004-01 introduces the independent C library boundary, an opaque per-instance handle, and its initial create/destroy lifecycle. It does not implement shell input buffering, lexical analysis, parsing, command dispatch, process execution, or terminal emulation.
 
 ## Public API
 
 The public header is `include/de_shell/shell.h`.
 
 - `de_shell_t` is an opaque, caller-owned handle.
-- `de_shell_create()` allocates one independent instance and returns it through an output parameter.
-- `de_shell_destroy()` releases the instance and clears the caller's handle.
+- `de_shell_create(de_shell_t **out_shell)` allocates one independent instance and returns it through an output parameter.
+- `de_shell_destroy(de_shell_t **shell)` releases the instance and clears the caller's handle.
 - `de_shell_status_t` uses the stable initial status values also defined by Rust's `DeStatus`: OK = 0, INVALID_ARGUMENT = 1, INTERNAL_ERROR = 2.
 
 A create call validates its output pointer and initializes the output to NULL before allocation. A successful create transfers ownership of the new handle to the caller. Destroy accepts the address of that handle, clears it before releasing the allocation, and treats an already-cleared handle as a successful no-op. A NULL pointer-to-handle is invalid.
