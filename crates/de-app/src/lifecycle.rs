@@ -145,6 +145,15 @@ impl Error for LifecycleError {}
 /// Register services before calling `start`. Startup is deterministic:
 /// services initialize in registration order. Shutdown and rollback run in
 /// reverse order. A failed cleanup is retained for a later `shutdown` retry.
+/// Result produced by the asynchronous application shutdown worker.
+pub type AsyncShutdownOutcome = Result<(), Box<(Application, LifecycleError)>>;
+
+/// Join handle returned by the asynchronous shutdown method.
+pub type AsyncShutdownHandle = thread::JoinHandle<AsyncShutdownOutcome>;
+
+/// Error returned when the operating system cannot spawn the shutdown worker.
+pub type AsyncShutdownSpawnError = (Application, io::Error);
+
 pub struct Application {
     state: ApplicationState,
     services: Vec<Box<dyn ApplicationService>>,
@@ -264,7 +273,7 @@ impl Application {
     /// is dropped as a side effect of the failed spawn.
     pub fn shutdown_async(
         self,
-    ) -> Result<thread::JoinHandle<Result<(), (Self, LifecycleError)>>, (Self, io::Error)> {
+    ) -> Result<AsyncShutdownHandle, AsyncShutdownSpawnError> {
         let application = Arc::new(Mutex::new(Some(self)));
         let worker_application = Arc::clone(&application);
         let result = thread::Builder::new()
@@ -277,7 +286,7 @@ impl Application {
                     .unwrap_or_else(|| unreachable!("shutdown worker owns the application once"));
                 match application.shutdown() {
                     Ok(()) => Ok(()),
-                    Err(error) => Err((application, error)),
+                    Err(error) => Err(Box::new((application, error))),
                 }
             });
 
