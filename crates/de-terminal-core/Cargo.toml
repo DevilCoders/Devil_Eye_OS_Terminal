@@ -1,0 +1,11 @@
+[package]
+name = "de-terminal-core"
+version.workspace = true
+edition.workspace = true
+description = "Core terminal model and platform-independent terminal invariants."
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/de-app",
+    "crates/de-terminal-core",
+    "crates/de-runtime",
+    "crates/de-ffi",
+]
+default-members = [
+    "crates/de-app",
+    "crates/de-terminal-core",
+    "crates/de-runtime",
+    "crates/de-ffi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+de-ffi = { path = "crates/de-ffi" }
+de-runtime = { path = "crates/de-runtime" }
+de-terminal-core = { path = "crates/de-terminal-core" }
+
+[workspace.lints.rust]
+unused_must_use = "deny"
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = "warn"

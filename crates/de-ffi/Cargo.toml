@@ -1,0 +1,11 @@
+[package]
+name = "de-ffi"
+version.workspace = true
+edition.workspace = true
+description = "Versioned C-compatible ABI data types shared with Rust."
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

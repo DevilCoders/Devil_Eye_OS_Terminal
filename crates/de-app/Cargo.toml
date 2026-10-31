@@ -1,0 +1,16 @@
+[package]
+name = "de-app"
+version.workspace = true
+edition.workspace = true
+description = "Top-level application configuration and subsystem composition."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+de-ffi.workspace = true
+de-runtime.workspace = true
+de-terminal-core.workspace = true
+
+[lints]
+workspace = true
