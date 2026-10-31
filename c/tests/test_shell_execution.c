@@ -33,7 +33,8 @@ static de_shell_status_t fake_executor(
         && strcmp(command->argv[0], "tool") == 0
         && strcmp(command->argv[1], "two words") == 0
         && strcmp(command->argv[2], "escaped value") == 0
-        && strcmp(command->argv[3], "") == 0) {
+        && strcmp(command->argv[3], "") == 0
+        && command->argv[command->argc] == NULL) {
         state->arguments_valid = 1;
     }
 
