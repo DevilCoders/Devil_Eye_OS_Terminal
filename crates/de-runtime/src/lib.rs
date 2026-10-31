@@ -45,11 +45,7 @@ impl ProgramSpec {
     }
 
     /// Adds or replaces an environment variable in this launch specification.
-    pub fn with_env(
-        mut self,
-        key: impl Into<OsString>,
-        value: impl Into<OsString>,
-    ) -> Self {
+    pub fn with_env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
         let key = key.into();
         let value = value.into();
 
@@ -114,7 +110,10 @@ mod tests {
         assert_eq!(spec.program(), OsStr::new("/bin/echo"));
         assert_eq!(
             spec.args(),
-            &[OsStr::new("two words").to_owned(), OsStr::new("--literal").to_owned()]
+            &[
+                OsStr::new("two words").to_owned(),
+                OsStr::new("--literal").to_owned()
+            ]
         );
     }
 
@@ -128,7 +127,10 @@ mod tests {
         assert_eq!(spec.environment().len(), 1);
         assert_eq!(
             spec.environment()[0],
-            (OsStr::new("MODE").to_owned(), OsStr::new("second").to_owned())
+            (
+                OsStr::new("MODE").to_owned(),
+                OsStr::new("second").to_owned()
+            )
         );
     }
 
