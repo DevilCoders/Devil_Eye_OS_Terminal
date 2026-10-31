@@ -22,10 +22,15 @@ jobs:
   provision-and-classify:
     runs-on: ubuntu-latest
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Create and verify taxonomy, milestones, and issue metadata
         uses: actions/github-script@v7
         with:
           script: |
+            const { resolveMilestoneTitle } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/taxonomy-milestone.cjs`);
+
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
@@ -256,9 +261,13 @@ jobs:
               const target = issueText.match(
                 /Target milestone:\*{0,2}\s*([^\r\n]+)/i
               );
-              const milestoneTitle = target
-                ? target[1].trim()
-                : (epicId ? epicMilestones[epicId] : null);
+              const rawMilestoneTarget = target ? target[1].trim() : null;
+              const milestoneTitle = resolveMilestoneTitle(
+                rawMilestoneTarget,
+                epicId,
+                milestones.map(([title]) => title),
+                epicMilestones
+              );
               if (milestoneTitle) {
                 const number = milestoneByTitle.get(milestoneTitle);
                 if (number && (!issue.milestone || issue.milestone.number !== number)) {

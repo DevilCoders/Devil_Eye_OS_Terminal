@@ -89,5 +89,5 @@ CI uploads the Rust LCOV and C Cobertura XML reports as separate workflow artifa
 The dependency-status rules are pure JavaScript and use Node's built-in test runner. No npm dependencies are required:
 
 ```sh
-node --test tests/automation/dependency-status.test.cjs
+node --test tests/automation/*.test.cjs
 ```

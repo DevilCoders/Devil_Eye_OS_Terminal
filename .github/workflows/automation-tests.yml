@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/scripts/**"
       - ".github/workflows/dependency-status.yml"
+      - ".github/workflows/engineering-taxonomy.yml"
       - ".github/workflows/automation-tests.yml"
       - "tests/automation/**"
   push:
@@ -37,4 +38,4 @@ jobs:
           node-version: "22"
 
       - name: Run dependency status tests
-        run: node --test tests/automation/dependency-status.test.cjs
+        run: node --test tests/automation/*.test.cjs
