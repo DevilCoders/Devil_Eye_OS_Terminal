@@ -530,6 +530,7 @@ impl TerminalScreen {
         self.scroll_region
     }
 
+    /// Returns a read-only grid view; dimension changes must go through TerminalScreen::resize.
     pub const fn grid(&self) -> &ScreenGrid {
         &self.grid
     }
