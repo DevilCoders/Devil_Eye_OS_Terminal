@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use de_app::{
     ApplicationError, ApplicationErrorCode, ApplicationState, Diagnostic, DiagnosticBuffer,
     DiagnosticSeverity, ErrorCategory, LifecycleError, ServiceError,
@@ -114,8 +116,8 @@ fn diagnostic_buffer_evicts_oldest_records_at_capacity() {
     let snapshot = buffer.snapshot();
     assert_eq!(buffer.capacity(), 2);
     assert_eq!(buffer.len(), 2);
-    assert_eq!(snapshot[0].as_record().contains("second"), true);
-    assert_eq!(snapshot[1].as_record().contains("third"), true);
+    assert!(snapshot[0].as_record().contains("second"));
+    assert!(snapshot[1].as_record().contains("third"));
 }
 
 #[test]
