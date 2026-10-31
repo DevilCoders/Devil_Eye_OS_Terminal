@@ -236,15 +236,10 @@ fn pty_signal_exit_and_drop_cleanup_do_not_leak_children() {
     let pid = process.process_id().expect("child PID");
     drop(process);
 
-    let pid = i32::try_from(pid).expect("PID fits pid_t");
-    assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::ESRCH)
-    );
-}
-
-#[allow(dead_code)]
-fn _nonzero_sentinel_type_is_available_for_io_contracts() -> Option<NonZeroUsize> {
-    NonZeroUsize::new(1)
+    let status = std::process::Command::new("/bin/kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .status()
+        .expect("execute kill -0 probe");
+    assert!(!status.success(), "dropped PTY child PID is still alive");
 }
