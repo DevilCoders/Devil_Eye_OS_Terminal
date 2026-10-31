@@ -371,7 +371,7 @@ const MAX_MESSAGE_LENGTH: usize = 1024;
 const MAX_CONTEXT_VALUE_LENGTH: usize = 256;
 
 fn is_sensitive_key(key: &str) -> bool {
-    let normalized = key.to_ascii_lowercase().replace(['-', '.', ' '], "_");
+    let normalized = key.to_ascii_lowercase().replace('-', "_").replace('.', "_").replace(' ', "_");
     [
         "password",
         "passwd",
@@ -382,7 +382,7 @@ fn is_sensitive_key(key: &str) -> bool {
         "cookie",
         "private_key",
         "api_key",
-        "access_key",
+        "access_key",\n        "session_key",\n        "signing_key",\n        "encryption_key",\n        "ssh_key",
     ]
     .iter()
     .any(|marker| normalized.contains(marker))
