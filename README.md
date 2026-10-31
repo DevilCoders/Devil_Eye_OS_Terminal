@@ -17,6 +17,7 @@ The terminal emulator is independent of DE-Shell and must be able to host compat
 - [Engineering roadmap](docs/engineering/ROADMAP.md)
 - [Architecture documentation](docs/architecture/README.md)
 - [Build guide](docs/BUILDING.md)
+- [Security Threat Model](docs/security/THREAT_MODEL.md)
 - [Pinned developer toolchain](docs/TOOLCHAIN.md)
 - [Engineering workflow](docs/engineering/WORKFLOW.md)
 - [Contributor build and development guide](CONTRIBUTING.md)
