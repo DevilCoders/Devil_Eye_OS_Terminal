@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -408,6 +409,21 @@ impl<P: RuntimeProcess> Drop for ManagedSession<P> {
     }
 }
 
+type CloseWorkerCounter = Arc<(Mutex<usize>, Condvar)>;
+
+struct CloseWorkerGuard(CloseWorkerCounter);
+
+impl Drop for CloseWorkerGuard {
+    fn drop(&mut self) {
+        let (lock, wake) = &*self.0;
+        let mut active = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *active = active.saturating_sub(1);
+        wake.notify_all();
+    }
+}
+
 /// Owns all terminal sessions and the runtime service used to create them.
 pub struct SessionManager<R: RuntimeService> {
     runtime: R,
@@ -416,6 +432,7 @@ pub struct SessionManager<R: RuntimeService> {
     runtime_initialized: bool,
     next_session_id: u64,
     sessions: HashMap<SessionId, ManagedSession<R::Process>>,
+    closing_workers: CloseWorkerCounter,
 }
 
 impl<R: RuntimeService> SessionManager<R> {
@@ -431,6 +448,7 @@ impl<R: RuntimeService> SessionManager<R> {
             runtime_initialized: false,
             next_session_id: 1,
             sessions: HashMap::new(),
+            closing_workers: Arc::new((Mutex::new(0), Condvar::new())),
         }
     }
 
@@ -456,13 +474,47 @@ impl<R: RuntimeService> SessionManager<R> {
             .sessions
             .remove(&id)
             .ok_or_else(|| ServiceError::new("terminal session does not exist"))?;
-        thread::Builder::new()
+        let counter = Arc::clone(&self.closing_workers);
+        {
+            let (lock, _) = &*counter;
+            let mut active = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *active += 1;
+        }
+
+        let worker_counter = Arc::clone(&counter);
+        match thread::Builder::new()
             .name(format!("de-session-close-{}", id.get()))
             .spawn(move || {
+                let _guard = CloseWorkerGuard(worker_counter);
                 let mut session = session;
                 session.shutdown()
             })
-            .map_err(|_| ServiceError::new("could not start session shutdown worker"))
+        {
+            Ok(handle) => Ok(handle),
+            Err(_) => {
+                let (lock, wake) = &*counter;
+                let mut active = lock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                *active = active.saturating_sub(1);
+                wake.notify_all();
+                Err(ServiceError::new("could not start session shutdown worker"))
+            }
+        }
+    }
+
+    fn wait_for_closing_workers(&self) {
+        let (lock, wake) = &*self.closing_workers;
+        let mut active = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while *active > 0 {
+            active = wake
+                .wait(active)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
     }
 
     /// Borrows a managed session by identity.
@@ -531,6 +583,9 @@ impl<R: RuntimeService> ApplicationService for SessionManager<R> {
     fn shutdown(&mut self) -> Result<(), ServiceError> {
         self.accepting_sessions = false;
         let mut failures = self.shutdown_sessions();
+        // Async session-close workers own process handles outside the registry.
+        // Wait for them before tearing down the runtime service.
+        self.wait_for_closing_workers();
 
         if self.runtime_initialized {
             match self.runtime.shutdown() {
