@@ -32,7 +32,10 @@ fn linux_session_manager_owns_a_real_pty_child_until_close() {
     let mut saw_eof = false;
 
     while Instant::now() < deadline {
-        match session.read_output(&mut buffer).expect("non-blocking PTY read") {
+        match session
+            .read_output(&mut buffer)
+            .expect("non-blocking PTY read")
+        {
             ProcessRead::Data(count) => {
                 output.extend_from_slice(&buffer[..count.get()]);
             }
@@ -49,7 +52,8 @@ fn linux_session_manager_owns_a_real_pty_child_until_close() {
 
     assert!(saw_eof, "PTY output did not reach EOF before the deadline");
     assert!(
-        output.windows(b"session-manager-ok".len())
+        output
+            .windows(b"session-manager-ok".len())
             .any(|window| window == b"session-manager-ok"),
         "expected marker in PTY output, got {output:?}"
     );
