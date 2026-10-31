@@ -148,7 +148,7 @@ pub enum ExternalExecutionError {
     Failed,
 }
 
-pub(super) struct CallbackContext<'a> {
+struct CallbackContext<'a> {
     pub executor: &'a mut dyn CommandExecutor,
 }
 
