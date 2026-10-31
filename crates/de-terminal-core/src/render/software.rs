@@ -569,13 +569,19 @@ impl SoftwareRenderer {
             };
             let x = u32::from(column) * self.cell_width;
             let y = u32::from(row) * self.cell_height;
-            self.surface.fill_rect(
-                x,
-                y,
-                self.cell_width.saturating_mul(cursor_span),
-                self.cell_height,
-                self.palette.cursor_background,
-            );
+            let cursor_left = x.max(clip_left);
+            let cursor_right = x
+                .saturating_add(self.cell_width.saturating_mul(cursor_span))
+                .min(clip_right);
+            if cursor_right > cursor_left {
+                self.surface.fill_rect(
+                    cursor_left,
+                    y,
+                    cursor_right - cursor_left,
+                    self.cell_height,
+                    self.palette.cursor_background,
+                );
+            }
 
             if let CellContent::Grapheme { value, width } = cell.content() {
                 let styles = cell.attributes().styles();
