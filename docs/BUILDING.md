@@ -55,3 +55,31 @@ Cargo and CMake remain separate build entry points for now. Do not add a `build.
 - NASM is reserved for measured, justified low-level routines; it is not a prerequisite.
 - The terminal emulator remains independent from DE-Shell and must host compatible external shells.
 - Linux x86_64 is the first target; OS-specific behavior stays behind platform adapters.
+
+## Test coverage reports
+
+Coverage is measured separately from the fast correctness/lint checks. Reports are informational while the implementation baseline is small; no percentage gate is imposed until the project has representative runtime, parser, PTY, and integration coverage.
+
+### Rust coverage
+
+Install the pinned tool and generate an LCOV report:
+
+```sh
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --version 0.9.1 --locked
+mkdir -p target/coverage
+cargo llvm-cov --workspace --lcov --output-path target/coverage/rust.lcov
+```
+
+### C coverage
+
+Use GCC or Clang with the opt-in CMake instrumentation:
+
+```sh
+cmake -S . -B build-coverage -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DDE_ENABLE_COVERAGE=ON
+cmake --build build-coverage --parallel
+ctest --test-dir build-coverage --output-on-failure
+gcovr --root . --object-directory build-coverage --xml-pretty --output build-coverage/coverage.xml --print-summary
+```
+
+CI uploads the Rust LCOV and C Cobertura XML reports as separate workflow artifacts. C coverage requires `gcovr`; on Ubuntu 24.04 install it with `sudo apt-get install gcovr`. Generated coverage data stays under ignored build/target directories and must not be committed.
