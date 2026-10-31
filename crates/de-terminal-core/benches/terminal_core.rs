@@ -22,9 +22,7 @@ use de_terminal_core::render::{
     CellPosition, CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics,
     RenderPalette, Renderer, ScaleFactor, Selection, SelectionMode, SoftwareRenderer,
 };
-use de_terminal_core::screen::{
-    CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen,
-};
+use de_terminal_core::screen::{CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen};
 use de_terminal_core::TerminalSize;
 
 static ALLOCATION_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -184,11 +182,9 @@ fn make_screen(size: TerminalSize) -> TerminalScreen {
 }
 
 fn make_styled_screen(size: TerminalSize) -> TerminalScreen {
-    let mut screen = TerminalScreen::new(
-        size,
-        usize::from(size.columns()) * usize::from(size.rows()),
-    )
-    .expect("allocate styled benchmark screen");
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate styled benchmark screen");
 
     for row in 0..size.rows() {
         let mut column = 0;
@@ -298,7 +294,9 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
     });
     damage.clear();
 
-    damage.mark_rect(dirty).expect("prepare dirty allocation probe");
+    damage
+        .mark_rect(dirty)
+        .expect("prepare dirty allocation probe");
     let dirty_probe_frame = Frame::new(&screen, &damage, 11).expect("dirty allocation probe frame");
     report_allocations(&format!("render_dirty_row_{label}"), || {
         renderer
@@ -367,7 +365,9 @@ fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
     let mut renderer = make_renderer(size);
     screen.set_cursor(0, 0);
     let initial = Frame::new(&screen, &damage, 0).expect("initial cursor frame");
-    renderer.render(initial, None).expect("prime cursor renderer");
+    renderer
+        .render(initial, None)
+        .expect("prime cursor renderer");
     damage.clear();
 
     let mut cursor_column = 0u16;
