@@ -11,7 +11,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
-/// A validated description of a program to launch.
+/// An owned process launch description, validated before it reaches a runtime backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramSpec {
     program: OsString,
@@ -616,6 +616,7 @@ mod tests {
 
         assert_eq!(request.io(), IoAttachment::Pty(PtyConfig::new(size)));
         assert!(request.kill_on_drop());
+        assert!(!request.clone().with_kill_on_drop(false).kill_on_drop());
 
         let stdio = StdioConfig::new(
             StreamAttachment::Pipe,
