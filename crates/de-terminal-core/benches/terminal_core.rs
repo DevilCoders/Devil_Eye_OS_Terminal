@@ -46,7 +46,13 @@ fn metadata() {
             .unwrap_or_else(|| "unknown".to_owned())
     );
     println!(
-        "# commit={}",
+        "# source_commit={}",
+        std::env::var("GITHUB_HEAD_SHA")
+            .or_else(|_| std::env::var("GITHUB_SHA"))
+            .unwrap_or_else(|_| "local-unrecorded".to_owned())
+    );
+    println!(
+        "# workflow_commit={}",
         std::env::var("GITHUB_SHA").unwrap_or_else(|_| "local-unrecorded".to_owned())
     );
     let cpu = fs::read_to_string("/proc/cpuinfo")
