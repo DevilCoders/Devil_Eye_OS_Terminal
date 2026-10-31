@@ -536,6 +536,10 @@ mod tests {
         TerminalSize::new(80u16, 24u16).expect("valid terminal size")
     }
 
+    fn runtime_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        super::super::test_resource_lock()
+    }
+
     fn pipe_config() -> StdioConfig {
         StdioConfig::new(
             StreamAttachment::Pipe,
@@ -575,6 +579,7 @@ mod tests {
 
     #[test]
     fn reports_linux_runtime_capabilities() {
+        let _guard = runtime_test_lock();
         let capabilities = LinuxRuntime.capabilities();
         for capability in [
             RuntimeCapability::StdioPipes,
@@ -592,6 +597,7 @@ mod tests {
 
     #[test]
     fn stdio_spawn_preserves_arguments_environment_cwd_and_separate_streams() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -622,6 +628,7 @@ mod tests {
 
     #[test]
     fn pty_spawn_merges_output_and_supports_resize() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -650,6 +657,7 @@ mod tests {
 
     #[test]
     fn stdio_input_pipe_closes_and_delivers_eof() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/bin/cat").expect("program");
         let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(pipe_config()))
             .expect("spawn request");
@@ -673,6 +681,7 @@ mod tests {
 
     #[test]
     fn semantic_signal_targets_the_child_process_group() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/bin/sleep")
             .expect("program")
             .with_arg("30");
@@ -696,6 +705,7 @@ mod tests {
 
     #[test]
     fn invalid_executable_returns_spawn_failure_without_partial_handle() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/definitely/not/a/real/executable").expect("program");
         let request = ProcessSpawnRequest::new(
             program,
@@ -715,6 +725,7 @@ mod tests {
 
     #[test]
     fn non_pipe_streams_reject_pipe_io_and_non_pty_resize() {
+        let _guard = runtime_test_lock();
         let program = ProgramSpec::new("/bin/sleep")
             .expect("program")
             .with_arg("1");
