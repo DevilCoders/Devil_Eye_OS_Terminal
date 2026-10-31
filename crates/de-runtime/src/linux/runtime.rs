@@ -35,10 +35,7 @@ impl RuntimeService for LinuxRuntime {
         ])
     }
 
-    fn spawn(
-        &self,
-        request: ProcessSpawnRequest,
-    ) -> Result<Box<dyn RuntimeProcess>, RuntimeError> {
+    fn spawn(&self, request: ProcessSpawnRequest) -> Result<Box<dyn RuntimeProcess>, RuntimeError> {
         request
             .program()
             .validate()
@@ -46,12 +43,9 @@ impl RuntimeService for LinuxRuntime {
 
         match request.io() {
             IoAttachment::Pty(config) => {
-                let child = LinuxPtyChild::spawn(
-                    request.program(),
-                    config.size(),
-                    request.kill_on_drop(),
-                )
-                .map_err(map_spawn_error)?;
+                let child =
+                    LinuxPtyChild::spawn(request.program(), config.size(), request.kill_on_drop())
+                        .map_err(map_spawn_error)?;
 
                 let master = match child.try_clone_master() {
                     Ok(master) => master,
@@ -77,11 +71,8 @@ impl RuntimeService for LinuxRuntime {
                 })))
             }
             IoAttachment::Stdio(config) => {
-                let process = StdioRuntimeProcess::spawn(
-                    request.program(),
-                    config,
-                    request.kill_on_drop(),
-                )?;
+                let process =
+                    StdioRuntimeProcess::spawn(request.program(), config, request.kill_on_drop())?;
                 Ok(Box::new(LinuxRuntimeProcess::Stdio(process)))
             }
         }
@@ -124,7 +115,12 @@ impl StdioRuntimeProcess {
     ) -> Result<Self, RuntimeError> {
         let mut command = Command::new(program.program());
         command.args(program.args());
-        command.envs(program.environment().iter().map(|(key, value)| (key, value)));
+        command.envs(
+            program
+                .environment()
+                .iter()
+                .map(|(key, value)| (key, value)),
+        );
 
         if let Some(directory) = program.working_directory() {
             command.current_dir(directory);
@@ -290,7 +286,10 @@ impl RuntimeProcess for LinuxRuntimeProcess {
                 if process.stdin_closed {
                     return Err(RuntimeError::InvalidArgument);
                 }
-                let stream = process.stdin.as_mut().ok_or(RuntimeError::ProcessAlreadyExited)?;
+                let stream = process
+                    .stdin
+                    .as_mut()
+                    .ok_or(RuntimeError::ProcessAlreadyExited)?;
                 write_nonblocking(stream, input)
             }
         }
@@ -309,7 +308,10 @@ impl RuntimeProcess for LinuxRuntimeProcess {
                         RuntimeCapability::StdioPipes,
                     ));
                 }
-                let stream = process.stdout.as_mut().ok_or(RuntimeError::ProcessAlreadyExited)?;
+                let stream = process
+                    .stdout
+                    .as_mut()
+                    .ok_or(RuntimeError::ProcessAlreadyExited)?;
                 read_nonblocking(stream, output, false)
             }
         }
@@ -330,7 +332,10 @@ impl RuntimeProcess for LinuxRuntimeProcess {
                         RuntimeCapability::StdioPipes,
                     ));
                 }
-                let stream = process.stderr.as_mut().ok_or(RuntimeError::ProcessAlreadyExited)?;
+                let stream = process
+                    .stderr
+                    .as_mut()
+                    .ok_or(RuntimeError::ProcessAlreadyExited)?;
                 read_nonblocking(stream, output, false)
             }
         }
@@ -372,23 +377,23 @@ impl RuntimeProcess for LinuxRuntimeProcess {
 
     fn send_signal(&mut self, signal: Signal) -> Result<(), RuntimeError> {
         match self {
-            Self::Pty(process) => process
-                .child
-                .send_signal(signal)
-                .map_err(|error| {
-                    if error.raw_os_error() == Some(libc::ESRCH) {
-                        RuntimeError::ProcessAlreadyExited
-                    } else {
-                        RuntimeError::SignalFailed
-                    }
-                }),
+            Self::Pty(process) => process.child.send_signal(signal).map_err(|error| {
+                if error.raw_os_error() == Some(libc::ESRCH) {
+                    RuntimeError::ProcessAlreadyExited
+                } else {
+                    RuntimeError::SignalFailed
+                }
+            }),
             Self::Stdio(process) => process.send_signal(signal),
         }
     }
 
     fn try_wait(&mut self) -> Result<Option<ProcessExitStatus>, RuntimeError> {
         match self {
-            Self::Pty(process) => process.child.try_wait().map_err(|_| RuntimeError::WaitFailed),
+            Self::Pty(process) => process
+                .child
+                .try_wait()
+                .map_err(|_| RuntimeError::WaitFailed),
             Self::Stdio(process) => process.try_wait(),
         }
     }
@@ -467,10 +472,7 @@ fn read_nonblocking<R: Read>(
     }
 }
 
-fn write_nonblocking<W: Write>(
-    stream: &mut W,
-    input: &[u8],
-) -> Result<WriteOutcome, RuntimeError> {
+fn write_nonblocking<W: Write>(stream: &mut W, input: &[u8]) -> Result<WriteOutcome, RuntimeError> {
     loop {
         match stream.write(input) {
             Ok(0) => return Err(RuntimeError::IoFailed),
@@ -482,12 +484,7 @@ fn write_nonblocking<W: Write>(
                 return Ok(WriteOutcome::WouldBlock);
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error)
-                if matches!(
-                    error.raw_os_error(),
-                    Some(libc::EPIPE) | Some(libc::EIO)
-                ) =>
-            {
+            Err(error) if matches!(error.raw_os_error(), Some(libc::EPIPE) | Some(libc::EIO)) => {
                 return Err(RuntimeError::ProcessAlreadyExited);
             }
             Err(_) => return Err(RuntimeError::IoFailed),
@@ -606,12 +603,21 @@ mod tests {
         let mut process = LinuxRuntime.spawn(request).expect("spawn shell");
 
         assert!(process.process_id().is_some());
-        assert_eq!(process.wait().expect("wait shell"), ProcessExitStatus::Exited(0));
+        assert_eq!(
+            process.wait().expect("wait shell"),
+            ProcessExitStatus::Exited(0)
+        );
         let stdout = read_to_eof(&mut process, false).expect("read stdout");
         let stderr = read_to_eof(&mut process, true).expect("read stderr");
 
-        assert_eq!(String::from_utf8(stdout).expect("UTF-8 stdout"), "/tmp:runtime-ok");
-        assert_eq!(String::from_utf8(stderr).expect("UTF-8 stderr"), "stderr-data");
+        assert_eq!(
+            String::from_utf8(stdout).expect("UTF-8 stdout"),
+            "/tmp:runtime-ok"
+        );
+        assert_eq!(
+            String::from_utf8(stderr).expect("UTF-8 stderr"),
+            "stderr-data"
+        );
     }
 
     #[test]
@@ -620,21 +626,25 @@ mod tests {
             .expect("program")
             .with_arg("-c")
             .with_arg("printf 'pty-output'");
-        let request = ProcessSpawnRequest::new(
-            program,
-            IoAttachment::Pty(PtyConfig::new(size())),
-        )
-        .expect("PTY request");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn PTY child");
         let resized = TerminalSize::new(120u16, 40u16).expect("resized size");
 
         process.resize_pty(resized).expect("resize PTY");
-        assert_eq!(process.wait().expect("wait PTY child"), ProcessExitStatus::Exited(0));
+        assert_eq!(
+            process.wait().expect("wait PTY child"),
+            ProcessExitStatus::Exited(0)
+        );
         let output = read_to_eof(&mut process, false).expect("read PTY output");
-        assert!(String::from_utf8(output).expect("UTF-8 PTY output").contains("pty-output"));
+        assert!(String::from_utf8(output)
+            .expect("UTF-8 PTY output")
+            .contains("pty-output"));
         assert_eq!(
             process.read_stderr(&mut [0u8; 16usize]),
-            Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
+            Err(RuntimeError::UnsupportedCapability(
+                RuntimeCapability::StdioPipes
+            ))
         );
     }
 
@@ -651,7 +661,10 @@ mod tests {
         );
         process.close_stdin().expect("close stdin");
         assert_eq!(process.close_stdin(), Ok(()));
-        assert_eq!(process.wait().expect("wait cat"), ProcessExitStatus::Exited(0));
+        assert_eq!(
+            process.wait().expect("wait cat"),
+            ProcessExitStatus::Exited(0)
+        );
         assert_eq!(
             read_to_eof(&mut process, false).expect("read echoed input"),
             b"input-data"
@@ -668,11 +681,13 @@ mod tests {
             StreamAttachment::Null,
             StreamAttachment::Null,
         );
-        let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(config))
-            .expect("spawn request");
+        let request =
+            ProcessSpawnRequest::new(program, IoAttachment::Stdio(config)).expect("spawn request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn sleep");
 
-        process.send_signal(Signal::Terminate).expect("send SIGTERM");
+        process
+            .send_signal(Signal::Terminate)
+            .expect("send SIGTERM");
         assert_eq!(
             process.wait().expect("wait signaled process"),
             ProcessExitStatus::Signaled(Signal::Terminate)
@@ -722,9 +737,13 @@ mod tests {
         );
         assert_eq!(
             process.resize_pty(size()),
-            Err(RuntimeError::UnsupportedCapability(RuntimeCapability::TerminalResize))
+            Err(RuntimeError::UnsupportedCapability(
+                RuntimeCapability::TerminalResize
+            ))
         );
-        process.terminate(TerminationMode::Force).expect("terminate");
+        process
+            .terminate(TerminationMode::Force)
+            .expect("terminate");
         let _ = process.wait();
     }
 }
