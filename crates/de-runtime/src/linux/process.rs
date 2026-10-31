@@ -1,18 +1,159 @@
 //! Linux child-process lifecycle attached to an owned PTY.
 
-use std::fs::File;
+use std::ffi::CString;
+use std::fs::{self, File};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
-use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
+use crate::{
+    EnvironmentInheritance, ProcessExitStatus, ProgramSpec, ProgramSpecError, Signal, TerminalSize,
+    TerminationMode,
+};
 
 use super::pty::{duplicate_cloexec, set_window_size, PtyPair};
+
+/// Canonical executable and working directory resolved before acquiring process resources.
+pub(super) struct ResolvedProgram {
+    pub(super) executable: PathBuf,
+    pub(super) working_directory: Option<PathBuf>,
+}
+
+/// Resolves a program without relying on Command's implicit PATH search.
+///
+/// Empty and relative PATH entries are ignored so a child cannot accidentally
+/// execute a binary from the current working directory.
+pub(super) fn resolve_program(
+    program: &ProgramSpec,
+) -> Result<ResolvedProgram, ProgramSpecError> {
+    program.validate()?;
+
+    let working_directory = resolve_working_directory(program)?;
+    let executable = resolve_executable(program, working_directory.as_deref())?;
+
+    Ok(ResolvedProgram {
+        executable,
+        working_directory,
+    })
+}
+
+fn resolve_working_directory(
+    program: &ProgramSpec,
+) -> Result<Option<PathBuf>, ProgramSpecError> {
+    let Some(directory) = program.working_directory() else {
+        return Ok(None);
+    };
+
+    let canonical = fs::canonicalize(directory).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ProgramSpecError::WorkingDirectoryNotFound,
+        _ => ProgramSpecError::PathResolutionFailed,
+    })?;
+    let metadata =
+        fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    if !metadata.is_dir() {
+        return Err(ProgramSpecError::WorkingDirectoryNotDirectory);
+    }
+
+    Ok(Some(canonical))
+}
+
+fn resolve_executable(
+    program: &ProgramSpec,
+    working_directory: Option<&Path>,
+) -> Result<PathBuf, ProgramSpecError> {
+    let requested = Path::new(program.program());
+    if requested.as_os_str().as_bytes().contains(&b'/') {
+        let candidate = if requested.is_absolute() {
+            requested.to_path_buf()
+        } else {
+            let base = match working_directory {
+                Some(directory) => directory.to_path_buf(),
+                None => std::env::current_dir()
+                    .map_err(|_| ProgramSpecError::PathResolutionFailed)?,
+            };
+            base.join(requested)
+        };
+        return resolve_executable_candidate(&candidate);
+    }
+
+    let explicit_path = program
+        .environment()
+        .iter()
+        .find(|(key, _)| key == std::ffi::OsStr::new("PATH"))
+        .map(|(_, value)| value.clone());
+    let search_path = explicit_path.or_else(|| {
+        if program.environment_inheritance() == EnvironmentInheritance::Inherit {
+            std::env::var_os("PATH")
+        } else {
+            None
+        }
+    });
+    let Some(search_path) = search_path else {
+        return Err(ProgramSpecError::ExecutableNotFound);
+    };
+
+    let mut saw_non_executable = false;
+    let mut saw_non_regular = false;
+    for directory in std::env::split_paths(&search_path) {
+        if directory.as_os_str().is_empty() || !directory.is_absolute() {
+            continue;
+        }
+        let candidate = directory.join(requested);
+        match resolve_executable_candidate(&candidate) {
+            Ok(path) => return Ok(path),
+            Err(ProgramSpecError::ExecutableNotFound) => {}
+            Err(ProgramSpecError::ExecutableNotExecutable) => saw_non_executable = true,
+            Err(ProgramSpecError::ExecutableNotRegularFile) => saw_non_regular = true,
+            Err(error) => return Err(error),
+        }
+    }
+
+    if saw_non_executable {
+        Err(ProgramSpecError::ExecutableNotExecutable)
+    } else if saw_non_regular {
+        Err(ProgramSpecError::ExecutableNotRegularFile)
+    } else {
+        Err(ProgramSpecError::ExecutableNotFound)
+    }
+}
+
+fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpecError> {
+    let canonical = fs::canonicalize(candidate).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ProgramSpecError::ExecutableNotFound,
+        io::ErrorKind::PermissionDenied => ProgramSpecError::ExecutableNotExecutable,
+        _ => ProgramSpecError::PathResolutionFailed,
+    })?;
+    let metadata =
+        fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    if !metadata.is_file() {
+        return Err(ProgramSpecError::ExecutableNotRegularFile);
+    }
+
+    let c_path = CString::new(canonical.as_os_str().as_bytes())
+        .map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    // SAFETY: c_path is NUL-terminated and AT_EACCESS checks the effective
+    // credentials that will be used by Command::spawn.
+    if unsafe {
+        libc::faccessat(
+            libc::AT_FDCWD,
+            c_path.as_ptr(),
+            libc::X_OK,
+            libc::AT_EACCESS,
+        )
+    } == -1
+    {
+        return Err(ProgramSpecError::ExecutableNotExecutable);
+    }
+
+    Ok(canonical)
+}
 
 /// A child process with its own session, process group, controlling terminal,
 /// and PTY master descriptor.
@@ -38,8 +179,7 @@ impl LinuxPtyChild {
         size: TerminalSize,
         kill_on_drop: bool,
     ) -> io::Result<Self> {
-        program
-            .validate()
+        let resolved = resolve_program(program)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
 
         let pty = PtyPair::open(size)?;
@@ -51,15 +191,18 @@ impl LinuxPtyChild {
         let (master, parent_slave) = pty.into_parts();
         drop(parent_slave);
 
-        let mut command = Command::new(program.program());
+        let mut command = Command::new(&resolved.executable);
         command.args(program.args());
+        if program.environment_inheritance() == EnvironmentInheritance::Clear {
+            command.env_clear();
+        }
         command.envs(
             program
                 .environment()
                 .iter()
                 .map(|(key, value)| (key, value)),
         );
-        if let Some(directory) = program.working_directory() {
+        if let Some(directory) = resolved.working_directory.as_deref() {
             command.current_dir(directory);
         }
 
