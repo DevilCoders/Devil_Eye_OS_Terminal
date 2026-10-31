@@ -13,7 +13,7 @@ The terminal model owns retained scrollback rows. The visible `ScreenGrid` remai
 - `scrollback_rows()` iterates retained rows oldest-to-newest as immutable cell slices.
 - `scrollback_row_count()` and `scrollback_cell_count()` report retained capacity usage.
 - `max_scrollback_cells()` reports the configured payload-cell limit.
-- `clear_scrollback()` clears history without changing the visible screen.
+- `clear_scrollback()` clears and zeroes retained history without changing the visible screen.
 
 The API does not expose mutable history cells. Each retained row preserves the complete `Cell` values, including grapheme attributes and wide-grapheme continuation cells.
 
@@ -49,7 +49,7 @@ A future viewport/history integration may introduce an explicit reflow operation
 ## Failure and reset behavior
 
 - Zero capacity disables history without changing scroll behavior.
-- `clear_scrollback()` drops retained rows only.
+- `clear_scrollback()` zeroes retained cell storage and resets the history indices; it does not change the visible grid.
 - Invalid scroll regions continue to return `InvalidScrollRegion`.
 - Scrollback capture itself does not allocate. Invalid internal row ranges return `OutOfBounds` before changing history; visible-grid scrolling remains bounded and allocation-free.
 - No history operation launches processes, reads files, or invokes external services.
