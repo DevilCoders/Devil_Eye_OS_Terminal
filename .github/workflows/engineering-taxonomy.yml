@@ -2,8 +2,13 @@ name: Engineering taxonomy and issue automation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/engineering-taxonomy.yml"
   issues:
-    types: [opened, reopened]
+    types: [opened, reopened, closed]
 
 permissions:
   contents: read
@@ -17,13 +22,15 @@ jobs:
   provision-and-classify:
     runs-on: ubuntu-latest
     steps:
-      - name: Create labels and milestones, classify issues
+      - name: Create and verify taxonomy, milestones, and issue metadata
         uses: actions/github-script@v7
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
+            // Keep this catalog unique. GitHub label names are unique within
+            // a repository; existing labels are verified and reconciled.
             const labels = [
               ["type:epic", "1D4ED8", "Major engineering outcome"],
               ["type:task", "2563EB", "Implementation task"],
@@ -39,8 +46,6 @@ jobs:
               ["status:blocked", "B91C1C", "Blocked by dependency or decision"],
               ["status:review", "7C3AED", "Awaiting review or validation"],
               ["status:done", "15803D", "Completed and verified"],
-              ["component:build", "0F766E", "Build system and developer tooling"],
-              ["component:architecture", "0F766E", "System architecture and API contracts"],
               ["component:build", "0F766E", "Build system and developer tooling"],
               ["component:architecture", "0F766E", "System architecture and API contracts"],
               ["component:rust", "0F766E", "Rust application and crates"],
@@ -61,11 +66,6 @@ jobs:
               ["component:plugins", "0F766E", "Plugin system"],
               ["component:productivity", "0F766E", "Productivity features"],
               ["component:performance", "0F766E", "Performance engineering"],
-              ["component:session", "0F766E", "Sessions and workspaces"],
-              ["component:config", "0F766E", "Configuration and persistence"],
-              ["component:plugins", "0F766E", "Plugin system"],
-              ["component:productivity", "0F766E", "Productivity features"],
-              ["component:performance", "0F766E", "Performance engineering"],
               ["platform:linux", "0369A1", "Linux x86_64 target"],
               ["platform:windows", "0369A1", "Windows target"],
               ["platform:macos", "0369A1", "macOS target"]
@@ -73,9 +73,25 @@ jobs:
 
             for (const [name, color, description] of labels) {
               try {
-                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                await github.rest.issues.createLabel({
+                  owner, repo, name, color, description
+                });
               } catch (error) {
                 if (error.status !== 422) throw error;
+
+                // A 422 is ignored only when the named label can be fetched.
+                // Existing metadata is reconciled to this source of truth.
+                const existing = await github.rest.issues.getLabel({
+                  owner, repo, name
+                });
+                if (
+                  existing.data.color !== color ||
+                  existing.data.description !== description
+                ) {
+                  await github.rest.issues.updateLabel({
+                    owner, repo, name, color, description
+                  });
+                }
               }
             }
 
@@ -93,10 +109,14 @@ jobs:
               ["M10 Production 1.0", "Production release and maintenance handoff."]
             ];
 
-            const existingMilestones = await github.paginate(github.rest.issues.listMilestones, {
-              owner, repo, state: "all", per_page: 100
-            });
-            const milestoneByTitle = new Map(existingMilestones.map(m => [m.title, m.number]));
+            const existingMilestones = await github.paginate(
+              github.rest.issues.listMilestones,
+              { owner, repo, state: "all", per_page: 100 }
+            );
+            const milestoneByTitle = new Map(
+              existingMilestones.map(m => [m.title, m.number])
+            );
+
             for (const [title, description] of milestones) {
               if (!milestoneByTitle.has(title)) {
                 const created = await github.rest.issues.createMilestone({
@@ -106,9 +126,17 @@ jobs:
               }
             }
 
-            const allIssues = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, state: "open", per_page: 100
-            });
+            const allIssues = await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, state: "all", per_page: 100 }
+            );
+            const repositoryIssues = allIssues.filter(issue => !issue.pull_request);
+            const openIssueNumbers = new Set(
+              repositoryIssues
+                .filter(issue => issue.state === "open")
+                .map(issue => issue.number)
+            );
+
             const componentRules = [
               [/DE-001/, "component:build"],
               [/DE-002/, "component:architecture"],
@@ -119,8 +147,7 @@ jobs:
               [/DE-007/, "component:runtime"],
               [/DE-008/, "component:ipc-ffi"],
               [/DE-009/, "component:renderer"],
-              [/DE-010/, "component:gui"],
-              [/DE-011/, "component:gui"],
+              [/DE-010|DE-011/, "component:gui"],
               [/DE-014/, "component:session"],
               [/DE-015/, "component:config"],
               [/DE-016/, "component:security"],
@@ -128,65 +155,137 @@ jobs:
               [/DE-018/, "component:productivity"],
               [/DE-019/, "component:testing"],
               [/DE-020/, "component:performance"],
+              [/DE-021/, "component:platform"],
               [/DE-022/, "component:docs"],
-              [/DE-023|DE-024/, "component:release"],
-              [/DE-021/, "component:platform"]
+              [/DE-023|DE-024/, "component:release"]
             ];
 
-            for (const issue of allIssues) {
-              if (issue.pull_request) continue;
-              const text = (issue.title || "") + "\n" + (issue.body || "");
+            const epicMilestones = {
+              "DE-001": "M0 Engineering Foundation",
+              "DE-002": "M0 Engineering Foundation",
+              "DE-003": "M0 Engineering Foundation",
+              "DE-004": "M1 Shell Alpha",
+              "DE-013": "M1 Shell Alpha",
+              "DE-007": "M2 Runtime Alpha",
+              "DE-005": "M3 Terminal Engine Alpha",
+              "DE-006": "M4 PTY Alpha",
+              "DE-008": "M5 Communication Alpha",
+              "DE-009": "M6 Terminal GUI Alpha",
+              "DE-010": "M6 Terminal GUI Alpha",
+              "DE-011": "M6 Terminal GUI Alpha",
+              "DE-012": "M7 Integrated Beta",
+              "DE-014": "M7 Integrated Beta",
+              "DE-015": "M7 Integrated Beta",
+              "DE-017": "M8 Feature Complete",
+              "DE-018": "M8 Feature Complete",
+              "DE-020": "M8 Feature Complete",
+              "DE-021": "M8 Feature Complete",
+              "DE-016": "M9 Release Candidate",
+              "DE-022": "M9 Release Candidate",
+              "DE-023": "M9 Release Candidate",
+              "DE-024": "M10 Production 1.0"
+            };
+
+            const taxonomyPrefixes = [
+              "type:", "priority:", "status:", "component:", "platform:"
+            ];
+
+            for (const issue of repositoryIssues) {
+              const issueText = (issue.title || "") + "\n" + (issue.body || "");
+              const current = new Set(
+                (issue.labels || []).map(label =>
+                  typeof label === "string" ? label : label.name
+                )
+              );
               const wanted = new Set();
+              const idMatch = issue.title.match(/DE-\d{3}/);
+              const epicId = idMatch ? idMatch[0] : null;
+
               if (/^\[EPIC\]/i.test(issue.title)) wanted.add("type:epic");
               else if (/^\[TASK\]/i.test(issue.title)) wanted.add("type:task");
               else if (/^\[BUG\]/i.test(issue.title)) wanted.add("type:bug");
+              else if (/^\[SPIKE\]/i.test(issue.title)) wanted.add("type:spike");
 
-              const priority = text.match(/Priority:\*\*\s*(P[0-3])/i);
+              const priority = issueText.match(/Priority:\*{0,2}\s*(P[0-3])/i);
               if (priority) wanted.add("priority:" + priority[1].toUpperCase());
 
-              if (/^\[EPIC\]/i.test(issue.title)) wanted.add("status:planned");
-              else if (/^\[TASK\]/i.test(issue.title)) wanted.add("status:todo");
-
-              const dependencySection = (issue.body || "").match(/### Dependencies\s*([\s\S]*?)(?:\n###|$)/i);
-              const dependencyNumbers = dependencySection ? [...dependencySection[1].matchAll(/#(\d+)/g)].map(match => Number(match[1])) : [];
-              const openIssueNumbers = new Set(allIssues.map(item => item.number));
-              if (dependencyNumbers.some(number => openIssueNumbers.has(number))) {
-                wanted.delete("status:todo");
-                wanted.add("status:blocked");
-              }
-              const epicId = issue.title.match(/DE-\d{3}/);
               if (epicId) {
                 for (const [pattern, label] of componentRules) {
-                  if (pattern.test(epicId[0])) { wanted.add(label); break; }
+                  if (pattern.test(epicId)) {
+                    wanted.add(label);
+                    break;
+                  }
                 }
               }
 
-              const epicMatch = issue.title.match(/DE-\d{3}/);
-              const epicMilestones = {
-                "DE-001": "M0 Engineering Foundation", "DE-002": "M0 Engineering Foundation", "DE-003": "M0 Engineering Foundation",
-                "DE-004": "M1 Shell Alpha", "DE-013": "M1 Shell Alpha", "DE-007": "M2 Runtime Alpha",
-                "DE-005": "M3 Terminal Engine Alpha", "DE-006": "M4 PTY Alpha", "DE-008": "M5 Communication Alpha",
-                "DE-009": "M6 Terminal GUI Alpha", "DE-010": "M6 Terminal GUI Alpha", "DE-011": "M6 Terminal GUI Alpha",
-                "DE-012": "M7 Integrated Beta", "DE-014": "M7 Integrated Beta", "DE-015": "M7 Integrated Beta",
-                "DE-017": "M8 Feature Complete", "DE-018": "M8 Feature Complete", "DE-020": "M8 Feature Complete", "DE-021": "M8 Feature Complete",
-                "DE-016": "M9 Release Candidate", "DE-022": "M9 Release Candidate", "DE-023": "M9 Release Candidate", "DE-024": "M10 Production 1.0"
-              };
-              const target = text.match(/Target milestone:\*\*\s*([^\n]+)/i);
-              const milestoneTitle = target ? target[1].trim() : (epicMatch ? epicMilestones[epicMatch[0]] : null);
-              if (milestoneTitle) {
-                const number = milestoneByTitle.get(milestoneTitle);
-                if (number && (!issue.milestone || issue.milestone.number !== number)) await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
+              const platform = issueText.match(/Platform:\*{0,2}\s*([^\r\n]+)/i);
+              if (platform) {
+                const value = platform[1].toLowerCase();
+                if (value.includes("linux")) wanted.add("platform:linux");
+                if (value.includes("windows")) wanted.add("platform:windows");
+                if (value.includes("macos") || value.includes("mac os")) {
+                  wanted.add("platform:macos");
+                }
               }
 
-              const current = new Set((issue.labels || []).map(l => typeof l === "string" ? l : l.name));
-              const staleStatus = [...current].filter(label => ["status:todo", "status:blocked"].includes(label) && !wanted.has(label));
-              for (const label of staleStatus) {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: label });
+              let desiredStatus = null;
+              if (issue.state === "closed") {
+                desiredStatus = "status:done";
+              } else if (/^\[EPIC\]/i.test(issue.title)) {
+                desiredStatus = "status:planned";
+              } else if (/^\[TASK\]/i.test(issue.title)) {
+                const dependencySection = (issue.body || "").match(
+                  /### Dependencies\s*([\s\S]*?)(?:\n###|$)/i
+                );
+                const dependencyNumbers = dependencySection
+                  ? [...dependencySection[1].matchAll(/#(\d+)/g)]
+                      .map(match => Number(match[1]))
+                  : [];
+                const blocked = dependencyNumbers.some(number =>
+                  openIssueNumbers.has(number)
+                );
+                const protectedStatus = ["status:in-progress", "status:review"]
+                  .find(status => current.has(status));
+
+                desiredStatus = protectedStatus ||
+                  (blocked ? "status:blocked" : "status:todo");
               }
-              const add = [...wanted].filter(label => !current.has(label));
-              if (add.length) {
-                await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: add });
+
+              if (desiredStatus) wanted.add(desiredStatus);
+
+              const target = issueText.match(
+                /Target milestone:\*{0,2}\s*([^\r\n]+)/i
+              );
+              const milestoneTitle = target
+                ? target[1].trim()
+                : (epicId ? epicMilestones[epicId] : null);
+              if (milestoneTitle) {
+                const number = milestoneByTitle.get(milestoneTitle);
+                if (number && (!issue.milestone || issue.milestone.number !== number)) {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: issue.number, milestone: number
+                  });
+                }
+              }
+
+              const staleTaxonomy = [...current].filter(label =>
+                taxonomyPrefixes.some(prefix => label.startsWith(prefix)) &&
+                !wanted.has(label)
+              );
+              for (const label of staleTaxonomy) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: issue.number, name: label
+                });
+              }
+
+              const missingTaxonomy = [...wanted].filter(label => !current.has(label));
+              if (missingTaxonomy.length) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: issue.number, labels: missingTaxonomy
+                });
               }
             }
 
-            core.info(`Provisioned ${labels.length} taxonomy labels and ${milestones.length} milestones; classified ${allIssues.length} open issues.`);
+            core.info(
+              `Verified ${labels.length} unique taxonomy labels and ${milestones.length} milestones; reconciled metadata for ${repositoryIssues.length} issues (${openIssueNumbers.size} open).`
+            );
