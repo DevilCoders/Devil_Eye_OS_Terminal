@@ -271,9 +271,7 @@ impl Application {
     /// a later retry. If the operating system cannot create the worker thread,
     /// the original application is returned with the I/O error and no service
     /// is dropped as a side effect of the failed spawn.
-    pub fn shutdown_async(
-        self,
-    ) -> Result<AsyncShutdownHandle, AsyncShutdownSpawnError> {
+    pub fn shutdown_async(self) -> Result<AsyncShutdownHandle, AsyncShutdownSpawnError> {
         let application = Arc::new(Mutex::new(Some(self)));
         let worker_application = Arc::clone(&application);
         let result = thread::Builder::new()
