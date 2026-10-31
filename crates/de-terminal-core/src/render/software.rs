@@ -292,7 +292,7 @@ impl PixelSurface {
     }
 
     fn blend_pixel(&mut self, x: u32, y: u32, color: Rgba, coverage: u8) {
-        if x >= self.width || y >= self.height || coverage == 0 {
+        if x >= self.width || y >= self.height {
             return;
         }
         let index = (usize::try_from(y).expect("y fits usize")
@@ -301,12 +301,22 @@ impl PixelSurface {
             * 4;
         let source_alpha = (u16::from(color.alpha) * u16::from(coverage) / 255) as u32;
         let inverse_alpha = 255 - source_alpha;
-        for (offset, source) in [(0usize, color.red), (1, color.green), (2, color.blue)] {
-            let destination = u32::from(self.pixels[index + offset]);
-            let blended =
-                (u32::from(source) * source_alpha + destination * inverse_alpha + 127) / 255;
-            self.pixels[index + offset] = blended as u8;
-        }
+
+        let destination_red = u32::from(self.pixels[index]);
+        let destination_green = u32::from(self.pixels[index + 1]);
+        let destination_blue = u32::from(self.pixels[index + 2]);
+        self.pixels[index] = ((u32::from(color.red) * source_alpha
+            + destination_red * inverse_alpha
+            + 127)
+            / 255) as u8;
+        self.pixels[index + 1] = ((u32::from(color.green) * source_alpha
+            + destination_green * inverse_alpha
+            + 127)
+            / 255) as u8;
+        self.pixels[index + 2] = ((u32::from(color.blue) * source_alpha
+            + destination_blue * inverse_alpha
+            + 127)
+            / 255) as u8;
         self.pixels[index + 3] = 255;
     }
 }
@@ -633,15 +643,28 @@ impl SoftwareRenderer {
 
     fn draw_glyph(surface: &mut PixelSurface, draw: GlyphDraw<'_>) {
         let scale = draw.scale_factor.get();
-        let glyph_width = (f32::from(draw.bitmap.width) * scale).ceil() as u32;
-        let glyph_height = (f32::from(draw.bitmap.height) * scale).ceil() as u32;
+        let unit_scale = scale == 1.0;
+        let glyph_width = if unit_scale {
+            u32::from(draw.bitmap.width)
+        } else {
+            (f32::from(draw.bitmap.width) * scale).ceil() as u32
+        };
+        let glyph_height = if unit_scale {
+            u32::from(draw.bitmap.height)
+        } else {
+            (f32::from(draw.bitmap.height) * scale).ceil() as u32
+        };
         let x_offset = draw.available_width.saturating_sub(glyph_width) / 2;
         let y_offset = draw.cell_height.saturating_sub(glyph_height) / 2;
         let draw_width = glyph_width.min(draw.available_width.saturating_sub(x_offset));
         let draw_height = glyph_height.min(draw.cell_height.saturating_sub(y_offset));
 
         for destination_y in 0..draw_height {
-            let source_y = ((destination_y as f32) / scale).floor() as u32;
+            let source_y = if unit_scale {
+                destination_y
+            } else {
+                ((destination_y as f32) / scale).floor() as u32
+            };
             if source_y >= u32::from(draw.bitmap.height) {
                 continue;
             }
@@ -651,12 +674,19 @@ impl SoftwareRenderer {
                 0
             };
             for destination_x in 0..draw_width {
-                let source_x = ((destination_x as f32) / scale).floor() as u32;
+                let source_x = if unit_scale {
+                    destination_x
+                } else {
+                    ((destination_x as f32) / scale).floor() as u32
+                };
                 if source_x >= u32::from(draw.bitmap.width) {
                     continue;
                 }
                 let alpha_index = (source_y * u32::from(draw.bitmap.width) + source_x) as usize;
                 let coverage = draw.bitmap.alpha[alpha_index];
+                if coverage == 0 {
+                    continue;
+                }
                 let x = draw.cell_x + x_offset + destination_x + italic_offset;
                 let y = draw.cell_y + y_offset + destination_y;
                 if x < draw.clip_left
