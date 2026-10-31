@@ -502,40 +502,66 @@ pub enum EraseMode {
     All,
 }
 
-/// Bounded chronological history of complete rows displaced by full-screen scrolling.
+/// Bounded ring buffer of complete rows displaced by full-screen scrolling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ScrollbackBuffer {
-    rows: VecDeque<Vec<Cell>>,
+    cells: Vec<Cell>,
     max_cells: usize,
     columns: u16,
+    max_rows: usize,
+    row_count: usize,
+    start_row: usize,
 }
 
 impl ScrollbackBuffer {
-    fn new(columns: u16, max_cells: usize) -> Self {
-        Self {
-            rows: VecDeque::new(),
+    fn new(columns: u16, max_cells: usize) -> Result<Self, ScreenGridError> {
+        let columns_usize = usize::from(columns);
+        let max_rows = max_cells / columns_usize;
+        let capacity_cells = max_rows
+            .checked_mul(columns_usize)
+            .ok_or(ScreenGridError::DimensionOverflow)?;
+        Ok(Self {
+            cells: allocate_cells(capacity_cells)?,
             max_cells,
             columns,
-        }
-    }
-
-    fn max_rows(&self) -> usize {
-        self.max_cells / usize::from(self.columns)
+            max_rows,
+            row_count: 0usize,
+            start_row: 0usize,
+        })
     }
 
     fn cell_count(&self) -> usize {
-        self.rows.len() * usize::from(self.columns)
+        self.row_count * usize::from(self.columns)
     }
 
     fn clear(&mut self) {
-        self.rows.clear();
+        self.row_count = 0usize;
+        self.start_row = 0usize;
     }
 
-    fn resize_columns(&mut self, columns: u16) {
-        if self.columns != columns {
-            self.rows.clear();
-            self.columns = columns;
+    fn row(&self, chronological_index: usize) -> Option<&[Cell]> {
+        if chronological_index >= self.row_count || self.max_rows == 0usize {
+            return None;
         }
+        let slot = (self.start_row + chronological_index) % self.max_rows;
+        let columns = usize::from(self.columns);
+        let start = slot * columns;
+        Some(&self.cells[start..start + columns])
+    }
+
+    fn push_row(&mut self, source: &[Cell]) {
+        let slot = if self.row_count < self.max_rows {
+            let slot = (self.start_row + self.row_count) % self.max_rows;
+            self.row_count += 1usize;
+            slot
+        } else {
+            let slot = self.start_row;
+            self.start_row = (self.start_row + 1usize) % self.max_rows;
+            slot
+        };
+        let columns = usize::from(self.columns);
+        let start = slot * columns;
+        self.cells[start..start + columns].copy_from_slice(source);
     }
 
     fn append_from_grid(
@@ -544,48 +570,31 @@ impl ScrollbackBuffer {
         first_row: u16,
         count: u16,
     ) -> Result<(), ScreenGridError> {
-        let max_rows = self.max_rows();
-        let rows_to_capture = usize::from(count).min(max_rows);
-        if rows_to_capture == 0usize {
+        if count == 0u16 || self.max_rows == 0usize {
             return Ok(());
+        }
+        let end_row = first_row
+            .checked_add(count)
+            .ok_or(ScreenGridError::DimensionOverflow)?;
+        if end_row > grid.size().rows() {
+            return Err(ScreenGridError::OutOfBounds);
         }
 
         // If more rows scroll out than history can retain, only the newest
-        // rows can survive the operation. Avoid allocating discarded rows.
+        // rows can survive the operation. Avoid copying rows that are evicted
+        // within the same scroll operation.
+        let rows_to_capture = usize::from(count).min(self.max_rows);
         let first_offset = usize::from(count) - rows_to_capture;
-        let mut captured = Vec::new();
-        captured
-            .try_reserve_exact(rows_to_capture)
-            .map_err(|_| ScreenGridError::AllocationFailed)?;
-        for offset in first_offset..usize::from(count) {
-            let row_index = first_row
-                .checked_add(u16::try_from(offset).map_err(|_| ScreenGridError::DimensionOverflow)?)
-                .ok_or(ScreenGridError::DimensionOverflow)?;
+        let first_captured = first_row
+            .checked_add(
+                u16::try_from(first_offset).map_err(|_| ScreenGridError::DimensionOverflow)?,
+            )
+            .ok_or(ScreenGridError::DimensionOverflow)?;
+        for row_index in first_captured..end_row {
             let source = grid
                 .row_cells(row_index)
                 .ok_or(ScreenGridError::OutOfBounds)?;
-            let mut row = Vec::new();
-            row.try_reserve_exact(source.len())
-                .map_err(|_| ScreenGridError::AllocationFailed)?;
-            row.extend_from_slice(source);
-            captured.push(row);
-        }
-
-        let current_rows = self.rows.len();
-        let evictions = current_rows
-            .saturating_add(rows_to_capture)
-            .saturating_sub(max_rows);
-        let final_rows = current_rows - evictions + rows_to_capture;
-        let additional = final_rows.saturating_sub(current_rows);
-        self.rows
-            .try_reserve(additional)
-            .map_err(|_| ScreenGridError::AllocationFailed)?;
-
-        for _ in 0..evictions {
-            self.rows.pop_front();
-        }
-        for row in captured {
-            self.rows.push_back(row);
+            self.push_row(source);
         }
         Ok(())
     }
@@ -621,7 +630,7 @@ impl TerminalScreen {
             grid: ScreenGrid::new(size, max_cells)?,
             cursor: CursorPosition::default(),
             scroll_region: ScrollRegion::full(size),
-            scrollback: ScrollbackBuffer::new(size.columns(), max_scrollback_cells),
+            scrollback: ScrollbackBuffer::new(size.columns(), max_scrollback_cells)?,
         })
     }
 
@@ -645,7 +654,12 @@ impl TerminalScreen {
     /// Returns retained rows from oldest to newest. Each row has the width
     /// that was active when it entered history; no implicit reflow is applied.
     pub fn scrollback_rows(&self) -> impl Iterator<Item = &[Cell]> {
-        self.scrollback.rows.iter().map(Vec::as_slice)
+        let mut index = 0usize;
+        std::iter::from_fn(move || {
+            let row = self.scrollback.row(index)?;
+            index += 1usize;
+            Some(row)
+        })
     }
 
     /// Returns the number of retained rows.
@@ -821,8 +835,18 @@ impl TerminalScreen {
     ///
     /// If the old region collapses after shrinking, the active region resets to the full screen.
     pub fn resize(&mut self, size: TerminalSize) -> Result<(), ScreenGridError> {
+        let resized_scrollback = if self.scrollback.columns != size.columns() {
+            Some(ScrollbackBuffer::new(
+                size.columns(),
+                self.scrollback.max_cells,
+            )?)
+        } else {
+            None
+        };
         self.grid.resize(size)?;
-        self.scrollback.resize_columns(size.columns());
+        if let Some(scrollback) = resized_scrollback {
+            self.scrollback = scrollback;
+        }
         self.cursor.row = self.cursor.row.min(size.rows() - 1u16);
         self.cursor.column = self.cursor.column.min(size.columns() - 1u16);
 
