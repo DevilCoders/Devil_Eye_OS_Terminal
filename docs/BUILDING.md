@@ -7,7 +7,7 @@ The repository has two independent build graphs:
 - **Rust workspace:** Cargo builds `de-app`, `de-terminal-core`, `de-runtime`, and `de-ffi`.
 - **C subsystem:** CMake builds the DE-Shell static library and its CTest suite.
 
-The C library currently exposes only build-version metadata. This is an infrastructure smoke-test surface, not the DE-Shell lifecycle, parser, or execution API. Those are introduced by DE-004 tasks after the architecture/API contracts are established.
+The C library exposes build metadata and the initial opaque DE-Shell lifecycle API. Input buffering, lexer/parser, command dispatch, execution, and Rust/C FFI remain separate tasks.
 
 ## Prerequisites
 
@@ -42,7 +42,13 @@ ctest --test-dir build --output-on-failure
 
 For an optimized build, use `-DCMAKE_BUILD_TYPE=Release`. The build requires C17 and enables strict warnings; GCC/Clang builds treat warnings as errors. Generated files stay under `build/` and must not be committed.
 
-CI validates the CMake project with GCC and Clang in both Debug and Release configurations.
+CI validates the CMake project with GCC and Clang in both Debug and Release configurations. CTest covers build metadata and DE-Shell instance lifecycle.
+
+## DE-Shell lifecycle API
+
+The public C header `include/de_shell/shell.h` exposes an opaque `de_shell_t` handle, stable status values, and create/destroy entry points. A caller owns a successfully created handle and releases it through `de_shell_destroy()`; the destroy function clears the caller's handle and supports repeated cleanup through that same handle variable.
+
+The private representation lives under `c/internal/` and is not part of the public API. The lifecycle tests cover invalid arguments, independent instances, successful cleanup, and idempotent destruction. No parser, input buffer, process execution, or terminal behavior is implied by this lifecycle foundation. See [DE-Shell Library Lifecycle](architecture/de-shell-lifecycle.md).
 
 ## Rust/C integration strategy
 

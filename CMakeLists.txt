@@ -31,10 +31,11 @@ function(de_enable_strict_warnings target)
     endif()
 endfunction()
 
-# This is build metadata only. The DE-Shell lifecycle and language API are
-# introduced separately by DE-004-01 after the cross-component contracts land.
+# DE-Shell begins as an independent C library. Parser, command execution, and
+# Rust/C ABI bindings are introduced by their dedicated tasks.
 add_library(de_shell STATIC
     c/build_info.c
+    c/shell.c
 )
 
 target_include_directories(de_shell
@@ -76,5 +77,22 @@ if(BUILD_TESTING)
     add_test(
         NAME de_shell_build_info
         COMMAND de_shell_build_info_test
+    )
+
+    add_executable(de_shell_lifecycle_test
+        c/tests/test_shell_lifecycle.c
+    )
+
+    target_link_libraries(de_shell_lifecycle_test PRIVATE de_shell)
+    de_enable_strict_warnings(de_shell_lifecycle_test)
+
+    if(DE_ENABLE_COVERAGE)
+        target_compile_options(de_shell_lifecycle_test PRIVATE --coverage -O0 -g)
+        target_link_options(de_shell_lifecycle_test PRIVATE --coverage)
+    endif()
+
+    add_test(
+        NAME de_shell_lifecycle
+        COMMAND de_shell_lifecycle_test
     )
 endif()
