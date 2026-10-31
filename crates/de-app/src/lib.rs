@@ -66,3 +66,10 @@ pub use lifecycle::{
     Application, ApplicationService, ApplicationState, LifecycleError, ServiceCleanupFailure,
     ServiceError,
 };
+
+pub mod diagnostics;
+
+pub use diagnostics::{
+    ApplicationError, ApplicationErrorCode, Diagnostic, DiagnosticBuffer, DiagnosticField,
+    DiagnosticSeverity, ErrorCategory,
+};
