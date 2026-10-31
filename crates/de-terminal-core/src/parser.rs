@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn escape_final_bytes_are_not_reinterpreted_after_intermediates() {
         let mut parser = VtParser::new();
-        let events = parser.process(b"\\x1b([ ").expect("ESC intermediate");
+        let events = parser.process(b"\x1b([ ").expect("ESC intermediate");
         assert_eq!(
             events,
             vec![TerminalEvent::Escape(super::EscapeSequence {
