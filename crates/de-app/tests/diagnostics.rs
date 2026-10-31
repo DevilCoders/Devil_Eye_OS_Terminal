@@ -37,19 +37,11 @@ fn detailed_source_errors_are_not_serialized_or_displayed() {
     )
     .with_source(ServiceError::new("environment TOKEN=source-secret"));
 
-    assert_eq!(
-        error.to_string(),
-        "Unable to start the requested process."
-    );
+    assert_eq!(error.to_string(), "Unable to start the requested process.");
     assert!(error.source().is_some());
 
-    let record = Diagnostic::from_error(
-        &error,
-        DiagnosticSeverity::Error,
-        "runtime",
-        "spawn",
-    )
-    .as_record();
+    let record =
+        Diagnostic::from_error(&error, DiagnosticSeverity::Error, "runtime", "spawn").as_record();
 
     assert!(!record.contains("source-secret"));
     assert!(record.contains("Unable to start the requested process."));
