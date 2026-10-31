@@ -57,7 +57,7 @@ fn metadata() {
         })
         .unwrap_or_else(|| "unavailable".to_owned());
     println!("# cpu={cpu}");
-    println!("name,record,sample,iterations,ns_per_op,p95_ns_per_op,throughput_units_per_second");
+    println!("name,record,sample,iterations,sample_mean_ns_per_op,p95_of_sample_means_ns_per_op,throughput_units_per_second");
 }
 
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
