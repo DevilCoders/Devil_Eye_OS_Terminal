@@ -380,6 +380,8 @@ fn render_feature_benchmarks(size: TerminalSize, label: &str) {
 }
 
 fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
+    // Keep the cursor workload single-width so each one-cell damage mark
+    // exactly covers the cursor's pixel span, including at wraparound.
     let mut screen = make_ascii_screen(size);
     let mut damage = DamageTracker::new(size, 128).expect("cursor damage tracker");
     let mut renderer = make_renderer(size);
