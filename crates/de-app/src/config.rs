@@ -444,6 +444,12 @@ impl AppConfig {
             }
         }
         if let Some(path) = self.initial_program.working_directory() {
+            if path.as_os_str().is_empty() {
+                return Err(ConfigError::InvalidValue {
+                    field: "startup.working_directory",
+                    reason: "must not be an empty path",
+                });
+            }
             if path.as_os_str().as_encoded_bytes().len() > MAX_WORKING_DIRECTORY_BYTES {
                 return Err(ConfigError::InvalidValue {
                     field: "startup.working_directory",
