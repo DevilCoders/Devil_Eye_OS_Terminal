@@ -35,6 +35,7 @@ endfunction()
 # Rust/C ABI bindings are introduced by their dedicated tasks.
 add_library(de_shell STATIC
     c/build_info.c
+    c/abi.c
     c/shell.c
     c/internal/input_buffer.c
     c/internal/lexer.c
@@ -206,5 +207,22 @@ if(BUILD_TESTING)
     add_test(
         NAME de_shell_execution
         COMMAND de_shell_execution_test
+    )
+
+    add_executable(de_shell_abi_contract_test
+        c/tests/test_abi_contract.c
+    )
+
+    target_link_libraries(de_shell_abi_contract_test PRIVATE de_shell)
+    de_enable_strict_warnings(de_shell_abi_contract_test)
+
+    if(DE_ENABLE_COVERAGE)
+        target_compile_options(de_shell_abi_contract_test PRIVATE --coverage -O0 -g)
+        target_link_options(de_shell_abi_contract_test PRIVATE --coverage)
+    endif()
+
+    add_test(
+        NAME de_shell_abi_contract
+        COMMAND de_shell_abi_contract_test
     )
 endif()
