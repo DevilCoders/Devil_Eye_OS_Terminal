@@ -58,3 +58,4 @@ Architecture documents define contracts and design intent; they are not evidence
 ## Security
 
 - [Security Threat Model](../security/THREAT_MODEL.md) — assets, trust boundaries, threat register, security requirements, and adversarial test strategy.
+- [Linux Process Hardening](../security/PROCESS_HARDENING.md) — executable resolution, explicit environment inheritance, working-directory validation, descriptor ownership, argv[0] preservation, and redacted diagnostics.
