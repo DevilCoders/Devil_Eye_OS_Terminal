@@ -46,4 +46,4 @@ This directory contains the system architecture baseline, component contracts, a
 
 Architecture documents define contracts and design intent; they are not evidence that a component is implemented. Changes must record the decision, alternatives, compatibility impact, and test implications. See the [engineering roadmap](../engineering/ROADMAP.md) and [workflow](../engineering/WORKFLOW.md).
 
-- [Linux Process Hardening](process-hardening.md) — executable resolution, explicit environment inheritance, working-directory validation, descriptor ownership, and redacted diagnostics.
+- [Linux Process Hardening](../security/PROCESS_HARDENING.md) — executable resolution, explicit environment inheritance, working-directory validation, descriptor ownership, and redacted diagnostics.
