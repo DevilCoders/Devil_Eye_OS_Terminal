@@ -828,7 +828,7 @@ mod tests {
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
-            .with_arg("stty raw -echo; printf READY; exec /bin/cat");
+            .with_arg("stty raw -echo; printf READY; sleep 0.3; exec /bin/cat");
         let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
             .expect("PTY request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn raw cat");
