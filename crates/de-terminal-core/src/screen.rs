@@ -543,7 +543,8 @@ impl TerminalScreen {
         width: GraphemeWidth,
         attributes: CellAttributes,
     ) -> Result<(), ScreenGridError> {
-        self.grid.set_grapheme(row, column, value, width, attributes)
+        self.grid
+            .set_grapheme(row, column, value, width, attributes)
     }
 
     /// Clears one cell while preserving wide-grapheme pair invariants.
@@ -862,7 +863,9 @@ mod tests {
             .expect("below cursor")
             .is_empty());
 
-        screen.erase_display(EraseMode::All).expect("erase full display");
+        screen
+            .erase_display(EraseMode::All)
+            .expect("erase full display");
         assert!(screen.grid().cells().iter().all(|cell| cell.is_empty()));
     }
 
