@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn child_exec_does_not_inherit_internal_pty_descriptors() {
         let _guard = process_test_lock();
-        let script = r#"for fd in /proc/self/fd/*; do case "$fd" in /proc/self/fd/0|/proc/self/fd/1|/proc/self/fd/2) ;; *) exit 91;; esac; done"#;
+        let script = r#"for fd in 3 4 5 6 7 8 9 10; do if [ -e /proc/self/fd/$fd ]; then exit 91; fi; done"#;
         let program = ProgramSpec::new("/bin/sh")
             .expect("shell executable")
             .with_arg("-c")
@@ -746,6 +746,12 @@ mod tests {
         let error = LinuxPtyChild::spawn(&program, test_size(), true)
             .expect_err("invalid executable must fail");
 
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<ProgramSpecError>()),
+            Some(&ProgramSpecError::ExecutableNotFound)
+        );
     }
 }
