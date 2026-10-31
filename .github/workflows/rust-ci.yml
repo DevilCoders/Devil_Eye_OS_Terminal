@@ -38,7 +38,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.99.1
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
 
       - name: Report toolchain versions
         run: |
@@ -53,3 +53,18 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Install pinned coverage tool
+        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+
+      - name: Generate Rust coverage report
+        run: |
+          mkdir -p target/coverage
+          cargo llvm-cov --workspace --lcov --output-path target/coverage/rust.lcov
+
+      - name: Upload Rust coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: target/coverage/rust.lcov
+          if-no-files-found: error
