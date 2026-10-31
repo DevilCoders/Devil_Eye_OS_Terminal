@@ -7,7 +7,7 @@ acyclic and points inward toward platform-independent contracts.
 
 | Crate | Type | Responsibility | Explicit non-goals at this stage |
 | --- | --- | --- | --- |
-| de-app | library | Top-level application configuration and subsystem composition | No GUI, event loop, renderer, or terminal session implementation yet |
+| de-app | library | Top-level application configuration, service registration, deterministic startup, rollback, and shutdown coordination | No GUI, event loop, renderer, or terminal session implementation yet |
 | de-terminal-core | library | Platform-independent terminal model primitives and invariants | No PTY, process spawning, VT parser, or renderer |
 | de-runtime | library | Owned process launch specifications and runtime-facing contracts | No process execution, PTY allocation, or signal management yet |
 | de-ffi | library | Versioned C-compatible ABI data types | No C implementation or exported unsafe functions yet |
