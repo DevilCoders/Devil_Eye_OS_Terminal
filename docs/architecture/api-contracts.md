@@ -136,6 +136,21 @@ Signal/termination operations target only the child owned by the supplied sessio
 
 The runtime owns PTY descriptors, child-process handles, and wait/reap responsibilities. Handles are opaque to callers. Closing a runtime session is idempotent and releases every owned OS resource exactly once.
 
+## 5A. PTY I/O pump contract
+
+The session manager may use the bounded `PtyIoPump` worker to drive one PTY-backed RuntimeProcess. The pump owns that process handle on a dedicated worker thread and communicates through bounded command/event queues.
+
+- Input chunks are limited to 4096 bytes. A Backpressure submission result means no bytes were accepted; callers retain and retry the original chunk.
+- The command queue is bounded to 16 entries; the output event queue is bounded to 8 entries.
+- Each output event carries at most 4096 bytes. The worker retains at most one additional pending event and stops reading while the consumer is behind.
+- Input chunks are written in order; partial writes retain the unwritten suffix. Commands are not reordered ahead of a partially written chunk.
+- Resize, signal, close-stdin, and terminate operations are executed by the worker that owns the process handle.
+- Eof is emitted once. Exited is emitted only after EOF has been delivered and the final process status is known.
+- Cancellation uses an atomic flag and worker unpark, not the bounded command queue. Shutdown requests graceful termination, waits up to 250 ms, escalates to force, reaps the child, and joins the worker.
+- A disconnected output consumer causes process cleanup. Runtime errors are surfaced as typed events; invalid read/write progress is fatal to that pump.
+
+The pump is a per-session adapter over RuntimeProcess. It does not own terminal parser state, screen cells, or GUI resources. Its detailed bounds and test contract are in [PTY I/O Pump](pty-io-pump.md).
+
 ## 6. Terminal engine contract
 
 ### Input
