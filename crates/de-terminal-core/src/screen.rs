@@ -136,8 +136,9 @@ impl CellAttributes {
 }
 
 /// Logical content stored in a terminal cell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CellContent {
+    #[default]
     Empty,
     Grapheme {
         value: Grapheme,
@@ -152,12 +153,6 @@ pub enum CellContent {
 pub struct Cell {
     content: CellContent,
     attributes: CellAttributes,
-}
-
-impl Default for CellContent {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl Cell {
