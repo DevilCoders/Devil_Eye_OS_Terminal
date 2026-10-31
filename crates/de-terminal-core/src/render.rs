@@ -22,17 +22,35 @@ pub struct CellRect {
 }
 
 impl CellRect {
-    pub const fn new(top: u16, left: u16, rows: u16, columns: u16) -> Result<Self, RenderContractError> {
+    pub const fn new(
+        top: u16,
+        left: u16,
+        rows: u16,
+        columns: u16,
+    ) -> Result<Self, RenderContractError> {
         if rows == 0 || columns == 0 {
             return Err(RenderContractError::ZeroRectangleExtent);
         }
-        Ok(Self { top, left, rows, columns })
+        Ok(Self {
+            top,
+            left,
+            rows,
+            columns,
+        })
     }
 
-    pub const fn top(self) -> u16 { self.top }
-    pub const fn left(self) -> u16 { self.left }
-    pub const fn rows(self) -> u16 { self.rows }
-    pub const fn columns(self) -> u16 { self.columns }
+    pub const fn top(self) -> u16 {
+        self.top
+    }
+    pub const fn left(self) -> u16 {
+        self.left
+    }
+    pub const fn rows(self) -> u16 {
+        self.rows
+    }
+    pub const fn columns(self) -> u16 {
+        self.columns
+    }
 
     const fn bottom_exclusive(self) -> u32 {
         self.top as u32 + self.rows as u32
@@ -86,7 +104,9 @@ impl fmt::Display for RenderContractError {
             Self::ZeroRectangleExtent => "rectangle rows and columns must be non-zero",
             Self::RectangleOutOfBounds => "rectangle exceeds terminal cell bounds",
             Self::FrameSizeMismatch => "damage tracker dimensions do not match terminal frame",
-            Self::InvalidGlyphMetrics => "glyph metrics must be finite, positive, and internally consistent",
+            Self::InvalidGlyphMetrics => {
+                "glyph metrics must be finite, positive, and internally consistent"
+            }
             Self::InvalidScaleFactor => "scale factor must be finite and greater than zero",
         };
         formatter.write_str(message)
@@ -121,9 +141,15 @@ impl DamageTracker {
         })
     }
 
-    pub const fn size(&self) -> TerminalSize { self.size }
-    pub const fn is_full(&self) -> bool { self.full }
-    pub fn rectangles(&self) -> &[CellRect] { &self.rectangles }
+    pub const fn size(&self) -> TerminalSize {
+        self.size
+    }
+    pub const fn is_full(&self) -> bool {
+        self.full
+    }
+    pub fn rectangles(&self) -> &[CellRect] {
+        &self.rectangles
+    }
 
     pub fn mark_cell(&mut self, row: u16, column: u16) -> Result<(), RenderContractError> {
         self.mark_rect(CellRect::new(row, column, 1, 1)?)
@@ -195,18 +221,33 @@ impl GlyphMetrics {
         line_height: f32,
     ) -> Result<Self, RenderContractError> {
         let values = [advance_width, ascent, descent, line_height];
-        if values.iter().any(|value| !value.is_finite() || *value <= 0.0)
+        if values
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
             || line_height < ascent + descent
         {
             return Err(RenderContractError::InvalidGlyphMetrics);
         }
-        Ok(Self { advance_width, ascent, descent, line_height })
+        Ok(Self {
+            advance_width,
+            ascent,
+            descent,
+            line_height,
+        })
     }
 
-    pub const fn advance_width(self) -> f32 { self.advance_width }
-    pub const fn ascent(self) -> f32 { self.ascent }
-    pub const fn descent(self) -> f32 { self.descent }
-    pub const fn line_height(self) -> f32 { self.line_height }
+    pub const fn advance_width(self) -> f32 {
+        self.advance_width
+    }
+    pub const fn ascent(self) -> f32 {
+        self.ascent
+    }
+    pub const fn descent(self) -> f32 {
+        self.descent
+    }
+    pub const fn line_height(self) -> f32 {
+        self.line_height
+    }
 }
 
 /// Positive logical-to-physical pixel scale.
@@ -221,7 +262,9 @@ impl ScaleFactor {
         Ok(Self(value))
     }
 
-    pub const fn get(self) -> f32 { self.0 }
+    pub const fn get(self) -> f32 {
+        self.0
+    }
 }
 
 /// Immutable borrowed snapshot passed to a renderer.
@@ -256,11 +299,21 @@ impl<'a> Frame<'a> {
         })
     }
 
-    pub const fn size(self) -> TerminalSize { self.size }
-    pub const fn cursor(self) -> CursorPosition { self.cursor }
-    pub const fn cells(self) -> &'a [Cell] { self.cells }
-    pub const fn damage(self) -> &'a DamageTracker { self.damage }
-    pub const fn generation(self) -> u64 { self.generation }
+    pub const fn size(self) -> TerminalSize {
+        self.size
+    }
+    pub const fn cursor(self) -> CursorPosition {
+        self.cursor
+    }
+    pub const fn cells(self) -> &'a [Cell] {
+        self.cells
+    }
+    pub const fn damage(self) -> &'a DamageTracker {
+        self.damage
+    }
+    pub const fn generation(self) -> u64 {
+        self.generation
+    }
 
     pub fn row_cells(self, row: u16) -> Option<&'a [Cell]> {
         if row >= self.size.rows() {
@@ -311,9 +364,15 @@ mod tests {
     fn damage_rectangles_coalesce_when_adjacent_or_overlapping() {
         let mut damage = DamageTracker::new(size(), 8).expect("tracker");
         damage.clear();
-        damage.mark_rect(CellRect::new(1, 1, 1, 4).unwrap()).unwrap();
-        damage.mark_rect(CellRect::new(1, 5, 1, 3).unwrap()).unwrap();
-        damage.mark_rect(CellRect::new(1, 3, 2, 2).unwrap()).unwrap();
+        damage
+            .mark_rect(CellRect::new(1, 1, 1, 4).unwrap())
+            .unwrap();
+        damage
+            .mark_rect(CellRect::new(1, 5, 1, 3).unwrap())
+            .unwrap();
+        damage
+            .mark_rect(CellRect::new(1, 3, 2, 2).unwrap())
+            .unwrap();
 
         assert_eq!(damage.rectangles(), &[CellRect::new(1, 1, 2, 7).unwrap()]);
     }
@@ -364,7 +423,13 @@ mod tests {
     fn frame_exposes_immutable_row_major_screen_snapshot() {
         let mut screen = TerminalScreen::new(size(), 80 * 24).expect("screen");
         screen
-            .set_grapheme(0, 0, "A", GraphemeWidth::Single, CellAttributes::new(Color::Default, Color::Default, Default::default()))
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::new(Color::Default, Color::Default, Default::default()),
+            )
             .expect("write cell");
         screen.set_cursor(2, 3);
         let damage = DamageTracker::new(size(), 16).expect("damage");
