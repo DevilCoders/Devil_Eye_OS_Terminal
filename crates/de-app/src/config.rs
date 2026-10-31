@@ -398,8 +398,7 @@ impl AppConfig {
             });
         }
 
-        self.initial_program.validate()?;
-        if self.initial_program.program().as_bytes().len() > MAX_EXECUTABLE_BYTES {
+        if self.initial_program.program().as_encoded_bytes().len() > MAX_EXECUTABLE_BYTES {
             return Err(ConfigError::InvalidValue {
                 field: "startup.program",
                 reason: "must not exceed 4096 bytes",
@@ -452,6 +451,7 @@ impl AppConfig {
                 });
             }
         }
+        self.initial_program.validate()?;
         Ok(())
     }
 
@@ -705,9 +705,8 @@ mod tests {
         DEFAULT_MAX_PENDING_INPUT_BYTES, DEFAULT_MAX_PASTE_BYTES, DEFAULT_MAX_SESSIONS,
         DEFAULT_SCROLLBACK_LINES,
     };
-    use de_runtime::ProgramSpec;
+    use de_runtime::{ProgramSpec, ProgramSpecError};
     use de_terminal_core::TerminalSize;
-    use std::collections::BTreeMap;
     use std::ffi::OsStr;
 
     fn table(entries: impl IntoIterator<Item = (&'static str, ConfigValue)>) -> ConfigValue {
@@ -926,14 +925,18 @@ mod tests {
 
     #[test]
     fn validates_directly_constructed_config_before_encoding() {
+        let invalid_program = ProgramSpec::new("/bin/sh")
+            .expect("valid executable")
+            .with_arg("bad\0argument");
         let invalid = AppConfig::new(
             TerminalSize::new(80, 24).expect("valid dimensions"),
-            ProgramSpec::new("").unwrap_or_else(|_| ProgramSpec::new("/bin/sh").unwrap()),
+            invalid_program,
         );
-        assert!(invalid.validate().is_ok());
-
-        let mut map = BTreeMap::new();
-        map.insert("schema_version".to_owned(), ConfigValue::Integer(1));
-        assert!(AppConfig::from_value(ConfigValue::Table(map)).is_ok());
+        assert_eq!(
+            invalid.validate(),
+            Err(ConfigError::InvalidProgram(
+                ProgramSpecError::ArgumentContainsNul
+            ))
+        );
     }
 }
