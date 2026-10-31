@@ -1,6 +1,6 @@
 # Cross-Component API Contracts
 
-**Status:** Normative design contract for subsystem implementation. The system-level ownership model is defined in [System Architecture](system-architecture.md). Exact C ABI declarations and Rust bindings are implemented and versioned in DE-008 (#49–#50).
+**Status:** Normative design contract for subsystem implementation. The system-level ownership model is defined in [System Architecture](system-architecture.md). Exact C ABI declarations and Rust bindings will be implemented and versioned in DE-008 (#49–#50).
 
 This document defines behavioral contracts. A component must not silently change these semantics; incompatible changes require a major interface version and an architecture review.
 
