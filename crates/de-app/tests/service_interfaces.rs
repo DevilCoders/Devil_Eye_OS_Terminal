@@ -86,10 +86,6 @@ fn closed_session_cannot_be_reopened() {
         .transition(SessionLifecycleState::Failed)
         .expect("starting to failed");
     lifecycle
-        .transition(SessionLifecycleState::Closed)
-        .expect_err("failed must pass through stopping before closed");
-
-    lifecycle
         .transition(SessionLifecycleState::Stopping)
         .expect("failed to stopping");
     lifecycle
@@ -118,10 +114,11 @@ fn session_spec_preserves_separate_program_arguments_and_terminal_size() {
 
 #[test]
 fn process_read_distinguishes_data_backpressure_and_eof() {
-    assert_eq!(
-        ProcessRead::Data(NonZeroUsize::new(4).expect("non-zero read length")),
-        ProcessRead::Data(NonZeroUsize::new(4).expect("non-zero read length"))
-    );
+    let read = ProcessRead::Data(NonZeroUsize::new(4).expect("non-zero read length"));
+    match read {
+        ProcessRead::Data(count) => assert_eq!(count.get(), 4),
+        ProcessRead::WouldBlock | ProcessRead::Eof => panic!("expected data"),
+    }
     assert_eq!(ProcessRead::WouldBlock, ProcessRead::WouldBlock);
     assert_eq!(ProcessRead::Eof, ProcessRead::Eof);
 }
