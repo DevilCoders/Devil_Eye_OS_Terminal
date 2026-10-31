@@ -123,6 +123,35 @@ fn session_spec(program: ProgramSpec) -> SessionSpec {
     SessionSpec::new(SessionKind::ExternalProgram, program, terminal_size())
 }
 
+fn wait_for_marker(
+    session: &mut ManagedSession<LinuxRuntimeProcess>,
+    marker: &[u8],
+    buffer: &mut [u8],
+) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut received = Vec::new();
+    while !received.windows(marker.len()).any(|window| window == marker) {
+        match session.read_output(buffer).expect("read PTY startup marker") {
+            ProcessRead::Data(count) => received.extend_from_slice(&buffer[..count.get()]),
+            ProcessRead::WouldBlock => {
+                assert!(Instant::now() < deadline, "PTY child did not become ready");
+                thread::yield_now();
+            }
+            ProcessRead::Eof => panic!("PTY closed before readiness marker"),
+        }
+    }
+    let marker_end = received
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("readiness marker was observed")
+        + marker.len();
+    assert_eq!(
+        marker_end,
+        received.len(),
+        "unexpected PTY bytes followed the readiness marker"
+    );
+}
+
 fn round_trip(
     session: &mut ManagedSession<LinuxRuntimeProcess>,
     payload: &[u8],
@@ -147,13 +176,17 @@ fn round_trip(
         match session.read_output(buffer).expect("read PTY echo") {
             ProcessRead::Data(count) => {
                 let count = count.get();
-                let expected = &payload[received..received + count];
+                let end = received
+                    .checked_add(count)
+                    .filter(|end| *end <= payload.len())
+                    .expect("PTY produced more bytes than the submitted payload");
+                let expected = &payload[received..end];
                 assert_eq!(
                     expected,
                     &buffer[..count],
                     "PTY loopback changed payload bytes"
                 );
-                received += count;
+                received = end;
             }
             ProcessRead::WouldBlock => {
                 assert!(Instant::now() < deadline, "PTY loopback timed out");
@@ -190,11 +223,18 @@ fn main() {
     let loopback_program = ProgramSpec::new("/bin/sh")
         .expect("shell executable")
         .with_arg("-c")
-        .with_arg("stty raw -echo; exec /bin/cat");
+         .with_arg("stty raw -echo; printf DE_READY_MARKER; exec /bin/cat");
     let loopback_id = manager
         .create_session(session_spec(loopback_program))
         .expect("spawn PTY loopback process");
     let mut buffer = vec![0u8; 16 * 1024];
+    wait_for_marker(
+        manager
+            .session_mut(loopback_id)
+            .expect("loopback session exists"),
+        b"DE_READY_MARKER",
+        &mut buffer,
+    );
 
     benchmark("pty_input_round_trip_1_byte", 1, || {
         let session = manager
