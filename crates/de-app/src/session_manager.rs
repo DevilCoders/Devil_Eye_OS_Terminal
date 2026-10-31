@@ -36,6 +36,7 @@ pub struct SessionManagerLimits {
 }
 
 impl SessionManagerLimits {
+    /// Creates validated session resource limits.
     pub const fn new(
         max_sessions: NonZeroUsize,
         max_pending_input_bytes: NonZeroUsize,
@@ -52,22 +53,27 @@ impl SessionManagerLimits {
         }
     }
 
+    /// Maximum number of simultaneously owned sessions.
     pub const fn max_sessions(self) -> usize {
         self.max_sessions.get()
     }
 
+    /// Maximum queued input bytes per session.
     pub const fn max_pending_input_bytes(self) -> usize {
         self.max_pending_input_bytes.get()
     }
 
+    /// Maximum input bytes flushed by one event-loop poll.
     pub const fn max_io_bytes_per_poll(self) -> usize {
         self.max_io_bytes_per_poll.get()
     }
 
+    /// Grace period before forced child termination.
     pub const fn graceful_shutdown_timeout(self) -> Duration {
         self.graceful_shutdown_timeout
     }
 
+    /// Bounded wait after requesting forced termination.
     pub const fn forced_shutdown_timeout(self) -> Duration {
         self.forced_shutdown_timeout
     }
@@ -405,16 +411,19 @@ impl<R: RuntimeService> SessionManager<R> {
         }
     }
 
+    /// Returns the immutable resource limits used by this manager.
     pub const fn limits(&self) -> SessionManagerLimits {
         self.limits
     }
 
+    /// Borrows a managed session by identity.
     pub fn session(&self, id: SessionId) -> Result<&ManagedSession<R::Process>, ServiceError> {
         self.sessions
             .get(&id)
             .ok_or_else(|| ServiceError::new("terminal session does not exist"))
     }
 
+    /// Mutably borrows a managed session by identity.
     pub fn session_mut(
         &mut self,
         id: SessionId,
@@ -524,7 +533,7 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
     fn session_state(&self, id: SessionId) -> Result<SessionLifecycleState, ServiceError> {
         self.sessions
             .get(&id)
-            .map(TerminalSession::state)
+            .map(|session| session.state())
             .ok_or_else(|| ServiceError::new("terminal session does not exist"))
     }
 
