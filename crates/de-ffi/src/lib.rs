@@ -262,7 +262,7 @@ impl Shell {
         let mut raw_version = raw::RawAbiVersion::default();
         // SAFETY: raw_version is valid writable storage with the C ABI layout.
         let query_status =
-            DeStatus::from_raw(unsafe { raw::de_shell_get_abi_version(&mut raw_version) });
+            DeStatus::from_raw(raw::query_abi_version(&mut raw_version));
         if !query_status.is_ok() {
             return Err(ShellError::AbiQueryFailed(query_status));
         }
@@ -282,9 +282,7 @@ impl Shell {
             patch: ABI_VERSION.patch,
         };
         // SAFETY: requested points to a valid ABI-compatible version tuple.
-        let check_status = DeStatus::from_raw(unsafe {
-            raw::de_shell_check_abi_version(&requested)
-        });
+        let check_status = DeStatus::from_raw(raw::check_abi_version(&requested));
         if !check_status.is_ok() {
             return Err(ShellError::AbiMismatch(library_version));
         }
@@ -292,7 +290,7 @@ impl Shell {
         let mut handle = null_mut();
         // SAFETY: handle is valid writable pointer storage.
         let create_status =
-            DeStatus::from_raw(unsafe { raw::de_shell_create(&mut handle) });
+            DeStatus::from_raw(raw::create_shell(&mut handle));
         if !create_status.is_ok() {
             return Err(ShellError::Status(create_status));
         }
@@ -366,16 +364,13 @@ impl Shell {
 
         // SAFETY: all pointers in raw_context and source remain valid for this
         // synchronous call; the shell handle is exclusively borrowed.
-        let status = DeStatus::from_raw(unsafe {
-            raw::de_shell_execute_source(
-                raw_shell.as_ptr(),
-                source.as_ptr(),
-                source.len(),
-                &raw_context,
-                &mut raw_result,
-                &mut raw_diagnostic,
-            )
-        });
+        let status = DeStatus::from_raw(raw::execute_source(
+            raw_shell.as_ptr(),
+            source,
+            &raw_context,
+            &mut raw_result,
+            &mut raw_diagnostic,
+        ));
 
         let diagnostic = ExecutionDiagnostic {
             stage: ExecutionStage::from_raw(raw_diagnostic.stage),
@@ -403,7 +398,7 @@ impl Shell {
         let mut handle = raw_shell.as_ptr();
         // SAFETY: handle is a valid owned C handle passed by address.
         let status =
-            DeStatus::from_raw(unsafe { raw::de_shell_destroy(&mut handle) });
+            DeStatus::from_raw(raw::destroy_shell(&mut handle));
         if !status.is_ok() {
             return Err(ShellError::Status(status));
         }
@@ -423,7 +418,6 @@ impl Drop for Shell {
 }
 
 #[cfg(test)]
-#[allow(unsafe_code)]
 mod tests {
     use super::{
         CommandExecutor, DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
@@ -432,7 +426,6 @@ mod tests {
     };
     use std::ffi::CString;
     use std::mem::{align_of, offset_of, size_of};
-    use std::ptr::null_mut;
 
     #[test]
     fn exposes_expected_abi_version() {
@@ -515,8 +508,7 @@ mod tests {
 
     #[test]
     fn c_api_rejects_null_create_output() {
-        // SAFETY: this intentionally exercises the C API's NULL argument path.
-        let status = unsafe { super::raw::de_shell_create(null_mut()) };
+        let status = super::raw::create_shell_with_null_output();
         assert_eq!(status, DeStatus::INVALID_ARGUMENT.as_raw());
     }
 
