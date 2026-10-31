@@ -379,7 +379,6 @@ fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
     });
 }
 
-
 fn scrollback_benchmarks(size: TerminalSize, label: &str) {
     const HISTORY_ROWS: usize = 256;
     let columns = usize::from(size.columns());
@@ -411,13 +410,18 @@ fn scrollback_benchmarks(size: TerminalSize, label: &str) {
     assert_eq!(screen.scrollback_row_count(), HISTORY_ROWS);
     assert_eq!(screen.scrollback_cell_count(), history_cells);
     println!("# memory_scrollback_{label}_capacity_cells={history_cells}");
-    println!("# memory_scrollback_{label}_capacity_bytes={}", history_cells * size_of::<de_terminal_core::screen::Cell>());
+    println!(
+        "# memory_scrollback_{label}_capacity_bytes={}",
+        history_cells * size_of::<de_terminal_core::screen::Cell>()
+    );
 
     benchmark(
         &format!("scrollback_append_full_ring_{label}"),
         u64::from(size.columns()),
         || {
-            screen.scroll_up(1).expect("append and evict scrollback row");
+            screen
+                .scroll_up(1)
+                .expect("append and evict scrollback row");
             black_box(screen.scrollback_row_count());
         },
     );
