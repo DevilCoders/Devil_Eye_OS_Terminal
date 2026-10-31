@@ -1036,7 +1036,9 @@ mod tests {
 
         assert!(matches!(
             LinuxRuntime.spawn(request),
-            Err(RuntimeError::SpawnFailed)
+            Err(RuntimeError::InvalidProgram(
+                ProgramSpecError::ExecutableNotFound
+            ))
         ));
     }
 
