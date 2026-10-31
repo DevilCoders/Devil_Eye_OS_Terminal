@@ -130,20 +130,14 @@ impl<'a> ExternalCommand<'a> {
 /// A host executor handles external commands. The callback is synchronous;
 /// every C string in the request is borrowed only for the duration of execute.
 pub trait CommandExecutor {
-    fn execute(
-        &mut self,
-        command: ExternalCommand<'_>,
-    ) -> Result<i32, ExternalExecutionError>;
+    fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError>;
 }
 
 impl<F> CommandExecutor for F
 where
     F: for<'a> FnMut(ExternalCommand<'a>) -> Result<i32, ExternalExecutionError>,
 {
-    fn execute(
-        &mut self,
-        command: ExternalCommand<'_>,
-    ) -> Result<i32, ExternalExecutionError> {
+    fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError> {
         self(command)
     }
 }
@@ -217,7 +211,11 @@ impl fmt::Display for ShellError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AbiQueryFailed(status) => {
-                write!(formatter, "DE-Shell ABI version query failed: {}", status.as_raw())
+                write!(
+                    formatter,
+                    "DE-Shell ABI version query failed: {}",
+                    status.as_raw()
+                )
             }
             Self::AbiMismatch(version) => write!(
                 formatter,
@@ -236,7 +234,9 @@ impl fmt::Display for ShellError {
                 diagnostic.source_offset
             ),
             Self::Closed => formatter.write_str("DE-Shell handle is already closed"),
-            Self::SourceTooLarge => formatter.write_str("DE-Shell source exceeds the 65536-byte limit"),
+            Self::SourceTooLarge => {
+                formatter.write_str("DE-Shell source exceeds the 65536-byte limit")
+            }
             Self::TooManyEnvironmentEntries => {
                 formatter.write_str("execution context exceeds the environment-entry limit")
             }
@@ -261,8 +261,7 @@ impl Shell {
     pub fn new() -> Result<Self, ShellError> {
         let mut raw_version = raw::RawAbiVersion::default();
         // SAFETY: raw_version is valid writable storage with the C ABI layout.
-        let query_status =
-            DeStatus::from_raw(raw::query_abi_version(&mut raw_version));
+        let query_status = DeStatus::from_raw(raw::query_abi_version(&mut raw_version));
         if !query_status.is_ok() {
             return Err(ShellError::AbiQueryFailed(query_status));
         }
@@ -289,8 +288,7 @@ impl Shell {
 
         let mut handle = null_mut();
         // SAFETY: handle is valid writable pointer storage.
-        let create_status =
-            DeStatus::from_raw(raw::create_shell(&mut handle));
+        let create_status = DeStatus::from_raw(raw::create_shell(&mut handle));
         if !create_status.is_ok() {
             return Err(ShellError::Status(create_status));
         }
@@ -338,11 +336,9 @@ impl Shell {
         let external_executor = callback_context
             .as_ref()
             .map(|_| raw::external_executor_callback as raw::RawExternalExecutor);
-        let user_data = callback_context
-            .as_mut()
-            .map_or(null_mut(), |callback| {
-                (callback as *mut CallbackContext<'_>).cast::<c_void>()
-            });
+        let user_data = callback_context.as_mut().map_or(null_mut(), |callback| {
+            (callback as *mut CallbackContext<'_>).cast::<c_void>()
+        });
 
         let raw_context = raw::RawExecutionContext {
             environment: if raw_environment.is_empty() {
@@ -351,9 +347,7 @@ impl Shell {
                 raw_environment.as_ptr()
             },
             environment_count: raw_environment.len(),
-            working_directory: context
-                .working_directory
-                .map_or(null(), CStr::as_ptr),
+            working_directory: context.working_directory.map_or(null(), CStr::as_ptr),
             external_executor,
             user_data,
         };
@@ -397,8 +391,7 @@ impl Shell {
 
         let mut handle = raw_shell.as_ptr();
         // SAFETY: handle is a valid owned C handle passed by address.
-        let status =
-            DeStatus::from_raw(raw::destroy_shell(&mut handle));
+        let status = DeStatus::from_raw(raw::destroy_shell(&mut handle));
         if !status.is_ok() {
             return Err(ShellError::Status(status));
         }
@@ -420,9 +413,8 @@ impl Drop for Shell {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
-        ExecutionStage, ExternalCommand, ExternalExecutionError, Shell, ShellError, ABI_VERSION,
-        MAX_SOURCE_BYTES,
+        DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext, ExecutionStage,
+        ExternalCommand, ExternalExecutionError, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
     };
     use std::ffi::CString;
     use std::mem::{align_of, offset_of, size_of};
@@ -509,8 +501,8 @@ mod tests {
     #[test]
     fn execution_abi_structs_have_expected_linux_x86_64_layout() {
         use super::raw::{
-            RawEnvironmentEntry, RawExecutionContext, RawExecutionDiagnostic,
-            RawExecutionResult, RawExternalCommand,
+            RawEnvironmentEntry, RawExecutionContext, RawExecutionDiagnostic, RawExecutionResult,
+            RawExternalCommand,
         };
 
         assert_eq!(size_of::<RawEnvironmentEntry>(), 16);
@@ -602,7 +594,10 @@ mod tests {
             let mut shell = Shell::new().expect("create C-owned shell");
             shell.close().expect("destroy C-owned shell");
             shell.close().expect("idempotent close");
-            assert!(matches!(shell.execute(b"exit", &ExecutionContext::new(), None), Err(ShellError::Closed)));
+            assert!(matches!(
+                shell.execute(b"exit", &ExecutionContext::new(), None),
+                Err(ShellError::Closed)
+            ));
         }
     }
 
@@ -678,11 +673,7 @@ mod tests {
             Ok(7)
         };
         let result = shell
-            .execute(
-                b"unknown_tool alpha beta",
-                &context,
-                Some(&mut executor),
-            )
+.execute(b"unknown_tool alpha beta", &context, Some(&mut executor))
             .expect("external callback succeeds");
         assert!(observed);
         assert_eq!(result.exit_code, 7);
@@ -692,9 +683,7 @@ mod tests {
     #[test]
     fn translates_external_executor_failure() {
         let mut shell = Shell::new().expect("create shell");
-        let mut executor = |_command: ExternalCommand<'_>| {
-            Err(ExternalExecutionError::Failed)
-        };
+        let mut executor = |_command: ExternalCommand<'_>| Err(ExternalExecutionError::Failed);
         let error = shell
             .execute(
                 b"unknown_tool",
