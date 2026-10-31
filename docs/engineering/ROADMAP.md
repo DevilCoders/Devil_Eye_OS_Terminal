@@ -89,12 +89,12 @@ Every task issue should include a stable ID, parent Epic, priority, status, comp
 
 ## Current setup note
 
-The repository's 24 Epics and 62 Tasks are tracked through GitHub Issues, Labels, Milestones, and Actions. The M0–M10 milestones and engineering taxonomy are provisioned. GitHub Projects V2 is optional and is not part of the required engineering workflow.
+The repository's 24 Epics and 63 Tasks are tracked through GitHub Issues, Labels, Milestones, and Actions. The M0–M10 milestones and engineering taxonomy are provisioned. GitHub Projects V2 is optional and is not part of the required engineering workflow.
 
 
 ## Expanded engineering management system
 
-- [Task Catalog](TASK_CATALOG.md) — complete index of 62 task Issues (#25–#86).
+- [Task Catalog](TASK_CATALOG.md) — complete index of 63 task Issues (#25–#86 plus #140).
 - [Workflow](WORKFLOW.md) — hierarchy, statuses, priorities, dependencies, Definition of Done, and PR rules.
 - [Milestones](MILESTONES.md) — M0–M10 exit criteria.
 - [Optional Kanban reference](KANBAN.md) — retained for reference only; GitHub Projects V2 is not required.
@@ -103,8 +103,8 @@ The repository's 24 Epics and 62 Tasks are tracked through GitHub Issues, Labels
 ## Current backlog inventory
 
 - 24 Epic Issues: #1–#24.
-- 62 Task Issues: #25–#86.
-- 86 total engineering Issues: 85 open and #86 closed as not planned (GitHub Projects setup is optional).
+- 63 Task Issues: #25–#86 plus #140.
+- 87 total engineering Issues: 24 Epics and 63 implementation Tasks. Current state is maintained by GitHub Issues; do not use a static open/closed count here.
 - Issue templates: Epic, Task, Bug.
 - Pull request template with validation and evidence checklist.
 - GitHub Actions automation: `.github/workflows/engineering-taxonomy.yml` provisions taxonomy labels and M0–M10 milestones, then classifies open issues. It runs on new/reopened issues and can be run manually for a full backfill. `.github/workflows/dependency-status.yml` reconciles blocked/ready states when issues open, reopen, or close.
