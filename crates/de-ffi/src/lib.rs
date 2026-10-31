@@ -648,6 +648,10 @@ mod tests {
         let ShellError::Execution { status, .. } = error else {
             panic!("unexpected error: {error:?}");
         };
-        assert_eq!(status, DeStatus::INTERNAL_ERROR);
+        assert_eq!(status, DeStatus::EXTERNAL_EXECUTION_FAILED);
+        let ShellError::Execution { diagnostic, .. } = error else {
+            unreachable!();
+        };
+        assert_eq!(diagnostic.code, DeStatus::INTERNAL_ERROR.as_raw());
     }
 }
