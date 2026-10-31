@@ -308,7 +308,7 @@ mod tests {
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
-            .with_arg("test -t 0 && test -t 1 && test -t 2");
+            .with_arg("test -t 0 && test -t 1 && test -t 2 && test -t /dev/tty");
         let mut child =
             LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn interactive child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
