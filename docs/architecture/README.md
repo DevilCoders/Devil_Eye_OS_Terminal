@@ -35,6 +35,10 @@ This directory contains the system architecture baseline, component contracts, a
 - [Application Lifecycle](application-lifecycle.md) — service initialization, rollback, reverse-order shutdown, retry semantics, and integration-test coverage.
 - [Application Errors and Diagnostics](application-diagnostics.md) — stable error categories/codes, safe summaries, source-chain handling, secret redaction, bounded records, and log-injection protection.
 
+## Platform abstraction
+
+- [Platform Abstraction and Capability Matrix](platform-abstraction.md) — Linux x86_64 implementation profile, future Windows/ConPTY and macOS mappings, capability semantics, adapter layout, and native verification requirements.
+
 ## Architecture decision records
 
 - [Architecture Decision Records](decisions/README.md) — ADR format and accepted decisions for Rust/C ownership, terminal/shell separation, PTY session ownership, renderer frame semantics, and Linux-first platform adapters.
