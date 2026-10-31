@@ -231,7 +231,7 @@ fn signal_number(signal: Signal) -> libc::c_int {
     }
 }
 
-fn map_exit_status(status: ExitStatus) -> ProcessExitStatus {
+pub(super) fn map_exit_status(status: ExitStatus) -> ProcessExitStatus {
     if let Some(code) = status.code() {
         return ProcessExitStatus::Exited(code);
     }
@@ -248,7 +248,7 @@ fn map_exit_status(status: ExitStatus) -> ProcessExitStatus {
     }
 }
 
-fn reap_detached_child(child: Child) {
+pub(super) fn reap_detached_child(child: Child) {
     static REAPER: OnceLock<Option<Sender<Child>>> = OnceLock::new();
     const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
