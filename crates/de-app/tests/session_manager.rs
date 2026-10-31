@@ -233,7 +233,9 @@ fn creates_independent_session_queues_input_and_closes_owned_process() {
 fn observed_child_exit_transitions_session_and_rejects_new_input() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(4, 1024, 1024));
-    let id = manager.create_session(spec(SessionKind::ExternalProgram)).expect("create session");
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
     process_state.lock().unwrap().exit = Some(ProcessExit::Exited { code: 7 });
 
@@ -311,7 +313,9 @@ fn manager_drop_forces_and_drops_any_remaining_child_handle() {
 fn session_input_queue_is_bounded_and_preserves_bytes_under_backpressure() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(1, 3, 2));
-    let id = manager.create_session(spec(SessionKind::ExternalProgram)).expect("create");
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create");
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
 
     let session = manager.session_mut(id).expect("session handle");
@@ -365,7 +369,9 @@ fn rejects_unwired_de_shell_backend_without_spawning_a_process() {
 fn session_identifiers_are_never_reused_after_close() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
-    let first = manager.create_session(spec(SessionKind::ExternalProgram)).expect("first");
+    let first = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("first");
     manager.close_session(first).expect("close first");
     let second = manager
         .create_session(spec(SessionKind::ExternalProgram))
