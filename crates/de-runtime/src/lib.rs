@@ -445,7 +445,8 @@ pub trait RuntimeProcess: Send {
     /// Changes the effective PTY size. Non-PTY processes return UnsupportedCapability.
     fn resize_pty(&mut self, size: TerminalSize) -> Result<(), RuntimeError>;
 
-    /// Sends a semantic signal to this process only.
+    /// Sends a semantic signal to the process group owned by this session handle.
+    /// It must never target processes belonging to another session.
     fn send_signal(&mut self, signal: Signal) -> Result<(), RuntimeError>;
 
     /// Checks whether the child exited without blocking.
