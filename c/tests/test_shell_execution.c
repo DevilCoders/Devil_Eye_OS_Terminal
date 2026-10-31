@@ -68,7 +68,9 @@ static de_shell_status_t fake_executor(
         state->destroy_status = de_shell_destroy(state->shell_handle);
     }
 
-    *out_exit_code = state->return_exit_code;
+    *out_exit_code = strcmp(command->executable, "fail") == 0
+        ? 7
+        : state->return_exit_code;
     return state->callback_status;
 }
 
@@ -163,7 +165,7 @@ static int test_and_or_and_sequence_control_flow(void)
         return 1;
     }
 
-    /* The callback returns 7 only for the command named "fail". */
+    /* The callback returns a non-zero status only for the command named "fail". */
     state.return_exit_code = 0;
     if (de_shell_execute_source(
             shell,
@@ -177,11 +179,7 @@ static int test_and_or_and_sequence_control_flow(void)
         return 1;
     }
 
-    /*
-     * The basic callback above returns zero for both names, so this assertion
-     * verifies short-circuiting of the final exit command only. The dedicated
-     * non-zero callback test below verifies OR selection.
-     */
+    /* A non-zero left branch must select the right side of the OR node. */
     if (state.calls != 3U
         || result.exit_requested != 1
         || result.exit_code != 0
