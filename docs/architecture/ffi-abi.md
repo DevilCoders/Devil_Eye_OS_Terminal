@@ -87,6 +87,6 @@ The Rust `DeAbiVersion::is_compatible_with` method mirrors the C policy. Feature
 
 ## Verification
 
-C tests use `_Static_assert` to verify status width and ABI version size/alignment/field offsets. Runtime C tests verify current version reporting, NULL handling, older minor compatibility, patch compatibility, and rejection of future minor/major versions. Rust tests verify the same layout, status numeric assignments, unknown-status preservation, and version compatibility semantics.
+C tests use `_Static_assert` to verify status width and ABI version size/alignment/field offsets. Runtime C tests verify current version reporting, NULL handling, older minor compatibility, patch compatibility, rejection of future minor/major versions, and C-owned handle creation/destruction with idempotent NULL cleanup. Rust tests verify the same layout, status numeric assignments, unknown-status preservation, and version compatibility semantics.
 
 The C and Rust tests intentionally verify the same constants independently; a mismatch fails CI instead of silently crossing the language boundary.
