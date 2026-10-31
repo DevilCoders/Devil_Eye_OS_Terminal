@@ -439,10 +439,18 @@ impl SoftwareRenderer {
             std::mem::swap(&mut foreground, &mut background);
         }
 
-        if frame
-            .selection()
-            .is_some_and(|selection| selection.contains(row, column, frame.size()))
-        {
+        let selected = frame.selection().is_some_and(|selection| {
+            selection.contains(row, column, frame.size())
+                || matches!(
+                    cell.content(),
+                    CellContent::Grapheme {
+                        width: GraphemeWidth::Wide,
+                        ..
+                    } if column + 1 < frame.size().columns()
+                        && selection.contains(row, column + 1, frame.size())
+                )
+        });
+        if selected {
             foreground = self.palette.selection_foreground;
             background = self.palette.selection_background;
         }
@@ -563,9 +571,13 @@ impl SoftwareRenderer {
             );
 
             if let CellContent::Grapheme { value, width } = cell.content() {
-                let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
-                let bitmap = self.atlas.get(value.as_str());
-                Self::draw_glyph(
+                let styles = cell.attributes().styles();
+                let visible = !styles.contains(StyleFlags::HIDDEN)
+                    && (!styles.contains(StyleFlags::BLINK) || self.blink_visible);
+                if visible {
+                    let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
+                    let bitmap = self.atlas.get(value.as_str());
+                    Self::draw_glyph(
                     &mut self.surface,
                     bitmap,
                     x,
@@ -576,9 +588,10 @@ impl SoftwareRenderer {
                     clip_left.max(x),
                     clip_right,
                     self.palette.cursor_foreground,
-                    cell.attributes().styles().contains(StyleFlags::BOLD),
-                    cell.attributes().styles().contains(StyleFlags::ITALIC),
-                );
+                        styles.contains(StyleFlags::BOLD),
+                        styles.contains(StyleFlags::ITALIC),
+                    );
+                }
             }
         }
     }
@@ -1008,7 +1021,7 @@ mod tests {
         assert_eq!(renderer.surface().height(), 30);
 
         let mut limited =
-            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 4).unwrap();
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 100).unwrap();
         assert!(matches!(
             limited.resize(resized, ScaleFactor::new(2.0).unwrap()),
             Err(SoftwareRenderError::SurfaceTooLarge)
