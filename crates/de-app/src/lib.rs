@@ -1,7 +1,8 @@
 //! Top-level application configuration.
 //!
-//! The application crate owns subsystem composition. GUI startup, rendering,
-//! session lifecycle, and user-facing behavior are implemented in later tasks.
+//! The application crate owns subsystem composition and deterministic service
+//! lifecycle. GUI startup, rendering, and terminal-session behavior are
+//! implemented by their dedicated tasks.
 
 use de_ffi::{DeAbiVersion, ABI_VERSION};
 use de_runtime::ProgramSpec;
@@ -58,3 +59,11 @@ mod tests {
         assert_eq!(config.abi_version(), ABI_VERSION);
     }
 }
+
+
+pub mod lifecycle;
+
+pub use lifecycle::{
+    Application, ApplicationService, ApplicationState, LifecycleError, ServiceCleanupFailure,
+    ServiceError,
+};
