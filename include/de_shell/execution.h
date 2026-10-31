@@ -24,8 +24,9 @@ typedef struct de_shell_environment_entry {
 
 /*
  * One external command request. argv[0] is the executable name/path and
- * every argument remains a separate NUL-terminated string. All pointers are
- * borrowed and valid only until the executor callback returns.
+ * every argument remains a separate NUL-terminated string. argv[argc] is a
+ * NULL sentinel. All pointers are borrowed and valid only until the executor
+ * callback returns.
  */
 typedef struct de_shell_external_command {
     const char *executable;
