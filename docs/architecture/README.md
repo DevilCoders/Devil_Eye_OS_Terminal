@@ -5,6 +5,7 @@ This directory contains the system architecture baseline and architecture decisi
 ## System architecture
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
+- [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.
 - [Cross-Component API Contracts](api-contracts.md) — lifecycle state machine, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
 - [DE-Shell Library Lifecycle](de-shell-lifecycle.md) — opaque C handle ownership, create/destroy semantics, status codes, and lifecycle tests.
 - [DE-Shell Input Buffer](de-shell-input-buffer.md) — bounded byte storage, explicit line submission, EOF flushing, capacity behavior, and ownership.
@@ -12,10 +13,8 @@ This directory contains the system architecture baseline and architecture decisi
 - [DE-Shell Alpha Parser](de-shell-parser.md) — alpha grammar, AST ownership, operator precedence, source-positioned diagnostics, and bounded nesting.
 - [DE-Shell Command Registry](de-shell-command-registry.md) — per-shell command metadata, registration/collision policy, lookup, built-in dispatch, and ownership.
 - [DE-Shell Execution Engine](de-shell-execution.md) — bounded AST evaluation, quote removal, explicit external-executor callback, environment/working-directory forwarding, exit propagation, and unsupported alpha nodes.
-- [Rust/C ABI Contract](ffi-abi.md) — fixed-width status/version layouts, compatibility negotiation, allocator boundaries, handle ownership, and thread-safety guarantees.
 - [DE-Runtime Process Interface](runtime-interface.md) — process launch configuration, stdio/PTY attachment, signals, exit status, capabilities, and ownership.
-- [Linux PTY Backend](linux-pty.md) — master/slave allocation, initial termios and dimensions, descriptor ownership, CLOEXEC duplication, resize, and cleanup.
-- [Linux PTY Child Process Lifecycle](linux-pty-process.md) — session/controlling-terminal setup, process groups, signal delivery, exit-status caching, kill-on-drop, and reaping.
+- [Linux PTY Backend](linux-pty.md) — master/slave allocation, initial termios and dimensions, descriptor ownership, CLOEXEC duplication, resize, and cleanup.\n- [Linux PTY Child Process Lifecycle](linux-pty-process.md) — session/controlling-terminal setup, process groups, signal delivery, exit-status caching, kill-on-drop, and reaping.
 - [Application Lifecycle](application-lifecycle.md) — implemented service initialization, rollback, reverse-order shutdown, retry semantics, and integration-test coverage.
 - [Application Errors and Diagnostics](application-diagnostics.md) — stable error categories/codes, safe summaries, source-chain handling, secret redaction, bounded records, and log-injection protection.
 
