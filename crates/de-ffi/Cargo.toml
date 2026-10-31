@@ -2,7 +2,7 @@
 name = "de-ffi"
 version.workspace = true
 edition.workspace = true
-description = "Versioned C-compatible ABI data types shared with Rust."
+description = "Safe Rust wrapper and versioned C ABI for DE-Shell."
 
 [lib]
 path = "src/lib.rs"

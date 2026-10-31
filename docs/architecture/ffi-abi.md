@@ -2,7 +2,7 @@
 
 ## Scope
 
-DE-008-01 freezes the binary contract shared by Rust and the C DE-Shell library. It defines fixed-width version/status values, compatibility checks, ownership rules, allocator boundaries, and thread-safety expectations. Safe Rust wrappers and execution-handle translation are implemented separately by DE-008-02 (#50).
+DE-008-01 freezes the binary contract shared by Rust and the C DE-Shell library. It defines fixed-width version/status values, compatibility checks, ownership rules, allocator boundaries, and thread-safety expectations. The safe Rust handle, execution wrapper, callback bridge, and native build integration are implemented by DE-008-02 (#50); see [Safe Rust DE-Shell FFI Wrapper](ffi-rust-wrapper.md).
 
 ## Public headers and Rust types
 

@@ -2,12 +2,12 @@
 
 ## Current build boundaries
 
-The repository has two independent build graphs:
+The repository has two coordinated build paths:
 
-- **Rust workspace:** Cargo builds `de-app`, `de-terminal-core`, `de-runtime`, and `de-ffi`. The runtime crate defines validated process launch requests and platform-neutral process/PTY service interfaces; concrete OS adapters are separate tasks.
-- **C subsystem:** CMake builds the DE-Shell static library and its CTest suite.
+- **Rust workspace:** Cargo builds `de-app`, `de-terminal-core`, `de-runtime`, and `de-ffi`. The `de-ffi` build script compiles and statically links the DE-Shell C sources for Rust callers.
+- **C subsystem:** CMake independently builds the same DE-Shell sources and its CTest suite.
 
-The C library exposes build metadata, the opaque DE-Shell lifecycle API, bounded input buffering, a quote-aware lexer, an alpha parser, a per-shell built-in command registry, and a controlled alpha execution engine. External process creation remains delegated to the host runtime callback; variable expansion and Rust/C FFI remain separate tasks.
+The C library exposes build metadata, the opaque DE-Shell lifecycle API, bounded input buffering, a quote-aware lexer, an alpha parser, a per-shell built-in command registry, and a controlled alpha execution engine. Rust now links this C library through the safe de-ffi wrapper; external process creation remains delegated to the host runtime callback.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ Initial supported development platform: Linux x86_64.
 
 - Rust stable toolchain with Cargo, rustfmt, and Clippy.
 - CMake 3.25 or newer.
-- A C17 compiler (GCC or Clang).
+- A C17 compiler (GCC or Clang) and an archiver (`ar`, normally provided by binutils).
 - Git.
 
 Exact compiler/toolchain pinning and installation instructions are tracked by DE-001-04 (#28).
@@ -48,11 +48,13 @@ CI validates the CMake project with GCC and Clang in both Debug and Release conf
 
 The public C header `include/de_shell/shell.h` exposes an opaque `de_shell_t` handle, stable status values, and create/destroy entry points. A caller owns a successfully created handle and releases it through `de_shell_destroy()`; the destroy function clears the caller's handle and supports repeated cleanup through that same handle variable.
 
-The private representation lives under `c/internal/` and is not part of the public API. The lifecycle tests cover invalid arguments, independent instances, successful cleanup, and idempotent destruction. The internal bounded input-buffer suite covers line submission, maximum capacity, overflow atomicity, EOF, and invalid states. The lexer suite covers source spans, quoting, escapes, operators, malformed input, and capacity diagnostics. The parser suite covers AST structure, precedence, groups, redirections, malformed syntax, and storage limits. The command registry suite covers registration, lookup, duplicate-name collisions, argument validation, deterministic dispatch, registry growth, and the per-shell `exit` built-in. Expansion and external command execution remain separate tasks. See [DE-Shell Library Lifecycle](architecture/de-shell-lifecycle.md).
+The private representation lives under `c/internal/` and is not part of the public API. The lifecycle tests cover invalid arguments, independent instances, successful cleanup, and idempotent destruction. The internal bounded input-buffer suite covers line submission, maximum capacity, overflow atomicity, EOF, and invalid states. The lexer suite covers source spans, quoting, escapes, operators, malformed input, and capacity diagnostics. The parser suite covers AST structure, precedence, groups, redirections, malformed syntax, and storage limits. The command registry suite covers registration, lookup, duplicate-name collisions, argument validation, deterministic dispatch, registry growth, and the per-shell `exit` built-in. Variable expansion remains out of scope; actual external process creation is delegated to the host runtime through the Rust/C callback. See [DE-Shell Library Lifecycle](architecture/de-shell-lifecycle.md).
 
 ## Rust/C integration strategy
 
-Cargo and CMake remain separate build entry points for now. Do not add a `build.rs`, invoke CMake from Cargo, or expose C implementation details through Rust until the cross-component contract in DE-002-02 (#30) and the versioned FFI work in DE-008 are reviewed. This keeps native build failures attributable and avoids prematurely coupling the Rust workspace to an unstable C ABI.
+The `de-ffi` crate build script compiles the DE-Shell C sources into a static archive and links it into Rust. It uses the system C17 compiler selected by `CC` (default `cc`) and archiver selected by `AR` (default `ar`), with the same strict warning policy as CMake. The build script currently supports Linux x86_64 only and has no third-party Cargo build dependency.
+
+CMake remains a separate build entry point for native C validation and CTest. Cargo does not invoke CMake. When adding or removing C sources, update both `CMakeLists.txt` and `crates/de-ffi/build.rs` in the same change. The safe wrapper and ownership/error contract are documented in [Safe Rust DE-Shell FFI Wrapper](architecture/ffi-rust-wrapper.md).
 
 ## Build system ownership
 
