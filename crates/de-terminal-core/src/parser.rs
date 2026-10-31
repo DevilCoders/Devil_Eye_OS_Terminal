@@ -268,34 +268,34 @@ impl VtParser {
                     length,
                 }
             }
-            b'[' => State::Csi {
+            b'[' if length == 0 => State::Csi {
                 parameters: [0; MAX_CSI_PARAMETER_BYTES],
                 parameter_length: 0,
                 intermediates: [0; MAX_ESCAPE_INTERMEDIATES],
                 intermediate_length: 0,
                 in_intermediates: false,
             },
-            b']' => State::ControlString {
+            b']' if length == 0 => State::ControlString {
                 kind: ControlStringKind::Osc,
                 length: 0,
                 overflowed: false,
             },
-            b'P' => State::ControlString {
+            b'P' if length == 0 => State::ControlString {
                 kind: ControlStringKind::Dcs,
                 length: 0,
                 overflowed: false,
             },
-            b'X' => State::ControlString {
+            b'X' if length == 0 => State::ControlString {
                 kind: ControlStringKind::Sos,
                 length: 0,
                 overflowed: false,
             },
-            b'^' => State::ControlString {
+            b'^' if length == 0 => State::ControlString {
                 kind: ControlStringKind::Pm,
                 length: 0,
                 overflowed: false,
             },
-            b'_' => State::ControlString {
+            b'_' if length == 0 => State::ControlString {
                 kind: ControlStringKind::Apc,
                 length: 0,
                 overflowed: false,
@@ -597,6 +597,20 @@ mod tests {
         };
         assert_eq!(sequence.intermediates(), b"(");
         assert_eq!(sequence.final_byte(), b'B');
+    }
+
+    #[test]
+    fn escape_final_bytes_are_not_reinterpreted_after_intermediates() {
+        let mut parser = VtParser::new();
+        let events = parser.process(b"\\x1b([ ").expect("ESC intermediate");
+        assert_eq!(
+            events,
+            vec![TerminalEvent::Escape(super::EscapeSequence {
+                intermediates: [b'(', 0],
+                intermediate_len: 1,
+                final_byte: b'[',
+            }), TerminalEvent::PrintByte(b' ')]
+        );
     }
 
     #[test]
