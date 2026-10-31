@@ -673,7 +673,7 @@ mod tests {
             Ok(7)
         };
         let result = shell
-.execute(b"unknown_tool alpha beta", &context, Some(&mut executor))
+            .execute(b"unknown_tool alpha beta", &context, Some(&mut executor))
             .expect("external callback succeeds");
         assert!(observed);
         assert_eq!(result.exit_code, 7);
