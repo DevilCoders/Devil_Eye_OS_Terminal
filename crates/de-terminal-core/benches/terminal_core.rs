@@ -17,10 +17,10 @@ use std::time::{Duration, Instant};
 
 use de_terminal_core::parser::VtParser;
 use de_terminal_core::render::{
-    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette, Renderer,
-    SoftwareRenderer,
+    CellPosition, CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics,
+    RenderPalette, Renderer, ScaleFactor, Selection, SelectionMode, SoftwareRenderer,
 };
-use de_terminal_core::screen::{CellAttributes, GraphemeWidth, TerminalScreen};
+use de_terminal_core::screen::{CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen};
 use de_terminal_core::TerminalSize;
 
 fn setting(name: &str, default: u64, minimum: u64, maximum: u64) -> u64 {
@@ -137,6 +137,88 @@ fn make_screen(size: TerminalSize) -> TerminalScreen {
     screen
 }
 
+fn make_ascii_screen(size: TerminalSize) -> TerminalScreen {
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate cursor benchmark screen");
+    for row in 0..size.rows() {
+        for column in 0..size.columns() {
+            screen
+                .set_grapheme(
+                    row,
+                    column,
+                    "x",
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("populate ASCII cursor benchmark screen");
+        }
+    }
+    screen
+}
+
+fn make_styled_screen(size: TerminalSize) -> TerminalScreen {
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate styled benchmark screen");
+
+    for row in 0..size.rows() {
+        let mut column = 0;
+        while column < size.columns() {
+            if screen
+                .get_cell(row, column)
+                .is_some_and(|cell| cell.is_continuation())
+            {
+                column += 1;
+                continue;
+            }
+
+            let wide = (usize::from(row) * 7 + usize::from(column) * 3) % 17 == 0
+                && column + 1 < size.columns();
+            let (glyph, width) = if wide {
+                ("界", GraphemeWidth::Wide)
+            } else {
+                ("x", GraphemeWidth::Single)
+            };
+            let variant = (row + column) % 8;
+            let styles = match variant {
+                0 => StyleFlags::BOLD.with(StyleFlags::UNDERLINE),
+                1 => StyleFlags::DIM.with(StyleFlags::ITALIC),
+                2 => StyleFlags::INVERSE,
+                3 => StyleFlags::STRIKETHROUGH,
+                4 => StyleFlags::BLINK,
+                5 => StyleFlags::HIDDEN,
+                _ => StyleFlags::empty(),
+            };
+            let foreground = if variant % 2 == 0 {
+                Color::Indexed(((row + column) % 256) as u8)
+            } else {
+                Color::Rgb {
+                    red: (row.wrapping_mul(11) % 256) as u8,
+                    green: (column.wrapping_mul(7) % 256) as u8,
+                    blue: ((row + column).wrapping_mul(5) % 256) as u8,
+                }
+            };
+            let background = if variant % 3 == 0 {
+                Color::Indexed(((row * 3 + column * 5) % 256) as u8)
+            } else {
+                Color::Default
+            };
+            screen
+                .set_grapheme(
+                    row,
+                    column,
+                    glyph,
+                    width,
+                    CellAttributes::new(foreground, background, styles),
+                )
+                .expect("populate styled benchmark screen");
+            column += if wide { 2 } else { 1 };
+        }
+    }
+    screen
+}
+
 fn make_renderer(size: TerminalSize) -> SoftwareRenderer {
     let bitmap = GlyphBitmap::new(8, 16, vec![255; 8 * 16]).expect("glyph bitmap");
     let atlas = GlyphAtlas::new(bitmap);
@@ -178,6 +260,7 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
     );
 
     let dirty = CellRect::new(size.rows() / 2, 0, 1, size.columns()).expect("dirty row");
+
     benchmark(
         &format!("render_dirty_row_{label}"),
         u64::from(size.columns()),
@@ -190,6 +273,110 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
         },
     );
     black_box(full_rect);
+}
+
+fn render_background_benchmarks(size: TerminalSize, label: &str) {
+    let screen = TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+        .expect("allocate empty background benchmark screen");
+    let mut damage = DamageTracker::new(size, 128).expect("background damage tracker");
+    let mut renderer = make_renderer(size);
+    renderer.set_cursor_visible(false);
+
+    let initial = Frame::new(&screen, &damage, 20).expect("background prime frame");
+    renderer
+        .render(initial, None)
+        .expect("prime background-only renderer");
+    damage.clear();
+
+    benchmark(
+        &format!("render_background_only_{label}"),
+        u64::from(size.rows()) * u64::from(size.columns()),
+        || {
+            damage.mark_all();
+            let frame = Frame::new(&screen, &damage, 21).expect("background-only frame");
+            renderer
+                .render(frame, None)
+                .expect("background-only render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
+}
+
+fn render_feature_benchmarks(size: TerminalSize, label: &str) {
+    let screen = make_styled_screen(size);
+    let mut damage = DamageTracker::new(size, 128).expect("styled damage tracker");
+    let mut renderer = make_renderer(size);
+    renderer.set_cursor_visible(false);
+
+    let selection = Selection::new(
+        CellPosition::new(0, 0),
+        CellPosition::new(size.rows() - 1, size.columns() / 2),
+        SelectionMode::Linear,
+        size,
+    )
+    .expect("representative linear selection");
+
+    benchmark(
+        &format!("render_color_style_churn_{label}"),
+        u64::from(size.rows()) * u64::from(size.columns()),
+        || {
+            damage.mark_all();
+            let frame = Frame::new(&screen, &damage, 3).expect("styled frame");
+            renderer.render(frame, None).expect("styled render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
+
+    benchmark(
+        &format!("render_selection_{label}"),
+        u64::from(size.rows()) * u64::from(size.columns()),
+        || {
+            damage.mark_all();
+            let frame = Frame::new_with_selection(&screen, &damage, 4, Some(selection))
+                .expect("selected frame");
+            renderer.render(frame, None).expect("selection render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
+}
+
+fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
+    // Keep the cursor workload single-width so each one-cell damage mark
+    // exactly covers the cursor's pixel span, including at wraparound.
+    let mut screen = make_ascii_screen(size);
+    let mut damage = DamageTracker::new(size, 128).expect("cursor damage tracker");
+    let mut renderer = make_renderer(size);
+    screen.set_cursor(0, 0);
+    let initial = Frame::new(&screen, &damage, 0).expect("initial cursor frame");
+    renderer
+        .render(initial, None)
+        .expect("prime cursor renderer");
+    damage.clear();
+
+    let mut cursor_column = 0u16;
+    benchmark("render_cursor_move_80x24", 2, || {
+        let previous = cursor_column;
+        cursor_column = (cursor_column + 1) % size.columns();
+        screen.set_cursor(0, cursor_column);
+        damage.mark_cell(0, previous).expect("mark old cursor");
+        damage.mark_cell(0, cursor_column).expect("mark new cursor");
+        let frame = Frame::new(&screen, &damage, 5).expect("cursor frame");
+        renderer.render(frame, None).expect("cursor render");
+        damage.clear();
+        black_box(renderer.surface().pixels().len());
+    });
+
+    let larger = TerminalSize::new(size.columns() * 2, size.rows() * 2)
+        .expect("larger resize benchmark dimensions");
+    let scale = ScaleFactor::new(1.0).expect("unit scale");
+    benchmark("renderer_resize_round_trip_80x24_160x48", 2, || {
+        renderer.resize(larger, scale).expect("resize larger");
+        renderer.resize(size, scale).expect("resize original");
+        black_box(renderer.surface().pixels().len());
+    });
 }
 
 fn main() {
@@ -257,6 +444,26 @@ fn main() {
         TerminalSize::new(240, 80).expect("large benchmark size"),
         "240x80",
     );
+
+    render_background_benchmarks(size, "80x24");
+    render_background_benchmarks(
+        TerminalSize::new(160, 48).expect("medium background size"),
+        "160x48",
+    );
+    render_background_benchmarks(
+        TerminalSize::new(240, 80).expect("large background size"),
+        "240x80",
+    );
+    render_feature_benchmarks(size, "80x24");
+    render_feature_benchmarks(
+        TerminalSize::new(160, 48).expect("medium styled size"),
+        "160x48",
+    );
+    render_feature_benchmarks(
+        TerminalSize::new(240, 80).expect("large styled size"),
+        "240x80",
+    );
+    render_cursor_and_resize_benchmarks(size);
 
     // Yield once so very short local runs do not monopolize a single core
     // while stdout is flushed by the harness.

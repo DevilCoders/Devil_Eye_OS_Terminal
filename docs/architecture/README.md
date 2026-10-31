@@ -10,6 +10,7 @@ This directory contains the system architecture baseline, component contracts, a
 - [Workspace and Session Restoration Metadata](workspace-restoration.md) — versioned workspace/tab/pane layout, safe session metadata, strict validation, and the no-implicit-process-restoration boundary.
 - [Renderer Contract](renderer-contract.md) — immutable frames, cell/pixel coordinate spaces, glyph metrics, clipping, bounded damage tracking, and resize semantics.
 - [Performance Benchmarks and Initial Budgets](performance-benchmarks.md) — reproducible Linux x86_64 benchmarks, sampling protocol, resource budgets, and measurement boundaries.
+- [Renderer Profiling and Optimization](renderer-profiling.md) — workload matrix, allocation probes, profiling procedure, and optimization evidence.
 - [Keyboard Input Mapping](input-mapping.md) — key/text event separation, xterm key sequences, modifiers, IME handling, and configurable shortcuts.
 - [Linux PTY I/O Contract](linux-pty-io.md) — descriptor ownership, nonblocking progress, backpressure, resize, EOF, cancellation, and stress-test evidence.
 

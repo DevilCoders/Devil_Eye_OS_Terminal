@@ -66,6 +66,11 @@ jobs:
           set -o pipefail
           cargo bench -p de-terminal-core --bench terminal_core | tee target/performance/terminal-core.csv
 
+      - name: Run isolated renderer allocation probes
+        run: |
+          set -o pipefail
+          cargo bench -p de-terminal-core --bench renderer_allocations | tee target/performance/renderer-allocations.txt
+
       - name: Run Linux session and PTY benchmarks
         env:
           DE_BENCH_WARMUP_MS: "500"
