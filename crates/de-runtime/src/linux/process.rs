@@ -339,8 +339,8 @@ mod tests {
     #[test]
     fn force_termination_reports_kill_signal() {
         let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
-        let mut child = LinuxPtyChild::spawn(&sleep_program(), test_size(), true)
-            .expect("spawn sleep child");
+        let mut child =
+            LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
 
         child
             .terminate(TerminationMode::Force)
@@ -358,8 +358,8 @@ mod tests {
             .expect("program")
             .with_arg("-c")
             .with_arg("exit 7");
-        let mut child = LinuxPtyChild::spawn(&program, test_size(), true)
-            .expect("spawn exit child");
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn exit child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
 
         let first = child.wait().expect("wait child");
