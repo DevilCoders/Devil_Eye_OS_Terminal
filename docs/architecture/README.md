@@ -7,6 +7,8 @@ This directory contains the system architecture baseline and architecture decisi
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
 - [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.
 - [Cross-Component API Contracts](api-contracts.md) — lifecycle state machine, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
+- [Rust/C ABI Contract](ffi-abi.md) — fixed-layout ABI versions/status values, compatibility rules, and ownership boundaries.
+- [Safe Rust DE-Shell FFI Wrapper](ffi-rust-wrapper.md) — native C linkage, opaque handle lifecycle, safe execution API, callback panic containment, and cross-language tests.
 - [DE-Shell Library Lifecycle](de-shell-lifecycle.md) — opaque C handle ownership, create/destroy semantics, status codes, and lifecycle tests.
 - [DE-Shell Input Buffer](de-shell-input-buffer.md) — bounded byte storage, explicit line submission, EOF flushing, capacity behavior, and ownership.
 - [DE-Shell Lexer](de-shell-lexer.md) — token types, source spans, quote/escape grouping, supported operators, and deterministic diagnostics.
