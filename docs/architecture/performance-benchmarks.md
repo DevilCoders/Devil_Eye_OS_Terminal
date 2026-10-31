@@ -41,7 +41,7 @@ Compare results only when the runner class, toolchain, build profile, workload, 
 | PTY input latency | One-byte raw-mode PTY loopback round trip | Local transport latency, not end-user keyboard-to-photon latency |
 | PTY throughput | 32 KiB raw-mode PTY loopback | End-to-end local PTY transport throughput |
 | Memory | Screen cell storage and renderer RGBA surface sizes | Deterministic owned-buffer estimates; excludes allocator/runtime/GUI overhead |
-| Scroll/scrollback | Screen-grid row-scroll operation | Measures current screen scrolling only; a retained scrollback buffer is not implemented yet |
+| Scroll/scrollback | Visible-grid row scroll plus bounded-history append/eviction and retained-row iteration at 80×24 and 240×80 | Measures the full-ring steady-state path with a preallocated 256-row history; the separate legacy screen-scroll workload remains scrollback-disabled |
 
 The PTY loopback uses a fixed, non-interactive `/bin/sh -c 'stty raw -echo; exec /bin/cat'` child, a private PTY session, and bounded I/O queues. It verifies returned bytes match the submitted payload. The benchmark does not execute user-provided commands or capture environment secrets.
 
@@ -134,11 +134,11 @@ The budgets are acceptance targets, not claims that the current implementation a
 
 - The desktop GUI startup path is not implemented, so the harness reports session-manager and PTY-session startup proxies instead of inventing an application cold-start number.
 - A GUI input mapper and event loop are not integrated, so the short parser benchmark is not presented as keyboard-to-render latency.
-- The current terminal model scrolls the visible screen but does not own a retained scrollback history. The row-scroll measurement is not a scrollback benchmark. A dedicated follow-up task must add a bounded scrollback workload and memory budget when that component exists.
+- The legacy `screen_scroll_80x24` workload intentionally uses `TerminalScreen::new` with scrollback disabled and measures visible-grid movement only. Dedicated `scrollback_append_full_ring_*` workloads use `new_with_scrollback` with a 256-row preallocated history, prime the ring before timing, and measure steady-state append/oldest-row eviction. `scrollback_iterate_256_rows_*` measures chronological read-only traversal. Explicit history payload capacity is reported in cells and bytes; allocator metadata and the visible grid are excluded.
 - The software renderer is the deterministic CPU reference backend. GPU, window-system, font discovery, and compositor latency are outside this baseline.
 - Memory figures report explicit cell and pixel backing buffers only. They exclude allocator metadata, code/data segments, stacks, process RSS, GUI, fonts, and GPU allocations.
 
-## 6. Regression protocol
+### Bounded scrollback workload — DE-020-02 follow-up\n\nThe terminal-core benchmark now includes two retained-history dimensions: 80×24 and 240×80. Each uses a fixed 256-row ring buffer, fills it before timing, and then measures (1) one full-screen upward scroll with a steady-state history append/eviction and (2) a complete chronological traversal of all retained rows. The benchmark reports the configured history payload in cell slots and bytes. It does not include screen construction, initial ring allocation, or renderer work in the timed append operation. The workload is intended to establish a reproducible baseline before any scrollback-specific optimization; no performance improvement is claimed until comparable artifacts are captured.\n\n## 6. Regression protocol
 
 1. Run the benchmark workflow on the candidate commit and retain its artifact.
 2. Compare against at least three artifacts from the same runner class and pinned toolchain.
