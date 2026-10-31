@@ -187,6 +187,6 @@ jobs:
               if (add.length) {
                 await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: add });
               }
-            }            }
+            }
 
             core.info(`Provisioned ${labels.length} taxonomy labels and ${milestones.length} milestones; classified ${allIssues.length} open issues.`);
