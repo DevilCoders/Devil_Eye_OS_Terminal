@@ -136,7 +136,10 @@ impl LinuxPtyChild {
         }
 
         let process_group = i32::try_from(self.process_id()).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "process identifier is out of range")
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "process identifier is out of range",
+            )
         })?;
         let result = unsafe { libc::kill(-process_group, signal_number(signal)) };
         if result == -1 {
@@ -285,9 +288,9 @@ mod tests {
     use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
     use std::io;
     use std::os::fd::AsRawFd;
+    use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
-    use std::sync::Mutex;
 
     static PROCESS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -308,20 +311,23 @@ mod tests {
             .expect("program")
             .with_arg("-c")
             .with_arg("test -t 0 && test -t 1 && test -t 2");
-        let mut child = LinuxPtyChild::spawn(&program, test_size(), true)
-            .expect("spawn interactive child");
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn interactive child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
 
         assert_eq!(unsafe { libc::getpgid(pid) }, pid);
         assert_eq!(unsafe { libc::tcgetsid(child.master().as_raw_fd()) }, pid);
-        assert_eq!(child.wait().expect("wait child"), ProcessExitStatus::Exited(0));
+        assert_eq!(
+            child.wait().expect("wait child"),
+            ProcessExitStatus::Exited(0)
+        );
     }
 
     #[test]
     fn delivers_semantic_signal_to_child_process_group() {
         let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
-        let mut child = LinuxPtyChild::spawn(&sleep_program(), test_size(), true)
-            .expect("spawn sleep child");
+        let mut child =
+            LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
 
         child.send_signal(Signal::Terminate).expect("send SIGTERM");
         assert_eq!(
@@ -366,14 +372,17 @@ mod tests {
             unsafe { libc::waitpid(pid, &mut raw_status, libc::WNOHANG) },
             -1
         );
-        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
     }
 
     #[test]
     fn drop_kills_and_reaps_live_child_when_kill_on_drop_is_enabled() {
         let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
-        let child = LinuxPtyChild::spawn(&sleep_program(), test_size(), true)
-            .expect("spawn sleep child");
+        let child =
+            LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
 
         drop(child);
@@ -389,8 +398,8 @@ mod tests {
             .expect("program")
             .with_arg("-c")
             .with_arg("exit 0");
-        let child = LinuxPtyChild::spawn(&program, test_size(), false)
-            .expect("spawn detached child");
+        let child =
+            LinuxPtyChild::spawn(&program, test_size(), false).expect("spawn detached child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
 
         drop(child);
@@ -399,9 +408,7 @@ mod tests {
         loop {
             let mut raw_status = 0;
             let result = unsafe { libc::waitpid(pid, &mut raw_status, libc::WNOHANG) };
-            if result == -1
-                && io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD)
-            {
+            if result == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD) {
                 break;
             }
             if result == pid {
