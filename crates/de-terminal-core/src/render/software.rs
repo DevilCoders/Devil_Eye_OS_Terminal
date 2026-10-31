@@ -659,7 +659,10 @@ impl SoftwareRenderer {
                 let coverage = draw.bitmap.alpha[alpha_index];
                 let x = draw.cell_x + x_offset + destination_x + italic_offset;
                 let y = draw.cell_y + y_offset + destination_y;
-                if x < draw.clip_left || x >= draw.clip_right || x >= draw.cell_x + draw.available_width {
+                if x < draw.clip_left
+                    || x >= draw.clip_right
+                    || x >= draw.cell_x + draw.available_width
+                {
                     continue;
                 }
                 surface.blend_pixel(x, y, draw.foreground, coverage);
