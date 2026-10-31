@@ -18,7 +18,7 @@ DE-002-01 #29 ─> DE-002-02 #30 ─┬─> DE-007-01 #35 ─> DE-007-02 #48
 DE-004-04 #34 + DE-013-01 #36 + DE-007-01 #35
   └─> DE-004-05 #37
 
-DE-005-01 #42 ─> DE-005-02 #43
+DE-005-01 #42 ─> DE-005-02 #43 ─> DE-005-04 #140 ─> DE-020-02 #72
        └───────> DE-005-03 #44
 
 DE-006-01 #45 ─> DE-006-02 #46 ─> DE-006-03 #47
@@ -56,4 +56,4 @@ The dependency-status workflow derives blocked/ready labels from the task's Depe
 
 ## Subtask hierarchy note
 
-The 62 implementation Tasks each contain a Markdown subtask checklist. These checklist items clarify execution order but do not create dependency edges or native GitHub parent-child issue relationships. Only dependencies explicitly listed in each Task's `Dependencies` section are consumed by the dependency-status automation. If a checklist item becomes independently schedulable, promote it to a new Issue and update the catalog and dependency graph.
+The 63 implementation Tasks each contain a Markdown subtask checklist. These checklist items clarify execution order but do not create dependency edges or native GitHub parent-child issue relationships. Only dependencies explicitly listed in each Task's `Dependencies` section are consumed by the dependency-status automation. If a checklist item becomes independently schedulable, promote it to a new Issue and update the catalog and dependency graph.
