@@ -1,5 +1,6 @@
 #include "de_shell/abi.h"
 
+#include <stddef.h>
 #include <stdio.h>
 
 _Static_assert(sizeof(de_shell_status_t) == 4U, "ABI status must be 32-bit");
