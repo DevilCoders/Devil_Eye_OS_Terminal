@@ -109,7 +109,9 @@ fn benchmark(name: &str, units_per_op: u64, mut operation: impl FnMut()) {
 
 fn initialized_manager() -> SessionManager<LinuxRuntimeService> {
     let mut manager = SessionManager::new(LinuxRuntimeService::new());
-    manager.initialize().expect("initialize Linux session manager");
+    manager
+        .initialize()
+        .expect("initialize Linux session manager");
     manager
 }
 
@@ -132,7 +134,10 @@ fn round_trip(
     while session.pending_input_bytes() > 0 {
         let written = session.flush_input().expect("flush PTY input");
         if written == 0 {
-            assert!(Instant::now() < deadline, "PTY input remained backpressured");
+            assert!(
+                Instant::now() < deadline,
+                "PTY input remained backpressured"
+            );
             thread::yield_now();
         }
     }
@@ -143,7 +148,11 @@ fn round_trip(
             ProcessRead::Data(count) => {
                 let count = count.get();
                 let expected = &payload[received..received + count];
-                assert_eq!(expected, &buffer[..count], "PTY loopback changed payload bytes");
+                assert_eq!(
+                    expected,
+                    &buffer[..count],
+                    "PTY loopback changed payload bytes"
+                );
                 received += count;
             }
             ProcessRead::WouldBlock => {
@@ -172,7 +181,9 @@ fn main() {
         let id = manager
             .create_session(short_spec.clone())
             .expect("spawn short-lived PTY process");
-        manager.close_session(id).expect("close short-lived PTY process");
+        manager
+            .close_session(id)
+            .expect("close short-lived PTY process");
         black_box(id);
     });
 
