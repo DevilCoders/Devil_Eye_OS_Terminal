@@ -979,7 +979,7 @@ mod tests {
                 other => panic!("unexpected retained cell: {other:?}"),
             })
             .collect();
-        assert_eq!(history, ["A"]);
+        assert_eq!(history, vec!["A".to_owned()]);
         assert_eq!(screen.scrollback_cell_count(), 3usize);
         assert_eq!(
             screen
@@ -1033,7 +1033,7 @@ mod tests {
                 CellContent::Continuation => panic!("unexpected continuation"),
             })
             .collect();
-        assert_eq!(history, ["B", ""]);
+        assert_eq!(history, vec!["B".to_owned(), String::new()]);
         assert!(screen.scrollback_cell_count() <= screen.max_scrollback_cells());
     }
 
