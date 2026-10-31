@@ -45,7 +45,43 @@ Compare results only when the runner class, toolchain, build profile, workload, 
 
 The PTY loopback uses a fixed, non-interactive `/bin/sh -c 'stty raw -echo; exec /bin/cat'` child, a private PTY session, and bounded I/O queues. It verifies returned bytes match the submitted payload. The benchmark does not execute user-provided commands or capture environment secrets.
 
-## 3. Initial engineering budgets
+## 3. First measured baseline — 2026-10-31
+
+The first complete benchmark run was captured on the pull-request merge checkout. The measured source branch head was `3558b6b4858ace5d9a09153f0f475f6a47ea4605`; GitHub's PR merge checkout was `5e67ee11ed82e790c05456f8fea4c6ac04ce1fe4`. The workflow run and its raw CSV/environment artifact are available at [run 41242497492](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41242497492).
+
+**Environment:** GitHub-hosted `ubuntu-24.04` (Ubuntu 24.04.5), Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74 80-Core Processor, Rust/Cargo 1.99.1 (release benchmark profile).
+
+The p95 values below are the 95th percentile of 12 per-sample mean timings, not per-operation tail-latency percentiles.
+
+| Workload | Median sample mean | p95 of sample means | Throughput |
+| --- | ---: | ---: | ---: |
+| VT parser mixed stream | 356.95 ns/op | 361.88 ns/op | 137.27 MB/s |
+| Input-parser proxy | 92.55 ns/op | 93.38 ns/op | 237.70 MB/s |
+| Screen update, 80×24 cells | 31.72 µs/op | 33.18 µs/op | 60.53 M cells/s |
+| Screen row scroll, 80×24 | 1.392 µs/op | 1.394 µs/op | 1.379 B cells/s |
+| Full render, 80×24 | 2.136 ms | 2.164 ms | — |
+| Dirty-row render, 80×24 | 89.05 µs | 89.27 µs | — |
+| Full render, 160×48 | 8.562 ms | 8.619 ms | — |
+| Dirty-row render, 160×48 | 178.36 µs | 178.57 µs | — |
+| Full render, 240×80 | 21.545 ms | 21.752 ms | — |
+| Dirty-row render, 240×80 | 266.47 µs | 267.47 µs | — |
+| Session-manager init + shutdown | 76.99 ns | 77.28 ns | — |
+| PTY session spawn + close | 10.539 ms | 10.579 ms | — |
+| One-byte PTY round trip | 29.84 µs | 30.58 µs | — |
+| 32 KiB PTY round trip | 215.73 µs | 219.43 µs | 152.00 MB/s |
+
+**Explicit backing-buffer memory:**
+
+| Buffer | Measured bytes |
+| --- | ---: |
+| 80×24 screen cells (76 bytes/cell) | 145,920 |
+| 80×24 RGBA renderer surface | 983,040 |
+| 160×48 RGBA renderer surface | 3,932,160 |
+| 240×80 RGBA renderer surface | 9,830,400 |
+
+All measured workloads met the provisional budgets below in this run. This is one baseline on a shared hosted runner, not enough evidence to turn the budgets into hard regression gates. Collect at least three comparable runs before enforcing them. The raw artifact includes every sample, the aggregate rows, and runner/toolchain metadata.
+
+## 4. Initial engineering budgets
 
 These are provisional targets for the first Linux x86_64 release profile. They become enforceable regression gates only after at least three successful, comparable baseline runs establish normal runner variance.
 
@@ -67,7 +103,7 @@ These are provisional targets for the first Linux x86_64 release profile. They b
 
 The budgets are acceptance targets, not claims that the current implementation already meets them. A target miss must be reported with its measured value and environment; do not hide or normalize a regression.
 
-## 4. Explicit measurement boundaries
+## 5. Explicit measurement boundaries
 
 - The desktop GUI startup path is not implemented, so the harness reports session-manager and PTY-session startup proxies instead of inventing an application cold-start number.
 - A GUI input mapper and event loop are not integrated, so the short parser benchmark is not presented as keyboard-to-render latency.
@@ -75,7 +111,7 @@ The budgets are acceptance targets, not claims that the current implementation a
 - The software renderer is the deterministic CPU reference backend. GPU, window-system, font discovery, and compositor latency are outside this baseline.
 - Memory figures report explicit cell and pixel backing buffers only. They exclude allocator metadata, code/data segments, stacks, process RSS, GUI, fonts, and GPU allocations.
 
-## 5. Regression protocol
+## 6. Regression protocol
 
 1. Run the benchmark workflow on the candidate commit and retain its artifact.
 2. Compare against at least three artifacts from the same runner class and pinned toolchain.
