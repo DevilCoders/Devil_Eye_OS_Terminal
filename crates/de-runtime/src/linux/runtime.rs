@@ -665,7 +665,9 @@ mod tests {
 
         assert_eq!(
             process.write_stdin(b"input-data"),
-            Ok(WriteOutcome::Written(NonZerousize::new(10usize).expect("nonzero")))
+            Ok(WriteOutcome::Written(
+                NonZerousize::new(10usize).expect("nonzero")
+            ))
         );
         process.close_stdin().expect("close stdin");
         assert_eq!(process.close_stdin(), Ok(()));
@@ -734,17 +736,21 @@ mod tests {
             StreamAttachment::Inherit,
             StreamAttachment::Null,
         );
-        let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(config))
-            .expect("spawn request");
+        let request =
+            ProcessSpawnRequest::new(program, IoAttachment::Stdio(config)).expect("spawn request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn sleep");
 
         assert_eq!(
             process.write_stdin(b"x"),
-            Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
+            Err(RuntimeError::UnsupportedCapability(
+                RuntimeCapability::StdioPipes
+            ))
         );
         assert_eq!(
             process.read_stdout(&mut [0u8; 1usize]),
-            Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
+            Err(RuntimeError::UnsupportedCapability(
+                RuntimeCapability::StdioPipes
+            ))
         );
         assert_eq!(
             process.resize_pty(size()),
