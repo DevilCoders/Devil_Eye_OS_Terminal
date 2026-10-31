@@ -6,7 +6,7 @@ This directory contains the system architecture baseline and architecture decisi
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
 - [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.
-- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.\n- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.
+- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.
 - [Cross-Component API Contracts](api-contracts.md) — lifecycle state machine, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
 - [DE-Shell Library Lifecycle](de-shell-lifecycle.md) — opaque C handle ownership, create/destroy semantics, status codes, and lifecycle tests.
 - [DE-Shell Input Buffer](de-shell-input-buffer.md) — bounded byte storage, explicit line submission, EOF flushing, capacity behavior, and ownership.
@@ -16,7 +16,9 @@ This directory contains the system architecture baseline and architecture decisi
 - [DE-Shell Execution Engine](de-shell-execution.md) — bounded AST evaluation, quote removal, explicit external-executor callback, environment/working-directory forwarding, exit propagation, and unsupported alpha nodes.
 - [DE-Runtime Process Interface](runtime-interface.md) — process launch configuration, stdio/PTY attachment, signals, exit status, capabilities, and ownership.
 - [Linux Process Runtime Adapter](linux-runtime.md) — concrete Linux stdio/PTY process spawning, non-blocking I/O, process groups, signals, EOF semantics, and child reaping.
-- [Linux PTY Backend](linux-pty.md) — master/slave allocation, initial termios and dimensions, descriptor ownership, CLOEXEC duplication, resize, and cleanup.\n- [Linux PTY Child Process Lifecycle](linux-pty-process.md) — session/controlling-terminal setup, process groups, signal delivery, exit-status caching, kill-on-drop, and reaping.
+- [Linux PTY Backend](linux-pty.md) — master/slave allocation, initial termios and dimensions, descriptor ownership, CLOEXEC duplication, resize, and cleanup.
+- [Linux PTY Child Process Lifecycle](linux-pty-process.md) — session/controlling-terminal setup, process groups, signal delivery, exit-status caching, kill-on-drop, and reaping.
+- [PTY I/O Pump](pty-io-pump.md) — bounded input/output queues, backpressure, resize commands, EOF/exit ordering, and cancellation-safe shutdown.
 - [Application Lifecycle](application-lifecycle.md) — implemented service initialization, rollback, reverse-order shutdown, retry semantics, and integration-test coverage.
 - [Application Errors and Diagnostics](application-diagnostics.md) — stable error categories/codes, safe summaries, source-chain handling, secret redaction, bounded records, and log-injection protection.
 
