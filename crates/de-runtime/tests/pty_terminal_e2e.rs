@@ -1,10 +1,12 @@
 use de_runtime::{
     IoAttachment, LinuxRuntime, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig,
-    ReadOutcome, RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize, TerminationMode,
-    WriteOutcome,
+    ReadOutcome, RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize,
+    TerminationMode, WriteOutcome,
 };
 use de_terminal_core::parser::{TerminalEvent, VtParser};
-use de_terminal_core::screen::{CellAttributes, CellContent, Color, GraphemeWidth, StyleFlags, TerminalScreen};
+use de_terminal_core::screen::{
+    CellAttributes, CellContent, Color, GraphemeWidth, StyleFlags, TerminalScreen,
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,11 +15,9 @@ fn terminal_size() -> TerminalSize {
 }
 
 fn spawn_pty(program: ProgramSpec) -> Box<dyn RuntimeProcess> {
-    let request = ProcessSpawnRequest::new(
-        program,
-        IoAttachment::Pty(PtyConfig::new(terminal_size())),
-    )
-    .expect("valid PTY spawn request");
+    let request =
+        ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(terminal_size())))
+            .expect("valid PTY spawn request");
     LinuxRuntime.spawn(request).expect("spawn PTY process")
 }
 
@@ -33,7 +33,10 @@ fn read_until_marker(
         match process.read_stdout(&mut buffer)? {
             ReadOutcome::Data(count) => {
                 collected.extend_from_slice(&buffer[..count.get()]);
-                if collected.windows(marker.len()).any(|window| window == marker) {
+                if collected
+                    .windows(marker.len())
+                    .any(|window| window == marker)
+                {
                     return Ok(collected);
                 }
             }
@@ -89,13 +92,7 @@ fn apply_vt_events(
             TerminalEvent::PrintByte(byte) if (0x20..=0x7e).contains(byte) => {
                 let value = char::from(*byte).to_string();
                 screen
-                    .set_grapheme(
-                        *row,
-                        *column,
-                        &value,
-                        GraphemeWidth::Single,
-                        *attributes,
-                    )
+                    .set_grapheme(*row, *column, &value, GraphemeWidth::Single, *attributes)
                     .expect("write parsed printable byte");
                 *column = column.saturating_add(1).min(screen.size().columns() - 1);
                 screen.set_cursor(*row, *column);
@@ -148,13 +145,7 @@ fn pty_output_parses_into_terminal_screen_with_sgr_attributes() {
     let mut row = 0u16;
     let mut column = 0u16;
     let mut attributes = CellAttributes::default();
-    apply_vt_events(
-        &events,
-        &mut screen,
-        &mut row,
-        &mut column,
-        &mut attributes,
-    );
+    apply_vt_events(&events, &mut screen, &mut row, &mut column, &mut attributes);
 
     for (column, expected) in b"Hello".iter().enumerate() {
         let cell = screen
@@ -185,7 +176,10 @@ fn pty_interactive_input_resize_and_exit_are_observable() {
 
     while received.len() < payload.len() {
         if offset < payload.len() {
-            match process.write_stdin(&payload[offset..]).expect("write PTY input") {
+            match process
+                .write_stdin(&payload[offset..])
+                .expect("write PTY input")
+            {
                 WriteOutcome::Written(count) => offset += count.get(),
                 WriteOutcome::WouldBlock => {}
             }
