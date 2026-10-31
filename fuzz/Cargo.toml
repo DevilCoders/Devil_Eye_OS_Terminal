@@ -1,0 +1,33 @@
+[package]
+name = "de-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+de-ffi = { path = "../crates/de-ffi" }
+de-terminal-core = { path = "../crates/de-terminal-core" }
+libfuzzer-sys = "=0.4.10"
+
+[[bin]]
+name = "shell_lexer_parser"
+path = "fuzz_targets/shell_lexer_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vt_parser"
+path = "fuzz_targets/vt_parser.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
+
+[lints.rust]
+unsafe_code = "forbid"
