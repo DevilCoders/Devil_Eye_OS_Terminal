@@ -1,21 +1,57 @@
 # Building Devil_Eye OS Terminal
 
-## Current repository state
+## Current build boundaries
 
-The repository currently contains the engineering-management foundation and source-layout contract. The Rust workspace and buildable application have not yet been introduced. Do not treat this documentation scaffold as evidence that the application builds.
+The repository has two independent build graphs:
+
+- **Rust workspace:** Cargo builds `de-app`, `de-terminal-core`, `de-runtime`, and `de-ffi`.
+- **C subsystem:** CMake builds the DE-Shell static library and its CTest suite.
+
+The C library currently exposes only build-version metadata. This is an infrastructure smoke-test surface, not the DE-Shell lifecycle, parser, or execution API. Those are introduced by DE-004 tasks after the architecture/API contracts are established.
+
+## Prerequisites
+
+Initial supported development platform: Linux x86_64.
+
+- Rust stable toolchain with Cargo, rustfmt, and Clippy.
+- CMake 3.25 or newer.
+- A C17 compiler (GCC or Clang).
+- Git.
+
+Exact compiler/toolchain pinning and installation instructions are tracked by DE-001-04 (#28).
+
+## Rust workspace
+
+From the repository root:
+
+```sh
+cargo fmt --all -- --check
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+## C subsystem
+
+Configure, build, and run the C tests:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+For an optimized build, use `-DCMAKE_BUILD_TYPE=Release`. The build requires C17 and enables strict warnings; GCC/Clang builds treat warnings as errors. Generated files stay under `build/` and must not be committed.
+
+CI validates the CMake project with GCC and Clang in both Debug and Release configurations.
+
+## Rust/C integration strategy
+
+Cargo and CMake remain separate build entry points for now. Do not add a `build.rs`, invoke CMake from Cargo, or expose C implementation details through Rust until the cross-component contract in DE-002-02 (#30) and the versioned FFI work in DE-008 are reviewed. This keeps native build failures attributable and avoids prematurely coupling the Rust workspace to an unstable C ABI.
 
 ## Build system ownership
 
-- Task DE-001-02 (#26) introduces the Rust Cargo workspace and crate boundaries.
-- Task DE-001-03 (#27) integrates the C build system.
-- Task DE-001-04 (#28) pins the toolchain and developer tooling.
-
-The exact build, test, lint, and formatting commands will be recorded here when those tasks establish the real toolchain. Until then, no placeholder build commands are provided.
-
-## Development baseline
-
-- Initial platform: Linux x86_64.
 - Rust owns the desktop application and orchestration.
-- C owns the independent DE-Shell core.
-- NASM is reserved for measured, justified low-level routines.
-- No external pretrained or hosted runtime components are part of the terminal application architecture.
+- C owns the independent DE-Shell implementation.
+- NASM is reserved for measured, justified low-level routines; it is not a prerequisite.
+- The terminal emulator remains independent from DE-Shell and must host compatible external shells.
+- Linux x86_64 is the first target; OS-specific behavior stays behind platform adapters.
