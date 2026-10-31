@@ -1,8 +1,8 @@
 use std::num::NonZeroUsize;
 
 use de_app::service_interfaces::{
-    ProcessExit, ProcessRead, SessionId, SessionKind, SessionLifecycle,
-    SessionLifecycleState, SessionSpec,
+    ProcessExit, ProcessRead, SessionId, SessionKind, SessionLifecycle, SessionLifecycleState,
+    SessionSpec,
 };
 use de_runtime::ProgramSpec;
 use de_terminal_core::TerminalSize;
