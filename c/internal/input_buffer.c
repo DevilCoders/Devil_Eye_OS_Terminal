@@ -1,4 +1,4 @@
-#include "internal/input_buffer.h"
+#include "input_buffer.h"
 
 #include <stdint.h>
 #include <stdlib.h>
