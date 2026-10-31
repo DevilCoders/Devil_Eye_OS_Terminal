@@ -31,7 +31,7 @@ The rule implementation is pure JavaScript in `.github/scripts/dependency-status
 Run locally:
 
 ```sh
-node --test tests/automation/dependency-status.test.cjs
+node --test tests/automation/*.test.cjs
 ```
 
 The `Repository automation tests` workflow runs these tests on pull requests and master pushes that change the rule module, its tests, or the workflow.
