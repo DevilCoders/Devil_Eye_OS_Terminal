@@ -352,11 +352,17 @@ fn map_special_key(code: KeyCode, modifiers: Modifiers, modes: KeyboardModes) ->
             bytes.push(b'\r');
             None
         }
-        KeyCode::Tab if modifiers.shift() => Some(if modified {
-            format!("\x1b[1;{modifier}Z")
-        } else {
-            "\x1b[Z".to_owned()
-        }),
+        KeyCode::Tab if modifiers.shift() => {
+            let shift_only = modifiers.shift()
+                && !modifiers.control()
+                && !modifiers.alt()
+                && !modifiers.super_key();
+            Some(if shift_only {
+                "\x1b[Z".to_owned()
+            } else {
+                format!("\x1b[1;{modifier}Z")
+            })
+        },
         KeyCode::Tab => {
             bytes.push(b'\t');
             None
