@@ -1096,9 +1096,8 @@ mod tests {
         assert_eq!(disabled.scrollback_row_count(), 0usize);
         assert_eq!(disabled.max_scrollback_cells(), 0usize);
 
-        let mut enabled =
-            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
-                .expect("screen with history");
+        let mut enabled = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+            .expect("screen with history");
         enabled
             .set_grapheme(
                 0u16,
@@ -1116,9 +1115,8 @@ mod tests {
 
     #[test]
     fn column_resize_clears_scrollback_without_reflow_but_row_resize_preserves_it() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 8usize, 8usize)
-                .expect("screen with scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 8usize, 8usize)
+            .expect("screen with scrollback");
         screen
             .set_grapheme(
                 0u16,
