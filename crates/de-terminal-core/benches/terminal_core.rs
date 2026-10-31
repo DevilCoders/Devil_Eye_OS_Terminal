@@ -345,6 +345,37 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
     black_box(full_rect);
 }
 
+fn render_background_benchmarks(size: TerminalSize, label: &str) {
+    let screen = TerminalScreen::new(
+        size,
+        usize::from(size.columns()) * usize::from(size.rows()),
+    )
+    .expect("allocate empty background benchmark screen");
+    let mut damage = DamageTracker::new(size, 128).expect("background damage tracker");
+    let mut renderer = make_renderer(size);
+    renderer.set_cursor_visible(false);
+
+    let initial = Frame::new(&screen, &damage, 20).expect("background prime frame");
+    renderer
+        .render(initial, None)
+        .expect("prime background-only renderer");
+    damage.clear();
+
+    benchmark(
+        &format!("render_background_only_{label}"),
+        u64::from(size.rows()) * u64::from(size.columns()),
+        || {
+            damage.mark_all();
+            let frame = Frame::new(&screen, &damage, 21).expect("background-only frame");
+            renderer
+                .render(frame, None)
+                .expect("background-only render");
+            damage.clear();
+            black_box(renderer.surface().pixels().len());
+        },
+    );
+}
+
 fn render_feature_benchmarks(size: TerminalSize, label: &str) {
     let screen = make_styled_screen(size);
     let mut damage = DamageTracker::new(size, 128).expect("styled damage tracker");
@@ -487,6 +518,15 @@ fn main() {
         "240x80",
     );
 
+    render_background_benchmarks(size, "80x24");
+    render_background_benchmarks(
+        TerminalSize::new(160, 48).expect("medium background size"),
+        "160x48",
+    );
+    render_background_benchmarks(
+        TerminalSize::new(240, 80).expect("large background size"),
+        "240x80",
+    );
     render_feature_benchmarks(size, "80x24");
     render_feature_benchmarks(
         TerminalSize::new(160, 48).expect("medium styled size"),
