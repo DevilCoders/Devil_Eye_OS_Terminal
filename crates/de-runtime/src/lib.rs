@@ -318,6 +318,18 @@ impl PlatformCapabilities {
         self.supported.binary_search(&capability).is_ok()
     }
 
+    /// Returns a typed error when the backend does not expose a capability.
+    ///
+    /// Callers should check capabilities before requesting optional operations;
+    /// adapters must still validate each operation at the point of use.
+    pub fn require(&self, capability: RuntimeCapability) -> Result<(), RuntimeError> {
+        if self.supports(capability) {
+            Ok(())
+        } else {
+            Err(RuntimeError::UnsupportedCapability(capability))
+        }
+    }
+
     pub fn supported(&self) -> &[RuntimeCapability] {
         &self.supported
     }
@@ -626,6 +638,13 @@ mod tests {
         assert!(capabilities.supports(RuntimeCapability::Signals));
         assert!(!capabilities.supports(RuntimeCapability::ProcessGroups));
         assert_eq!(capabilities.supported().len(), 2usize);
+        assert_eq!(capabilities.require(RuntimeCapability::Signals), Ok(()));
+        assert_eq!(
+            capabilities.require(RuntimeCapability::ProcessGroups),
+            Err(RuntimeError::UnsupportedCapability(
+                RuntimeCapability::ProcessGroups
+            ))
+        );
     }
 
     struct FakeRuntime;
