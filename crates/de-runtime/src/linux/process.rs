@@ -414,7 +414,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn can_signal_session_descendants_after_leader_exits() {
         let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
