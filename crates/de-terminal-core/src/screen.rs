@@ -664,7 +664,7 @@ impl TerminalScreen {
 
     /// Returns the number of retained rows.
     pub fn scrollback_row_count(&self) -> usize {
-        self.scrollback.rows.len()
+        self.scrollback.row_count
     }
 
     /// Returns the number of retained cell slots.
