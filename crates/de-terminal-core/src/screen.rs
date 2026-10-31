@@ -601,6 +601,7 @@ impl TerminalScreen {
     }
 
     /// Sets an inclusive scrolling region. The top must not exceed the bottom.
+    /// A one-row region is valid and scrolls by clearing that row on line feed.
     pub fn set_scroll_region(&mut self, top: u16, bottom: u16) -> Result<(), ScreenGridError> {
         if top > bottom || bottom >= self.size().rows() {
             return Err(ScreenGridError::InvalidScrollRegion);
