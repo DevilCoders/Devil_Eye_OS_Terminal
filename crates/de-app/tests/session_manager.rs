@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use de_app::lifecycle::{ApplicationService, ServiceError};
@@ -25,6 +26,7 @@ struct MockProcessState {
     resize_fails: bool,
     graceful_terminates: bool,
     wait_fails: bool,
+    shutdown_thread: Option<thread::ThreadId>,
 }
 
 #[derive(Debug, Default)]
@@ -134,7 +136,8 @@ impl RuntimeProcess for MockProcess {
     }
 
     fn try_wait(&mut self) -> Result<Option<ProcessExit>, ServiceError> {
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        state.shutdown_thread = Some(thread::current().id());
         if state.wait_fails {
             return Err(ServiceError::new("mock wait failure"));
         }
@@ -232,6 +235,33 @@ fn creates_independent_session_queues_input_and_closes_owned_process() {
         .contains(&TerminationMode::Graceful));
     assert!(process.dropped);
     assert!(manager.session_state(id).is_err());
+}
+
+#[test]
+fn asynchronous_close_runs_blocking_shutdown_on_a_worker_thread() {
+    let state = Arc::new(Mutex::new(MockRuntimeState::default()));
+    let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
+    let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
+    let caller_thread = thread::current().id();
+
+    let shutdown = manager
+        .close_session_async(id)
+        .expect("start asynchronous close");
+
+    assert!(manager.session_state(id).is_err());
+    shutdown
+        .join()
+        .expect("shutdown worker must not panic")
+        .expect("session shutdown must complete");
+    assert_ne!(
+        process_state.lock().unwrap().shutdown_thread,
+        Some(caller_thread),
+        "blocking process cleanup must run away from the caller thread"
+    );
+    assert!(process_state.lock().unwrap().dropped);
 }
 
 #[test]
