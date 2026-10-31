@@ -894,8 +894,8 @@ mod tests {
 
         // Inverse swaps indexed red/blue; the transparent glyph pixel exposes
         // the swapped background while an ink pixel uses the swapped foreground.
-        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(36, 114, 200)));
-        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(205, 49, 49)));
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(36, 114, 200)));
+        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(205, 49, 49)));
 
         let dim_attributes = CellAttributes::new(
             Color::Rgb {
@@ -923,7 +923,7 @@ mod tests {
         glyphs
             .insert("x", GlyphBitmap::new(1, 1, vec![255]).unwrap())
             .unwrap();
-        let small_metrics = GlyphMetrics::new(1.0, 1.0, 1.0, 1.0).unwrap();
+        let small_metrics = GlyphMetrics::new(1.0, 0.5, 0.5, 1.0).unwrap();
         let mut renderer =
             SoftwareRenderer::new(terminal_size, small_metrics, palette(), glyphs, 16)
                 .expect("renderer");
@@ -940,14 +940,14 @@ mod tests {
         )
         .unwrap();
         render_frame(&mut renderer, &screen, &damage, Some(selection), None).unwrap();
-        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(255, 255, 255)));
+        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(0, 0, 255)));
 
         renderer.set_cursor_visible(true);
         let mut cursor_screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        cursor_screen.set_cursor(0, 1);
         let cursor_damage = DamageTracker::new(terminal_size, 4).unwrap();
         render_frame(&mut renderer, &cursor_screen, &cursor_damage, None, None).unwrap();
-        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(255, 255, 0)));
-        cursor_screen.set_cursor(0, 1);
+        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(255, 255, 0)));
     }
 
     #[test]
@@ -1007,8 +1007,10 @@ mod tests {
         assert_eq!(renderer.surface().width(), 24);
         assert_eq!(renderer.surface().height(), 30);
 
+        let mut limited =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 4).unwrap();
         assert!(matches!(
-            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 4),
+            limited.resize(resized, ScaleFactor::new(2.0).unwrap()),
             Err(SoftwareRenderError::SurfaceTooLarge)
         ));
     }
