@@ -466,10 +466,7 @@ impl<R: RuntimeService> SessionManager<R> {
     pub fn close_session_async(
         &mut self,
         id: SessionId,
-    ) -> Result<thread::JoinHandle<Result<(), ServiceError>>, ServiceError>
-    where
-        R::Process: 'static,
-    {
+    ) -> Result<thread::JoinHandle<Result<(), ServiceError>>, ServiceError> {
         let session = self
             .sessions
             .remove(&id)
