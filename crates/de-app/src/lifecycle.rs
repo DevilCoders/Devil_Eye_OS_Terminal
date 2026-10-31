@@ -55,6 +55,10 @@ impl Error for ServiceError {}
 /// application immediately calls `shutdown` on that same service before
 /// rolling back previously initialized services. Implementations should make
 /// `shutdown` idempotent and release any partially acquired resources.
+///
+/// Shutdown may block while child processes or native resources are released.
+/// Application coordinators must invoke it on a lifecycle worker, never on the
+/// GUI/event-loop thread.
 pub trait ApplicationService: Send {
     /// Stable diagnostic name for this service.
     fn name(&self) -> &str;
