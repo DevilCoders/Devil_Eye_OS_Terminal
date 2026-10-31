@@ -23,15 +23,15 @@ The dependency-free `terminal_core` benchmark harness records:
 | Linear selection at each size | Per-cell selection membership and color override |
 | Cursor movement, 80×24 | Two-cell invalidation and cursor overlay on an ASCII-only screen, avoiding wide-cell cursor-span ambiguity |
 | Resize round trip, 80×24 ↔ 160×48 | Surface allocation, checked dimensions, and background initialization |
-| Allocation probes for full and dirty frames | Allocation count and requested bytes during one warmed render call |
+| Separate allocation-only executable for full and dirty frames | Allocation count and requested bytes during one warmed render call; never runs timed throughput workloads |
 
 The styled workload includes single-width and wide Unicode graphemes. The atlas fallback is deterministic and avoids font-discovery variability.
 
 ## Allocation measurement
 
-The benchmark executable installs a counting wrapper around the system allocator. It reports allocation calls and requested bytes during a single render call after setup. The counter is isolated to the benchmark executable and adds no third-party dependency.
+The separate `renderer_allocations` benchmark executable installs a counting wrapper around the system allocator and performs only allocation probes. The timed `terminal_core` throughput executable does not install or call the counting allocator, so parser, resize, and rendering timing samples are not perturbed by allocator instrumentation. Both targets use only the Rust standard library and add no third-party dependency.
 
-These values are allocation traffic for the measured call, not live bytes, peak resident memory, or allocator fragmentation. The benchmark's timed throughput measurements are separate from the allocation probes. Allocator instrumentation is not enabled in the production library.
+The allocation executable prepares and primes the renderer before taking a counter snapshot, then measures one full-frame and one dirty-row render call. These values are allocation traffic for the measured call, not live bytes, peak resident memory, or allocator fragmentation. Allocator instrumentation is not enabled in the production library.
 
 Expected optimization target: steady-state render calls should not allocate when the frame, renderer, and damage tracker are already constructed. A full-frame or dirty-frame render allocation is treated as a hot-path defect unless a documented correctness requirement makes it unavoidable.
 
@@ -174,4 +174,4 @@ Both report Ubuntu 24.04, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74
 
 Color/style and selection workloads also improved by approximately 20.8–21.7% in median sample means across all three sizes. Cursor movement improved by approximately 21.0%. Resize time was effectively unchanged, as expected because the glyph hot path is not involved.
 
-The before/after pair supports a repeatable ~20–23% reduction in the measured CPU-renderer workloads on this runner class. These are microbenchmark results, not GUI frame-rate or end-user latency guarantees. The allocation-counting wrapper was subsequently tightened so counter increments occur only inside explicit allocation probes; the next run verifies that measurement correction.
+The before/after pair supports a repeatable ~20–23% reduction in the measured CPU-renderer workloads on this runner class. These are microbenchmark results, not GUI frame-rate or end-user latency guarantees. The allocation probe was subsequently moved into a separate executable so the timed benchmark process has no allocator instrumentation at all.
