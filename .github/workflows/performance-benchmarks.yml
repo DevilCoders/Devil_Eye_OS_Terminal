@@ -72,6 +72,7 @@ jobs:
           DE_BENCH_SAMPLE_MS: "200"
           DE_BENCH_SAMPLES: "12"
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -o pipefail
           cargo bench -p de-app --bench session_io | tee target/performance/session-io.csv
