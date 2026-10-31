@@ -153,10 +153,7 @@ impl ProgramSpec {
     }
 
     /// Sets how the child environment is constructed.
-    pub fn with_environment_inheritance(
-        mut self,
-        inheritance: EnvironmentInheritance,
-    ) -> Self {
+    pub fn with_environment_inheritance(mut self, inheritance: EnvironmentInheritance) -> Self {
         self.environment_inheritance = inheritance;
         self
     }
@@ -540,10 +537,9 @@ pub trait RuntimeService: Send + Sync {
 mod tests {
     use super::{
         EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
-        ProcessSpawnRequest, ProgramSpec,
-        ProgramSpecError, PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess,
-        RuntimeService, Signal, StdioConfig, StreamAttachment, TerminalSize, TerminalSizeError,
-        TerminationMode, WriteOutcome,
+        ProcessSpawnRequest, ProgramSpec, ProgramSpecError, PtyConfig, ReadOutcome,
+        RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
+        StreamAttachment, TerminalSize, TerminalSizeError, TerminationMode, WriteOutcome,
     };
     use std::ffi::{OsStr, OsString};
     use std::num::NonZeroUsize;
