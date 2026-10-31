@@ -38,7 +38,9 @@ impl ApplicationService for LinuxRuntimeService {
 
     fn initialize(&mut self) -> Result<(), ServiceError> {
         if self.initialized {
-            return Err(ServiceError::new("Linux runtime service is already initialized"));
+            return Err(ServiceError::new(
+                "Linux runtime service is already initialized",
+            ));
         }
         self.initialized = true;
         Ok(())
@@ -59,7 +61,9 @@ impl RuntimeService for LinuxRuntimeService {
         terminal_size: TerminalSize,
     ) -> Result<Self::Process, ServiceError> {
         if !self.initialized {
-            return Err(ServiceError::new("Linux runtime service is not initialized"));
+            return Err(ServiceError::new(
+                "Linux runtime service is not initialized",
+            ));
         }
 
         let request = ProcessSpawnRequest::new(
@@ -97,7 +101,9 @@ impl RuntimeProcess for LinuxRuntimeProcess {
 
     fn read(&mut self, buffer: &mut [u8]) -> Result<ProcessRead, ServiceError> {
         if buffer.is_empty() {
-            return Err(ServiceError::new("Linux runtime read buffer must not be empty"));
+            return Err(ServiceError::new(
+                "Linux runtime read buffer must not be empty",
+            ));
         }
         match self
             .inner
