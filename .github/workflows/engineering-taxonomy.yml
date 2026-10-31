@@ -39,6 +39,8 @@ jobs:
               ["status:blocked", "B91C1C", "Blocked by dependency or decision"],
               ["status:review", "7C3AED", "Awaiting review or validation"],
               ["status:done", "15803D", "Completed and verified"],
+              ["component:build", "0F766E", "Build system and developer tooling"],
+              ["component:architecture", "0F766E", "System architecture and API contracts"],
               ["component:rust", "0F766E", "Rust application and crates"],
               ["component:c-shell", "0F766E", "DE-Shell C implementation"],
               ["component:terminal-engine", "0F766E", "VT/ANSI and screen model"],
@@ -52,6 +54,11 @@ jobs:
               ["component:docs", "0F766E", "Documentation and governance"],
               ["component:release", "0F766E", "Packaging and release"],
               ["component:platform", "0F766E", "Cross-platform support"],
+              ["component:session", "0F766E", "Sessions and workspaces"],
+              ["component:config", "0F766E", "Configuration and persistence"],
+              ["component:plugins", "0F766E", "Plugin system"],
+              ["component:productivity", "0F766E", "Productivity features"],
+              ["component:performance", "0F766E", "Performance engineering"],
               ["platform:linux", "0369A1", "Linux x86_64 target"],
               ["platform:windows", "0369A1", "Windows target"],
               ["platform:macos", "0369A1", "macOS target"]
@@ -96,7 +103,9 @@ jobs:
               owner, repo, state: "open", per_page: 100
             });
             const componentRules = [
-              [/DE-00[123]/, "component:rust"],
+              [/DE-001/, "component:build"],
+              [/DE-002/, "component:architecture"],
+              [/DE-003/, "component:rust"],
               [/DE-004|DE-012|DE-013/, "component:c-shell"],
               [/DE-005/, "component:terminal-engine"],
               [/DE-006/, "component:pty"],
@@ -105,8 +114,13 @@ jobs:
               [/DE-009/, "component:renderer"],
               [/DE-010/, "component:gui"],
               [/DE-011/, "component:gui"],
+              [/DE-014/, "component:session"],
+              [/DE-015/, "component:config"],
               [/DE-016/, "component:security"],
+              [/DE-017/, "component:plugins"],
+              [/DE-018/, "component:productivity"],
               [/DE-019/, "component:testing"],
+              [/DE-020/, "component:performance"],
               [/DE-022/, "component:docs"],
               [/DE-023|DE-024/, "component:release"],
               [/DE-021/, "component:platform"]
@@ -138,13 +152,21 @@ jobs:
                 }
               }
 
+              const epicMatch = issue.title.match(/DE-\d{3}/);
+              const epicMilestones = {
+                "DE-001": "M0 Engineering Foundation", "DE-002": "M0 Engineering Foundation", "DE-003": "M0 Engineering Foundation",
+                "DE-004": "M1 Shell Alpha", "DE-013": "M1 Shell Alpha", "DE-007": "M2 Runtime Alpha",
+                "DE-005": "M3 Terminal Engine Alpha", "DE-006": "M4 PTY Alpha", "DE-008": "M5 Communication Alpha",
+                "DE-009": "M6 Terminal GUI Alpha", "DE-010": "M6 Terminal GUI Alpha", "DE-011": "M6 Terminal GUI Alpha",
+                "DE-012": "M7 Integrated Beta", "DE-014": "M7 Integrated Beta", "DE-015": "M7 Integrated Beta",
+                "DE-017": "M8 Feature Complete", "DE-018": "M8 Feature Complete", "DE-020": "M8 Feature Complete", "DE-021": "M8 Feature Complete",
+                "DE-016": "M9 Release Candidate", "DE-022": "M9 Release Candidate", "DE-023": "M9 Release Candidate", "DE-024": "M10 Production 1.0"
+              };
               const target = text.match(/Target milestone:\*\*\s*([^\n]+)/i);
-              if (target) {
-                const title = target[1].trim();
-                const number = milestoneByTitle.get(title);
-                if (number) {
-                  await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
-                }
+              const milestoneTitle = target ? target[1].trim() : (epicMatch ? epicMilestones[epicMatch[0]] : null);
+              if (milestoneTitle) {
+                const number = milestoneByTitle.get(milestoneTitle);
+                if (number) await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
               }
 
               const current = new Set((issue.labels || []).map(l => typeof l === "string" ? l : l.name));
