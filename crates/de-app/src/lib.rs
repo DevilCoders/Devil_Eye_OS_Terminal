@@ -1,8 +1,8 @@
 //! Top-level application configuration.
 //!
 //! The application crate owns subsystem composition and deterministic service
-//! lifecycle. GUI startup, rendering, and terminal-session behavior are
-//! implemented by their dedicated tasks.
+//! lifecycle, and typed diagnostics. GUI startup, rendering, and terminal-session
+//! behavior are implemented by their dedicated tasks.
 
 use de_ffi::{DeAbiVersion, ABI_VERSION};
 use de_runtime::ProgramSpec;
