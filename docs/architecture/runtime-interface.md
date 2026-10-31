@@ -51,7 +51,7 @@ The interface provides:
 
 - process_id(): optional platform process identifier; it is not a portable session identity.
 - write_stdin(): accepts a non-empty byte slice and reports partial progress or WouldBlock.
-- read_stdout()/read_stderr(): non-blocking reads returning Data(count), WouldBlock, or EOF.
+- read_stdout()/read_stderr(): non-blocking reads into non-empty output buffers, returning Data(count), WouldBlock, or EOF. Empty buffers are rejected with InvalidArgument.
 - close_stdin(): idempotently closes the child input stream.
 - resize_pty(): changes PTY dimensions or returns UnsupportedCapability for non-PTY sessions.
 - send_signal(): sends a semantic signal to this child only.
