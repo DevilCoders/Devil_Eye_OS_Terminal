@@ -99,7 +99,7 @@ fn benchmark(name: &str, units_per_op: u64, mut operation: impl FnMut()) {
     let median = percentile(&per_sample, 0.50);
     let p95 = percentile(&per_sample, 0.95);
     println!(
-        "{name},summary,{total_iterations},{median:.2},{p95:.2},{:.2}",
+        "{name},summary,0,{total_iterations},{median:.2},{p95:.2},{:.2}",
         units_per_op as f64 * total_iterations as f64 / total_elapsed.as_secs_f64()
     );
     eprintln!(
