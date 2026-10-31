@@ -273,14 +273,14 @@ fn reap_detached_child(child: Child) {
                         thread::sleep(POLL_INTERVAL);
                     }
 
-                    let mut index = 0Usize;
+                    let mut index = 0usize;
                     while index < children.len() {
                         match children[index].try_wait() {
                             Ok(Some(_)) => {
                                 children.swap_remove(index);
                             }
                             Ok(None) => {
-                                index += 1Usize;
+                                index += 1usize;
                             }
                             Err(error) if error.raw_os_error() == Some(libc::ECHILD) => {
                                 children.swap_remove(index);
