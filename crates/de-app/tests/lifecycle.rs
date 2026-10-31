@@ -288,7 +288,7 @@ fn asynchronous_shutdown_returns_application_when_cleanup_fails() {
     });
     let (mut app, error) = match shutdown.join().expect("shutdown worker must not panic") {
         Ok(()) => panic!("first shutdown attempt must report the injected failure"),
-        Err(failure) => failure,
+        Err(failure) => *failure,
     };
 
     assert!(matches!(
