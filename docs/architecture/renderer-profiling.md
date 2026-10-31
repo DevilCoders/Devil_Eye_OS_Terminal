@@ -97,3 +97,31 @@ The warmed render call allocated exactly once for both full-frame and dirty-row 
 The first optimization removes that temporary vector without changing damage semantics or pixel composition. Expected result: zero allocations in warmed render calls. Throughput must be measured separately; allocation reduction alone is not a claim of frame-time improvement.
 
 The benchmark does not measure retained scrollback because that component does not yet exist. CPU samples are per-sample means; p95 is across the 12 sample means, not individual-operation tail latency.
+
+### After first optimization — 2026-10-31
+
+The first optimization was measured in [workflow run 41251178845](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41251178845), source commit `93f435421e4e6b397a88c1c2545c30cf77f22566`.
+
+**Environment:** GitHub-hosted `ubuntu-24.04`, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74 80-Core Processor, Rust/Cargo 1.99.1, release benchmark profile.
+
+The allocation probes reported **0 allocation calls / 0 requested bytes** for warmed full-frame and dirty-row renders at all three dimensions. This verifies the targeted hot-path allocation was eliminated.
+
+| Workload | Median sample mean | p95 of sample means |
+| --- | ---: | ---: |
+| Full frame, 80×24 | 2.140 ms | 2.159 ms |
+| Dirty row, 80×24 | 89.16 µs | 89.35 µs |
+| Color/style churn, 80×24 | 2.089 ms | 2.113 ms |
+| Linear selection, 80×24 | 2.099 ms | 2.103 ms |
+| Cursor movement, 80×24 | 3.688 µs | 3.710 µs |
+| Resize 80×24 ↔ 160×48 | 1.067 ms | 1.068 ms |
+| Full frame, 160×48 | 8.549 ms | 8.589 ms |
+| Dirty row, 160×48 | 178.10 µs | 178.23 µs |
+| Color/style churn, 160×48 | 8.342 ms | 8.378 ms |
+| Linear selection, 160×48 | 8.390 ms | 8.397 ms |
+| Full frame, 240×80 | 21.500 ms | 21.742 ms |
+| Dirty row, 240×80 | 267.84 µs | 275.77 µs |
+| Color/style churn, 240×80 | 21.004 ms | 21.197 ms |
+| Linear selection, 240×80 | 21.076 ms | 21.264 ms |
+
+**Comparison limitation:** the pre-optimization baseline used an AMD EPYC 7763 runner, while this after-run used an AMD EPYC 9V74 runner. Both used the same `ubuntu-24.04` label, 4-vCPU allocation, kernel, and Rust toolchain, but the CPU model differs. Therefore the timing values are recorded as separate environment-specific observations and must not be presented as a verified frame-time speedup. The zero-allocation result is directly comparable because it is a per-call count, not a throughput comparison.
+
