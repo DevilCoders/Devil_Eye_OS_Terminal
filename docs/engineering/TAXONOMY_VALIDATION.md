@@ -48,7 +48,7 @@ The revised workflow processes both open and closed issues, not only the open ba
 
 The Testing & QA epic (#19) and its continuous QA tasks (#38, #65, #66) intentionally have no single milestone. Their work spans the full delivery lifecycle rather than belonging to one release milestone. This is an explicit planning exception, not missing classification.
 
-Issue #86 (manual GitHub Projects V2 setup) was closed with the `not_planned` state reason because project-board creation requires owner-side UI actions and is optional. Its target milestone remains M0 for historical traceability; it is not a blocker for the engineering workflow.
+Issue #86 (manual GitHub Projects V2 setup) was closed with the `not_planned` state reason because project-board creation requires owner-side UI actions and is optional. Its issue body retains the M0 target for historical traceability; the revised workflow reconciles the milestone field while preserving the closed/not-planned resolution. It is not a blocker for the engineering workflow.
 
 ## Repeatability and failure behavior
 
