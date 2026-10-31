@@ -8,6 +8,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
 use std::thread;
+use std::time::Duration;
 
 use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
 
@@ -249,14 +250,46 @@ fn map_exit_status(status: ExitStatus) -> ProcessExitStatus {
 
 fn reap_detached_child(child: Child) {
     static REAPER: OnceLock<Option<Sender<Child>>> = OnceLock::new();
+    const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
     let sender = REAPER.get_or_init(|| {
         let (sender, receiver) = mpsc::channel::<Child>();
         match thread::Builder::new()
             .name("de-pty-child-reaper".to_owned())
             .spawn(move || {
-                while let Ok(mut child) = receiver.recv() {
-                    let _ = child.wait();
+                let mut children: Vec<Child> = Vec::new();
+                let mut receiver_disconnected = false;
+
+                while !receiver_disconnected || !children.is_empty() {
+                    if !receiver_disconnected {
+                        match receiver.recv_timeout(POLL_INTERVAL) {
+                            Ok(child) => children.push(child),
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                receiver_disconnected = true;
+                            }
+                        }
+                    } else {
+                        thread::sleep(POLL_INTERVAL);
+                    }
+
+                    let mut index = 0Usize;
+                    while index < children.len() {
+                        match children[index].try_wait() {
+                            Ok(Some(_)) => {
+                                children.swap_remove(index);
+                            }
+                            Ok(None) => {
+                                index += 1Usize;
+                            }
+                            Err(error) if error.raw_os_error() == Some(libc::ECHILD) => {
+                                children.swap_remove(index);
+                            }
+                            Err(_error) => {
+                                index += 1Usize;
+                            }
+                        }
+                    }
                 }
             }) {
             Ok(_worker) => Some(sender),
