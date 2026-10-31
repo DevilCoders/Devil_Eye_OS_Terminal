@@ -45,7 +45,8 @@ jobs:
         run: |
           mkdir -p target/performance
           {
-            echo "commit=$GITHUB_SHA"
+            echo "source_commit=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_commit=$GITHUB_SHA"
             echo "runner_os=$RUNNER_OS"
             echo "runner_arch=$RUNNER_ARCH"
             echo "kernel=$(uname -a)"
@@ -60,6 +61,7 @@ jobs:
           DE_BENCH_SAMPLE_MS: "200"
           DE_BENCH_SAMPLES: "12"
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -o pipefail
           cargo bench -p de-terminal-core --bench terminal_core | tee target/performance/terminal-core.csv
@@ -77,7 +79,7 @@ jobs:
       - name: Upload reproducible baseline
         uses: actions/upload-artifact@v4
         with:
-          name: performance-baseline-${{ github.sha }}
+          name: performance-baseline-${{ github.event.pull_request.head.sha || github.sha }}
           path: target/performance/
           if-no-files-found: error
           retention-days: 90
