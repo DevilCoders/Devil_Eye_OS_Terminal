@@ -30,9 +30,7 @@ pub(super) struct ResolvedProgram {
 ///
 /// Empty and relative PATH entries are ignored so a child cannot accidentally
 /// execute a binary from the current working directory.
-pub(super) fn resolve_program(
-    program: &ProgramSpec,
-) -> Result<ResolvedProgram, ProgramSpecError> {
+pub(super) fn resolve_program(program: &ProgramSpec) -> Result<ResolvedProgram, ProgramSpecError> {
     program.validate()?;
 
     let working_directory = resolve_working_directory(program)?;
@@ -44,9 +42,7 @@ pub(super) fn resolve_program(
     })
 }
 
-fn resolve_working_directory(
-    program: &ProgramSpec,
-) -> Result<Option<PathBuf>, ProgramSpecError> {
+fn resolve_working_directory(program: &ProgramSpec) -> Result<Option<PathBuf>, ProgramSpecError> {
     let Some(directory) = program.working_directory() else {
         return Ok(None);
     };
@@ -55,8 +51,7 @@ fn resolve_working_directory(
         io::ErrorKind::NotFound => ProgramSpecError::WorkingDirectoryNotFound,
         _ => ProgramSpecError::PathResolutionFailed,
     })?;
-    let metadata =
-        fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    let metadata = fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
     if !metadata.is_dir() {
         return Err(ProgramSpecError::WorkingDirectoryNotDirectory);
     }
@@ -75,8 +70,9 @@ fn resolve_executable(
         } else {
             let base = match working_directory {
                 Some(directory) => directory.to_path_buf(),
-                None => std::env::current_dir()
-                    .map_err(|_| ProgramSpecError::PathResolutionFailed)?,
+                None => {
+                    std::env::current_dir().map_err(|_| ProgramSpecError::PathResolutionFailed)?
+                }
             };
             base.join(requested)
         };
@@ -130,8 +126,7 @@ fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpec
         io::ErrorKind::PermissionDenied => ProgramSpecError::ExecutableNotExecutable,
         _ => ProgramSpecError::PathResolutionFailed,
     })?;
-    let metadata =
-        fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    let metadata = fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
     if !metadata.is_file() {
         return Err(ProgramSpecError::ExecutableNotRegularFile);
     }
