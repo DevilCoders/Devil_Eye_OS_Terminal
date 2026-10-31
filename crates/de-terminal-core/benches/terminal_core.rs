@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use de_terminal_core::parser::VtParser;
 use de_terminal_core::render::{
-    DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette, Renderer,
-    Rgba, ScaleFactor, SoftwareRenderer, CellRect,
+    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette,
+    Renderer, SoftwareRenderer,
 };
 use de_terminal_core::screen::{
     CellAttributes, GraphemeWidth, TerminalScreen,
@@ -61,7 +61,7 @@ fn metadata() {
         })
         .unwrap_or_else(|| "unavailable".to_owned());
     println!("# cpu={cpu}");
-    println!("name,sample,iterations,median_ns_per_op,p95_ns_per_op,throughput_units_per_second");
+    println!("name,record,sample,iterations,ns_per_op,p95_ns_per_op,throughput_units_per_second");
 }
 
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
@@ -93,15 +93,19 @@ fn benchmark(name: &str, units_per_op: u64, mut operation: impl FnMut()) {
         per_sample.push(ns_per_op);
         total_iterations = total_iterations.saturating_add(iterations);
         println!(
-            "{name},{sample},{iterations},{ns_per_op:.2},0,{:.2}",
+            "{name},sample,{sample},{iterations},{ns_per_op:.2},,{:.2}",
             units_per_op as f64 * iterations as f64 / elapsed.as_secs_f64()
         );
     }
     per_sample.sort_by(f64::total_cmp);
+    let median = percentile(&per_sample, 0.50);
+    let p95 = percentile(&per_sample, 0.95);
+    println!(
+        "{name},summary,0,{total_iterations},{median:.2},{p95:.2},{:.2}",
+        units_per_op as f64 * 1_000_000_000.0 / median
+    );
     eprintln!(
-        "SUMMARY {name}: samples={samples} iterations={total_iterations} median_ns/op={:.2} p95_ns/op={:.2}",
-        percentile(&per_sample, 0.50),
-        percentile(&per_sample, 0.95)
+        "SUMMARY {name}: samples={samples} iterations={total_iterations} median_ns/op={median:.2} p95_ns/op={p95:.2}"
     );
 }
 
@@ -154,6 +158,10 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
     let frame = Frame::new(&screen, &damage, 0).expect("frame");
     renderer.render(frame, None).expect("prime renderer");
     damage.clear();
+    println!(
+        "# renderer_surface_{label}_bytes={}",
+        renderer.surface().pixels().len()
+    );
 
     benchmark(&format!("render_full_{label}"), u64::from(size.rows()) * u64::from(size.columns()), || {
         damage.mark_all();
