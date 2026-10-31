@@ -373,7 +373,6 @@ impl ScreenGrid {
         Some(usize::from(row) * usize::from(self.size.columns()) + usize::from(column))
     }
 
-
     fn scroll_rows(
         &mut self,
         top: u16,
@@ -398,10 +397,12 @@ impl ScreenGrid {
         if shift_rows == region_rows {
             self.cells[top_index..end_index].fill(Cell::default());
         } else if downward {
-            self.cells.copy_within(top_index..end_index - shift_cells, top_index + shift_cells);
+            self.cells
+                .copy_within(top_index..end_index - shift_cells, top_index + shift_cells);
             self.cells[top_index..top_index + shift_cells].fill(Cell::default());
         } else {
-            self.cells.copy_within(top_index + shift_cells..end_index, top_index);
+            self.cells
+                .copy_within(top_index + shift_cells..end_index, top_index);
             self.cells[end_index - shift_cells..end_index].fill(Cell::default());
         }
 
@@ -452,7 +453,6 @@ fn allocate_cells(count: usize) -> Result<Vec<Cell>, ScreenGridError> {
     cells.resize(count, Cell::default());
     Ok(cells)
 }
-
 
 /// Zero-based terminal cursor position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -580,8 +580,7 @@ impl TerminalScreen {
 
     /// Implements line feed, scrolling the active region when the cursor is at its bottom.
     pub fn line_feed(&mut self) -> Result<(), ScreenGridError> {
-        if self.cursor.row >= self.scroll_region.top
-            && self.cursor.row == self.scroll_region.bottom
+        if self.cursor.row >= self.scroll_region.top && self.cursor.row == self.scroll_region.bottom
         {
             self.scroll_up(1u16)?;
         } else if self.cursor.row < self.size().rows() - 1u16 {
@@ -693,16 +692,27 @@ mod tests {
         TerminalSize::new(columns, rows).expect("non-zero terminal dimensions")
     }
 
-
     #[test]
     fn cursor_movement_is_clamped_to_screen_bounds() {
         let mut screen = TerminalScreen::new(size(5u16, 3u16), 15usize).expect("screen");
         screen.set_cursor(99u16, 99u16);
-        assert_eq!(screen.cursor(), CursorPosition { row: 2u16, column: 4u16 });
+        assert_eq!(
+            screen.cursor(),
+            CursorPosition {
+                row: 2u16,
+                column: 4u16
+            }
+        );
 
         screen.move_cursor_down(u16::MAX);
         screen.move_cursor_right(u16::MAX);
-        assert_eq!(screen.cursor(), CursorPosition { row: 2u16, column: 4u16 });
+        assert_eq!(
+            screen.cursor(),
+            CursorPosition {
+                row: 2u16,
+                column: 4u16
+            }
+        );
 
         screen.move_cursor_up(u16::MAX);
         screen.move_cursor_left(u16::MAX);
@@ -714,9 +724,21 @@ mod tests {
         let mut screen = TerminalScreen::new(size(5u16, 3u16), 15usize).expect("screen");
         screen.set_cursor(1u16, 4u16);
         screen.carriage_return();
-        assert_eq!(screen.cursor(), CursorPosition { row: 1u16, column: 0u16 });
+        assert_eq!(
+            screen.cursor(),
+            CursorPosition {
+                row: 1u16,
+                column: 0u16
+            }
+        );
         screen.line_feed().expect("line feed");
-        assert_eq!(screen.cursor(), CursorPosition { row: 2u16, column: 0u16 });
+        assert_eq!(
+            screen.cursor(),
+            CursorPosition {
+                row: 2u16,
+                column: 0u16
+            }
+        );
         screen.line_feed().expect("line feed at bottom");
         assert_eq!(screen.cursor().row(), 2u16);
     }
@@ -725,8 +747,15 @@ mod tests {
     fn line_feed_scrolls_only_the_active_region() {
         let mut screen = TerminalScreen::new(size(2u16, 4u16), 8usize).expect("screen");
         for (row, value) in [(0u16, "A"), (1u16, "B"), (2u16, "C"), (3u16, "D")] {
-            screen.grid_mut()
-                .set_grapheme(row, 0u16, value, GraphemeWidth::Single, CellAttributes::default())
+            screen
+                .grid_mut()
+                .set_grapheme(
+                    row,
+                    0u16,
+                    value,
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
                 .expect("write row marker");
         }
         screen.set_scroll_region(1u16, 2u16).expect("scroll region");
@@ -755,8 +784,17 @@ mod tests {
         }
         screen.set_scroll_region(1u16, 2u16).expect("scroll region");
         screen.scroll_down(1u16).expect("scroll down");
-        assert!(screen.grid().get_cell(1u16, 0u16).expect("new top").is_empty());
-        match screen.grid().get_cell(2u16, 0u16).expect("moved row").content() {
+        assert!(screen
+            .grid()
+            .get_cell(1u16, 0u16)
+            .expect("new top")
+            .is_empty());
+        match screen
+            .grid()
+            .get_cell(2u16, 0u16)
+            .expect("moved row")
+            .content()
+        {
             CellContent::Grapheme { value, .. } => assert_eq!(value.as_str(), "B"),
             other => panic!("unexpected cell after scroll: {other:?}"),
         }
@@ -767,21 +805,44 @@ mod tests {
         let mut screen = TerminalScreen::new(size(4u16, 3u16), 12usize).expect("screen");
         for row in 0u16..3u16 {
             for column in 0u16..4u16 {
-                screen.grid_mut()
-                    .set_grapheme(row, column, "x", GraphemeWidth::Single, CellAttributes::default())
+                screen
+                    .grid_mut()
+                    .set_grapheme(
+                        row,
+                        column,
+                        "x",
+                        GraphemeWidth::Single,
+                        CellAttributes::default(),
+                    )
                     .expect("write cell");
             }
         }
         screen.set_cursor(1u16, 2u16);
-        screen.erase_line(EraseMode::ToBeginning).expect("erase line prefix");
+        screen
+            .erase_line(EraseMode::ToBeginning)
+            .expect("erase line prefix");
         assert!(screen.grid().get_cell(1u16, 0u16).expect("cell").is_empty());
         assert!(screen.grid().get_cell(1u16, 2u16).expect("cell").is_empty());
         assert!(!screen.grid().get_cell(1u16, 3u16).expect("cell").is_empty());
 
-        screen.erase_display(EraseMode::ToEnd).expect("erase display suffix");
-        assert!(!screen.grid().get_cell(0u16, 3u16).expect("above cursor").is_empty());
-        assert!(screen.grid().get_cell(1u16, 3u16).expect("cursor row suffix").is_empty());
-        assert!(screen.grid().get_cell(2u16, 0u16).expect("below cursor").is_empty());
+        screen
+            .erase_display(EraseMode::ToEnd)
+            .expect("erase display suffix");
+        assert!(!screen
+            .grid()
+            .get_cell(0u16, 3u16)
+            .expect("above cursor")
+            .is_empty());
+        assert!(screen
+            .grid()
+            .get_cell(1u16, 3u16)
+            .expect("cursor row suffix")
+            .is_empty());
+        assert!(screen
+            .grid()
+            .get_cell(2u16, 0u16)
+            .expect("below cursor")
+            .is_empty());
 
         screen.erase_display(EraseMode::All).expect("erase full display");
         assert!(screen.grid().cells().iter().all(|cell| cell.is_empty()));
@@ -808,8 +869,20 @@ mod tests {
         screen.set_cursor(4u16, 4u16);
         screen.set_scroll_region(1u16, 4u16).expect("scroll region");
         screen.resize(size(3u16, 3u16)).expect("shrink screen");
-        assert_eq!(screen.cursor(), CursorPosition { row: 2u16, column: 2u16 });
-        assert_eq!(screen.scroll_region(), ScrollRegion { top: 1u16, bottom: 2u16 });
+        assert_eq!(
+            screen.cursor(),
+            CursorPosition {
+                row: 2u16,
+                column: 2u16
+            }
+        );
+        assert_eq!(
+            screen.scroll_region(),
+            ScrollRegion {
+                top: 1u16,
+                bottom: 2u16
+            }
+        );
     }
 
     #[test]
@@ -971,7 +1044,7 @@ mod tests {
 
     #[test]
     fn resize_preserves_intersection_and_clears_cut_wide_cluster() {
-        let mut grid = ScreenGrid::new(size(4u16, 2u16), 8usize).expect("grid");
+        let mut grid = ScreenGrid::new(size(4u16, 2u16), 12usize).expect("grid");
         grid.set_grapheme(
             0u16,
             0u16,
