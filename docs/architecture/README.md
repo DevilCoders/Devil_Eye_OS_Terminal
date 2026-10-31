@@ -5,7 +5,8 @@ This directory contains the system architecture baseline and architecture decisi
 ## System architecture
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
-- [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.\n- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.
+- [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.
+- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.\n- [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.
 - [Cross-Component API Contracts](api-contracts.md) — lifecycle state machine, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
 - [DE-Shell Library Lifecycle](de-shell-lifecycle.md) — opaque C handle ownership, create/destroy semantics, status codes, and lifecycle tests.
 - [DE-Shell Input Buffer](de-shell-input-buffer.md) — bounded byte storage, explicit line submission, EOF flushing, capacity behavior, and ownership.
