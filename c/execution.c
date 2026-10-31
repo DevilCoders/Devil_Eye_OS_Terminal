@@ -298,6 +298,8 @@ static de_shell_status_t de_shell_execute_simple_command(
         return DE_SHELL_STATUS_OK;
     }
 
+    argv[node->word_count] = NULL;
+
     registry_status = de_shell_command_registry_lookup(
         shell->command_registry, argv[0], &command_info);
 
@@ -706,7 +708,7 @@ de_shell_status_t de_shell_execute_source(
     word_storage_capacity = source_length + ast.word_count + 1U;
 
     frames = calloc(ast.node_count, sizeof(*frames));
-    argv = calloc(DE_SHELL_EXEC_MAX_ARGUMENTS, sizeof(*argv));
+    argv = calloc(DE_SHELL_EXEC_MAX_ARGUMENTS + 1U, sizeof(*argv));
     word_storage = calloc(word_storage_capacity, sizeof(*word_storage));
     if (frames == NULL || argv == NULL || word_storage == NULL) {
         de_shell_set_diagnostic(
