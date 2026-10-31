@@ -73,11 +73,11 @@ Closing a session is idempotent once Closed:
 7. Drop the runtime handle. The Linux spawn request has kill-on-drop enabled; the runtime handle's Drop path kills the owned process group and reaps the child.
 8. Clear pending input and transition to Closed.
 
-The same cleanup path is used by application shutdown. The manager attempts to close every session even if another session reports a cleanup error, then shuts down the runtime service. A runtime-shutdown failure remains retryable by the application lifecycle coordinator.
+If closing stdin reports an error, the manager rechecks child status before recording a cleanup failure. If the child exited in the interval between the initial status check and stdin close, that is treated as a successful exit race and no redundant termination signal is sent. The same cleanup path is used by application shutdown. The manager attempts to close every session even if another session reports a cleanup error, then shuts down the runtime service. A runtime-shutdown failure remains retryable by the application lifecycle coordinator.
 
 Dropping a live `ManagedSession` also requests forced termination before dropping its kill-on-drop process handle. Dropping the manager invokes shutdown for all remaining sessions. This is a final safety net, not a replacement for explicit orderly shutdown.
 
-Shutdown uses bounded waits and can block for the configured grace/force intervals. It must be invoked from an application lifecycle worker, not the GUI/event-loop thread.
+Shutdown uses bounded waits and can block for the configured grace/force intervals. The synchronous `close_session` and application-service `shutdown` paths must run on a lifecycle worker, never on the GUI/event-loop thread. GUI callers should use `SessionManager::close_session_async`: it removes the session from the active registry immediately and performs cleanup on a dedicated worker. The top-level `Application::shutdown_async` consumes the application and runs reverse-order service cleanup on a dedicated lifecycle worker; GUI/event-loop callers must use it instead of `Application::shutdown`. If worker creation fails, the original application is returned with the spawn error so cleanup can be retried without dropping services on the caller thread. Callers may poll the returned `JoinHandle::is_finished`; application shutdown waits for all close workers to finish before shutting down the runtime service. Dropping a close handle detaches cleanup rather than cancelling it.
 
 ## 6. Limits and errors
 
@@ -91,7 +91,7 @@ Default limits:
 | Graceful termination wait | 300 ms |
 | Forced termination wait | 500 ms |
 
-All limits are configurable through `SessionManagerLimits`. Input queue growth uses fallible reservation. Session creation is rejected when the manager is not initialized, the session limit is reached, the executable specification is invalid, or the requested backend is not wired.
+All limits are configurable through `SessionManagerLimits`. Input queue growth uses fallible reservation. Session creation is rejected when the manager is not initialized, the session limit is reached, the executable specification is invalid, or the requested backend is not wired. Sessions being closed asynchronously continue to count against the concurrent-session limit until their close worker releases the process/PTY handle.
 
 Errors use safe service-level descriptions. They do not include command arguments, environment values, or secret process data.
 

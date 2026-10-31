@@ -1,5 +1,6 @@
 use de_app::{Application, ApplicationService, ApplicationState, LifecycleError, ServiceError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
 
 #[derive(Clone)]
 struct Recorder {
@@ -60,6 +61,29 @@ impl ApplicationService for Recorder {
         } else {
             Ok(())
         }
+    }
+}
+
+struct BlockingShutdown {
+    entered: Arc<Barrier>,
+    release: Arc<Barrier>,
+    shutdown_thread: Arc<Mutex<Option<thread::ThreadId>>>,
+}
+
+impl ApplicationService for BlockingShutdown {
+    fn name(&self) -> &str {
+        "blocking-shutdown"
+    }
+
+    fn initialize(&mut self) -> Result<(), ServiceError> {
+        Ok(())
+    }
+
+    fn shutdown(&mut self) -> Result<(), ServiceError> {
+        *self.shutdown_thread.lock().expect("shutdown thread lock") = Some(thread::current().id());
+        self.entered.wait();
+        self.release.wait();
+        Ok(())
     }
 }
 
@@ -209,6 +233,72 @@ fn rejects_duplicate_start_and_late_service_registration() {
     ));
 
     app.shutdown().expect("shutdown succeeds");
+}
+
+#[test]
+fn asynchronous_shutdown_runs_service_cleanup_on_a_worker_thread() {
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let shutdown_thread = Arc::new(Mutex::new(None));
+    let mut app = Application::new();
+    app.register_service(BlockingShutdown {
+        entered: Arc::clone(&entered),
+        release: Arc::clone(&release),
+        shutdown_thread: Arc::clone(&shutdown_thread),
+    })
+    .expect("register blocking service");
+    app.start().expect("application starts");
+
+    let caller_thread = thread::current().id();
+    let shutdown = app.shutdown_async().unwrap_or_else(|(_app, error)| {
+        panic!("spawn shutdown worker: {error}");
+    });
+    entered.wait();
+
+    assert_ne!(
+        *shutdown_thread.lock().expect("shutdown thread lock"),
+        Some(caller_thread),
+        "service cleanup must not execute on the caller/event-loop thread"
+    );
+    assert!(
+        !shutdown.is_finished(),
+        "shutdown handle must remain pending while service cleanup is blocked"
+    );
+
+    release.wait();
+    assert!(
+        shutdown
+            .join()
+            .expect("shutdown worker must not panic")
+            .is_ok(),
+        "application shutdown succeeds"
+    );
+}
+
+#[test]
+fn asynchronous_shutdown_returns_application_when_cleanup_fails() {
+    let log = event_log();
+    let mut app = Application::new();
+    app.register_service(Recorder::new("runtime", Arc::clone(&log)).fail_shutdown_times(1))
+        .expect("register runtime");
+    app.start().expect("application starts");
+
+    let shutdown = app.shutdown_async().unwrap_or_else(|(_app, error)| {
+        panic!("spawn shutdown worker: {error}");
+    });
+    let (mut app, error) = match shutdown.join().expect("shutdown worker must not panic") {
+        Ok(()) => panic!("first shutdown attempt must report the injected failure"),
+        Err(failure) => *failure,
+    };
+
+    assert!(matches!(
+        error,
+        LifecycleError::ShutdownFailed { ref failures }
+            if failures.len() == 1 && failures[0].service == "runtime"
+    ));
+    assert_eq!(app.state(), ApplicationState::Failed);
+    app.shutdown().expect("caller can retry failed cleanup");
+    assert_eq!(app.state(), ApplicationState::Stopped);
 }
 
 #[test]

@@ -6,6 +6,9 @@
 
 use std::error::Error;
 use std::fmt;
+use std::io;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 /// Observable state of the top-level application lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +58,10 @@ impl Error for ServiceError {}
 /// application immediately calls `shutdown` on that same service before
 /// rolling back previously initialized services. Implementations should make
 /// `shutdown` idempotent and release any partially acquired resources.
+///
+/// Shutdown may block while child processes or native resources are released.
+/// Application coordinators must invoke it on a lifecycle worker, never on the
+/// GUI/event-loop thread.
 pub trait ApplicationService: Send {
     /// Stable diagnostic name for this service.
     fn name(&self) -> &str;
@@ -138,6 +145,15 @@ impl Error for LifecycleError {}
 /// Register services before calling `start`. Startup is deterministic:
 /// services initialize in registration order. Shutdown and rollback run in
 /// reverse order. A failed cleanup is retained for a later `shutdown` retry.
+/// Result produced by the asynchronous application shutdown worker.
+pub type AsyncShutdownOutcome = Result<(), Box<(Application, LifecycleError)>>;
+
+/// Join handle returned by the asynchronous shutdown method.
+pub type AsyncShutdownHandle = thread::JoinHandle<AsyncShutdownOutcome>;
+
+/// Error returned when the operating system cannot spawn the shutdown worker.
+pub type AsyncShutdownSpawnError = (Application, io::Error);
+
 pub struct Application {
     state: ApplicationState,
     services: Vec<Box<dyn ApplicationService>>,
@@ -240,6 +256,53 @@ impl Application {
         } else {
             self.state = ApplicationState::Failed;
             Err(LifecycleError::ShutdownFailed { failures })
+        }
+    }
+
+    /// Consumes the application and performs service shutdown on a dedicated worker.
+    ///
+    /// GUI/event-loop callers must use this method rather than calling shutdown
+    /// directly because service cleanup may wait for child processes and native
+    /// resources. The returned handle can be polled with is_finished; join it
+    /// only after completion.
+    ///
+    /// If cleanup fails, joining the worker returns the still-owned application
+    /// together with the lifecycle error. Failed services remain available for
+    /// a later retry. If the operating system cannot create the worker thread,
+    /// the original application is returned with the I/O error and no service
+    /// is dropped as a side effect of the failed spawn.
+    pub fn shutdown_async(self) -> Result<AsyncShutdownHandle, AsyncShutdownSpawnError> {
+        let application = Arc::new(Mutex::new(Some(self)));
+        let worker_application = Arc::clone(&application);
+        let result = thread::Builder::new()
+            .name("de-application-shutdown".to_owned())
+            .spawn(move || {
+                let mut application = worker_application
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_else(|| unreachable!("shutdown worker owns the application once"));
+                match application.shutdown() {
+                    Ok(()) => Ok(()),
+                    Err(error) => Err(Box::new((application, error))),
+                }
+            });
+
+        match result {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                let application = match Arc::try_unwrap(application) {
+                    Ok(application) => application,
+                    Err(_) => unreachable!("failed thread spawn must drop its closure"),
+                };
+                let application = application
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .unwrap_or_else(|| {
+                        unreachable!("application remains available on spawn failure")
+                    });
+                Err((application, error))
+            }
         }
     }
 
