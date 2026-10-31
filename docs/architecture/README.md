@@ -8,6 +8,7 @@ This directory contains the system architecture baseline, component contracts, a
 - [Cross-Component API Contracts](api-contracts.md)
 - [Terminal Session Manager](session-manager.md) — session identity, PTY/process ownership, bounded I/O, exit polling, resize, worker-thread close, shutdown, and orphan prevention.
 - [Renderer Contract](renderer-contract.md) — immutable frames, cell/pixel coordinate spaces, glyph metrics, clipping, bounded damage tracking, and resize semantics.
+- [Performance Benchmarks and Initial Budgets](performance-benchmarks.md) — reproducible Linux x86_64 benchmarks, sampling protocol, resource budgets, and measurement boundaries.
 - [Keyboard Input Mapping](input-mapping.md) — key/text event separation, xterm key sequences, modifiers, IME handling, and configurable shortcuts.
 - [Linux PTY I/O Contract](linux-pty-io.md) — descriptor ownership, nonblocking progress, backpressure, resize, EOF, cancellation, and stress-test evidence.
 

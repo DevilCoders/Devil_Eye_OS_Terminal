@@ -1,0 +1,86 @@
+name: Performance Benchmarks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "docs/architecture/performance-benchmarks.md"
+      - ".github/workflows/performance-benchmarks.yml"
+  push:
+    branches:
+      - "perf/**"
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "docs/architecture/performance-benchmarks.md"
+      - ".github/workflows/performance-benchmarks.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-benchmarks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Reproducible Linux x86_64 baselines
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Record runner environment
+        run: |
+          mkdir -p target/performance
+          {
+            echo "source_commit=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_commit=$GITHUB_SHA"
+            echo "runner_os=$RUNNER_OS"
+            echo "runner_arch=$RUNNER_ARCH"
+            echo "kernel=$(uname -a)"
+            echo "cpu=$(lscpu | grep -E 'Model name|CPU\(s\)|Architecture' | tr '\n' ';')"
+            echo "rustc=$(rustc --version)"
+            echo "cargo=$(cargo --version)"
+          } | tee target/performance/environment.txt
+
+      - name: Run terminal-core benchmarks
+        env:
+          DE_BENCH_WARMUP_MS: "500"
+          DE_BENCH_SAMPLE_MS: "200"
+          DE_BENCH_SAMPLES: "12"
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -o pipefail
+          cargo bench -p de-terminal-core --bench terminal_core | tee target/performance/terminal-core.csv
+
+      - name: Run Linux session and PTY benchmarks
+        env:
+          DE_BENCH_WARMUP_MS: "500"
+          DE_BENCH_SAMPLE_MS: "200"
+          DE_BENCH_SAMPLES: "12"
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -o pipefail
+          cargo bench -p de-app --bench session_io | tee target/performance/session-io.csv
+
+      - name: Upload reproducible baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline-${{ github.event.pull_request.head.sha || github.sha }}
+          path: target/performance/
+          if-no-files-found: error
+          retention-days: 90

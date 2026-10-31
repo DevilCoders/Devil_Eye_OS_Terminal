@@ -14,3 +14,7 @@ de-terminal-core.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "session_io"
+harness = false
