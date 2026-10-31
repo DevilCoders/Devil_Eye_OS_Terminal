@@ -63,7 +63,11 @@ pub enum Color {
     #[default]
     Default,
     Indexed(u8),
-    Rgb { red: u8, green: u8, blue: u8 },
+    Rgb {
+        red: u8,
+        green: u8,
+        blue: u8,
+    },
 }
 
 /// Compact, composable terminal text-style flags.
@@ -276,7 +280,9 @@ impl ScreenGrid {
         width: GraphemeWidth,
         attributes: CellAttributes,
     ) -> Result<(), ScreenGridError> {
-        let index = self.index(row, column).ok_or(ScreenGridError::OutOfBounds)?;
+        let index = self
+            .index(row, column)
+            .ok_or(ScreenGridError::OutOfBounds)?;
         let grapheme = Grapheme::new(value)?;
 
         if width == GraphemeWidth::Wide && column + 1U16 >= self.size.columns() {
@@ -360,9 +366,7 @@ impl ScreenGrid {
             return None;
         }
 
-        Some(
-            usize::from(row) * usize::from(self.size.columns()) + usize::from(column),
-        )
+        Some(usize::from(row) * usize::from(self.size.columns()) + usize::from(column))
     }
 
     fn clear_cell_pair(&mut self, index: usize) {
@@ -413,8 +417,8 @@ fn allocate_cells(count: usize) -> Result<Vec<Cell>, ScreenGridError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CellAttributes, CellContent, Color, Grapheme, GraphemeWidth, ScreenGrid,
-        ScreenGridError, StyleFlags, MAX_GRAPHEME_BYTES,
+        CellAttributes, CellContent, Color, Grapheme, GraphemeWidth, ScreenGrid, ScreenGridError,
+        StyleFlags, MAX_GRAPHEME_BYTES,
     };
     use crate::TerminalSize;
 
@@ -505,7 +509,9 @@ mod tests {
             .expect("continuation")
             .is_continuation());
         assert_eq!(
-            grid.get_cell(0U16, 2U16).expect("continuation").attributes(),
+            grid.get_cell(0U16, 2U16)
+                .expect("continuation")
+                .attributes(),
             attributes
         );
         assert!(attributes.styles().contains(StyleFlags::BOLD));
@@ -574,10 +580,7 @@ mod tests {
         grid.set_empty(0U16, 0U16).expect("clear wide grapheme");
 
         assert!(grid.get_cell(0U16, 0U16).expect("lead").is_empty());
-        assert!(grid
-            .get_cell(0U16, 1U16)
-            .expect("continuation")
-            .is_empty());
+        assert!(grid.get_cell(0U16, 1U16).expect("continuation").is_empty());
     }
 
     #[test]
@@ -638,10 +641,7 @@ mod tests {
     fn rejects_invalid_grapheme_values_and_out_of_bounds_access() {
         let mut grid = ScreenGrid::new(size(2U16, 2U16), 4Usize).expect("grid");
 
-        assert_eq!(
-            Grapheme::new(""),
-            Err(ScreenGridError::EmptyGrapheme)
-        );
+        assert_eq!(Grapheme::new(""), Err(ScreenGridError::EmptyGrapheme));
         assert_eq!(
             Grapheme::new("\u{7}"),
             Err(ScreenGridError::ControlCharacterInGrapheme)
