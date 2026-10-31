@@ -815,7 +815,7 @@ mod tests {
     #[test]
     fn rejects_missing_or_unsupported_schema_versions() {
         assert!(matches!(
-            AppConfig::from_value(table([])),
+            AppConfig::from_value(table(std::iter::empty::<(&'static str, ConfigValue)>())),
             Err(ConfigError::MissingField { section, key })
                 if section == "root" && key == "schema_version"
         ));
