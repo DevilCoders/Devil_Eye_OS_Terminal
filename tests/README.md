@@ -5,7 +5,7 @@ Tests are organized by the boundary they validate:
 - Rust unit tests live beside the implementation in `crates/<crate>/src` under `#[cfg(test)]`.
 - Rust integration tests live in `crates/<crate>/tests/` and exercise the crate's public API.
 - C tests live in `c/tests/` and are registered with CTest.
-- `fixtures/` stores deterministic input/output fixtures, terminal transcripts, and test data.
+- `automation/` — deterministic tests for repository automation rules (Node built-in test runner).\n- `fixtures/` stores deterministic input/output fixtures, terminal transcripts, and test data.
 - Future `e2e/` tests exercise complete terminal workflows and process/session behavior.
 - Future `fuzz/` targets exercise parsers, escape sequences, and input-state machines.
 
