@@ -112,3 +112,29 @@ The contract module tests:
 - Glyph metric and scale-factor validation.
 
 Concrete GPU/font rendering tests belong to the selected backend implementation task; this contract does not claim a renderer exists.
+
+
+## Selection and software reference renderer
+
+The frame may carry an optional immutable selection:
+
+- **Linear selection** includes both endpoints and every row-major cell between them.
+- **Rectangular selection** includes the inclusive rectangle between anchor and extent.
+- Both endpoints are validated against the frame dimensions. A frame rejects stale/out-of-bounds selections.
+- The application marks the old and new selection regions dirty when selection changes.
+
+The initial concrete implementation is `SoftwareRenderer`, a deterministic CPU reference backend. It consumes a caller-provided `GlyphAtlas` of alpha bitmaps, so font discovery/rasterization remains a separate concern and can later feed the same frame contract from a GPU backend.
+
+The software renderer implements:
+
+- RGBA surface allocation with checked dimensions, a hard pixel budget, and fallible reservation.
+- Default, 16-color, 256-color, and true-color resolution.
+- Cell background/foreground, inverse, dim, bold, italic, underline, strikethrough, hidden, and blink visibility.
+- Single- and double-cell grapheme placement, with continuation-cell handling.
+- Selection and block-cursor palette overrides.
+- Cell-space clipping, bounded damage-region redraw, and full invalidation after resize/cursor/blink visibility changes.
+- Deterministic pixel output for headless golden tests.
+
+The glyph atlas is an input to this pipeline, not a built-in font. A concrete font provider must rasterize complete grapheme clusters into atlas entries and supply a fallback glyph. Missing atlas entries use the explicit fallback and preserve the terminal cell advance.
+
+The CPU backend is the correctness/reference implementation and test surface. It does not claim to provide a window, GPU acceleration, font discovery, or a production desktop UI.
