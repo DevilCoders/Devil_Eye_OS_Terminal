@@ -9,6 +9,3 @@ path = "src/lib.rs"
 
 [lints]
 workspace = true
-
-[build-dependencies]
-cc = "1.2"
