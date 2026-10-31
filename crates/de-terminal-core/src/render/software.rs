@@ -1091,6 +1091,49 @@ mod tests {
     }
 
     #[test]
+    fn dirty_continuation_redraws_the_leading_wide_grapheme() {
+        let terminal_size = size(2, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        screen
+            .set_grapheme(0, 0, "中", GraphemeWidth::Wide, CellAttributes::default())
+            .unwrap();
+        let wide = GlyphBitmap::new(6, 5, vec![255; 30]).unwrap();
+        let mut glyphs = GlyphAtlas::new(wide.clone());
+        glyphs.insert("中", wide).unwrap();
+        let mut renderer = SoftwareRenderer::new(
+            terminal_size,
+            metrics(),
+            palette(),
+            glyphs,
+            128,
+        )
+        .unwrap();
+        renderer.set_cursor_visible(false);
+        let mut damage = DamageTracker::new(terminal_size, 4).unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        damage.clear();
+
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "中",
+                GraphemeWidth::Wide,
+                CellAttributes::new(Color::Indexed(1), Color::Default, StyleFlags::empty()),
+            )
+            .unwrap();
+        damage
+            .mark_rect(CellRect::new(0, 1, 1, 1).unwrap())
+            .unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+
+        assert_eq!(
+            renderer.surface().pixel(3, 2),
+            Some(Rgba::rgb(205, 49, 49))
+        );
+    }
+
+    #[test]
     fn resize_scale_and_surface_limits_are_enforced() {
         let terminal_size = size(1, 1);
         let mut renderer =
