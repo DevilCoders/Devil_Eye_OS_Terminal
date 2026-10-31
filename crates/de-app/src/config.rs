@@ -647,7 +647,7 @@ fn wrong_type(section: &str, key: &str, expected: &'static str) -> ConfigError {
     }
 }
 
-fn invalid_value(section: &'static str, key: &'static str, reason: &'static str) -> ConfigError {
+fn invalid_value(section: &str, key: &str, reason: &'static str) -> ConfigError {
     let field = match section {
         "root" => key,
         "terminal" => match key {
