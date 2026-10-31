@@ -67,7 +67,10 @@ mod tests {
 
     #[test]
     fn rejects_zero_columns() {
-        assert_eq!(TerminalSize::new(0, 24), Err(TerminalSizeError::ZeroColumns));
+        assert_eq!(
+            TerminalSize::new(0, 24),
+            Err(TerminalSizeError::ZeroColumns)
+        );
     }
 
     #[test]
