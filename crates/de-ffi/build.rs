@@ -58,6 +58,7 @@ fn main() {
     let extra_flags = env::var("CFLAGS").unwrap_or_default();
     let optimization = env::var("OPT_LEVEL").unwrap_or_else(|_| "0".to_owned());
     let debug = env::var("DEBUG").unwrap_or_default() == "true";
+    let package_version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_owned());
 
     let mut objects = Vec::with_capacity(SOURCES.len());
     for (index, source) in SOURCES.iter().enumerate() {
@@ -76,6 +77,7 @@ fn main() {
             .arg("-Wshadow")
             .arg("-Wstrict-prototypes")
             .arg("-Werror")
+            .arg(format!("-DDE_SHELL_VERSION=\\\"{package_version}\\\""))
             .arg(format!("-O{optimization}"))
             .arg(format!("-I{}", include_dir.display()))
             .arg(format!("-I{}", c_dir.display()));
@@ -94,7 +96,7 @@ fn main() {
         objects.push(object_path);
     }
 
-    for directory in [include_dir.join("de_shell"), c_dir.join("internal")] {
+    for directory in [include_dir, c_dir] {
         println!("cargo:rerun-if-changed={}", directory.display());
     }
 
