@@ -928,7 +928,7 @@ mod tests {
         let empty_glyph = GlyphBitmap::new(1, 1, vec![0]).expect("empty glyph");
         let mut glyphs = GlyphAtlas::new(empty_glyph);
         glyphs
-            .insert("x", GlyphBitmap::new(1, 1, vec![255]).unwrap())
+            .insert("x", GlyphBitmap::new(1, 1, vec![0]).unwrap())
             .unwrap();
         let small_metrics = GlyphMetrics::new(1.0, 0.5, 0.5, 1.0).unwrap();
         let mut renderer =
@@ -948,6 +948,13 @@ mod tests {
         .unwrap();
         render_frame(&mut renderer, &screen, &damage, Some(selection), None).unwrap();
         assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(0, 0, 255)));
+
+        renderer
+            .atlas
+            .insert("x", GlyphBitmap::new(1, 1, vec![255]).unwrap())
+            .unwrap();
+        render_frame(&mut renderer, &screen, &damage, Some(selection), None).unwrap();
+        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(255, 255, 255)));
 
         renderer.set_cursor_visible(true);
         let mut cursor_screen = TerminalScreen::new(terminal_size, 2).unwrap();
