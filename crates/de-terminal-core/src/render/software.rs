@@ -964,6 +964,79 @@ mod tests {
     }
 
     #[test]
+    fn underline_and_strikethrough_are_composited_after_glyphs() {
+        let terminal_size = size(1, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 1).unwrap();
+        let styles = StyleFlags::UNDERLINE.with(StyleFlags::STRIKETHROUGH);
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::new(Color::Default, Color::Default, styles),
+            )
+            .unwrap();
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128).unwrap();
+        renderer.set_cursor_visible(false);
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+
+        assert_eq!(renderer.surface().pixel(1, 2), Some(Rgba::rgb(255, 255, 255)));
+        assert_eq!(renderer.surface().pixel(1, 4), Some(Rgba::rgb(255, 255, 255)));
+    }
+
+    #[test]
+    fn blink_and_hidden_attributes_control_glyph_visibility() {
+        let terminal_size = size(1, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 1).unwrap();
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::new(
+                    Color::Default,
+                    Color::Default,
+                    StyleFlags::BLINK,
+                ),
+            )
+            .unwrap();
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128).unwrap();
+        renderer.set_cursor_visible(false);
+        renderer.set_blink_visible(false);
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(0, 0, 0)));
+
+        renderer.set_blink_visible(true);
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        assert_eq!(
+            renderer.surface().pixel(0, 0),
+            Some(Rgba::rgb(255, 255, 255))
+        );
+
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::new(
+                    Color::Default,
+                    Color::Default,
+                    StyleFlags::HIDDEN,
+                ),
+            )
+            .unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(0, 0, 0)));
+    }
+
+    #[test]
     fn clipping_does_not_paint_cells_outside_the_requested_clip() {
         let terminal_size = size(2, 1);
         let mut screen = TerminalScreen::new(terminal_size, 2).unwrap();
