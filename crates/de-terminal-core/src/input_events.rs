@@ -75,7 +75,10 @@ impl fmt::Display for PasteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TooLarge { actual, maximum } => {
-                write!(formatter, "paste of {actual} bytes exceeds limit of {maximum}")
+                write!(
+                    formatter,
+                    "paste of {actual} bytes exceeds limit of {maximum}"
+                )
             }
             Self::MultilineConfirmationRequired => {
                 formatter.write_str("multi-line paste requires explicit confirmation")
@@ -186,13 +189,8 @@ impl InputEventModes {
     ///
     /// Unsupported private modes are ignored. A malformed parameter list is
     /// rejected atomically: no mode is changed.
-    pub fn apply_csi_sequence(
-        &mut self,
-        sequence: &CsiSequence,
-    ) -> Result<bool, InputModeError> {
-        if !sequence.intermediates().is_empty()
-            || !matches!(sequence.final_byte(), b'h' | b'l')
-        {
+    pub fn apply_csi_sequence(&mut self, sequence: &CsiSequence) -> Result<bool, InputModeError> {
+        if !sequence.intermediates().is_empty() || !matches!(sequence.final_byte(), b'h' | b'l') {
             return Ok(false);
         }
 
@@ -309,7 +307,9 @@ pub enum MouseEventKind {
     Press(MouseButton),
     Release(MouseButton),
     /// held_button is the button currently held, if any.
-    Move { held_button: Option<MouseButton> },
+    Move {
+        held_button: Option<MouseButton>,
+    },
     Wheel(WheelDirection),
 }
 
@@ -322,11 +322,7 @@ pub struct MouseEvent {
 }
 
 impl MouseEvent {
-    pub const fn new(
-        kind: MouseEventKind,
-        position: MousePosition,
-        modifiers: Modifiers,
-    ) -> Self {
+    pub const fn new(kind: MouseEventKind, position: MousePosition, modifiers: Modifiers) -> Self {
         Self {
             kind,
             position,
@@ -334,11 +330,7 @@ impl MouseEvent {
         }
     }
 
-    pub const fn press(
-        button: MouseButton,
-        position: MousePosition,
-        modifiers: Modifiers,
-    ) -> Self {
+    pub const fn press(button: MouseButton, position: MousePosition, modifiers: Modifiers) -> Self {
         Self::new(MouseEventKind::Press(button), position, modifiers)
     }
 
@@ -432,11 +424,7 @@ impl InputEventMapper {
     /// NUL, ESC, DEL, and other control characters are rejected; CR, LF, and
     /// TAB are retained verbatim. The caller chooses an Allow policy only
     /// after any required confirmation has been obtained.
-    pub fn map_paste(
-        &self,
-        text: &str,
-        policy: PastePolicy,
-    ) -> Result<InputResult, PasteError> {
+    pub fn map_paste(&self, text: &str, policy: PastePolicy) -> Result<InputResult, PasteError> {
         if text.is_empty() {
             return Ok(InputResult::Ignored);
         }
@@ -584,9 +572,9 @@ const fn wheel_code(direction: WheelDirection) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        FocusEvent, InputEventMapper, InputEventModes, InputModeError, MouseButton,
-        MouseEncoding, MouseEvent, MouseMappingError, MousePosition, MouseTrackingMode,
-        MultilinePastePolicy, PasteError, PastePolicy, WheelDirection,
+        FocusEvent, InputEventMapper, InputEventModes, InputModeError, MouseButton, MouseEncoding,
+        MouseEvent, MouseMappingError, MousePosition, MouseTrackingMode, MultilinePastePolicy,
+        PasteError, PastePolicy, WheelDirection,
     };
     use crate::input::{InputResult, Modifiers};
     use crate::parser::{TerminalEvent, VtParser};
@@ -844,8 +832,14 @@ mod tests {
         assert_eq!(mapper.map_focus(FocusEvent::Gained), InputResult::Ignored);
         modes.set_dec_private_mode(1004, true);
         let mapper = InputEventMapper::new(modes);
-        assert_eq!(mapper.map_focus(FocusEvent::Gained), InputResult::Bytes(b"\x1b[I".to_vec()));
-        assert_eq!(mapper.map_focus(FocusEvent::Lost), InputResult::Bytes(b"\x1b[O".to_vec()));
+        assert_eq!(
+            mapper.map_focus(FocusEvent::Gained),
+            InputResult::Bytes(b"\x1b[I".to_vec())
+        );
+        assert_eq!(
+            mapper.map_focus(FocusEvent::Lost),
+            InputResult::Bytes(b"\x1b[O".to_vec())
+        );
     }
 
     #[test]
