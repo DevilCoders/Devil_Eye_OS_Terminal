@@ -575,8 +575,7 @@ impl TerminalScreen {
 
     /// Implements line feed, scrolling the active region when the cursor is at its bottom.
     pub fn line_feed(&mut self) -> Result<(), ScreenGridError> {
-        if self.cursor.row >= self.scroll_region.top && self.cursor.row == self.scroll_region.bottom
-        {
+        if self.cursor.row == self.scroll_region.bottom {
             self.scroll_up(1u16)?;
         } else if self.cursor.row < self.size().rows() - 1u16 {
             self.cursor.row += 1u16;
