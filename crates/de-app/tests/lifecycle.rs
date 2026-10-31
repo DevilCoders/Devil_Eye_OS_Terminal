@@ -266,10 +266,37 @@ fn asynchronous_shutdown_runs_service_cleanup_on_a_worker_thread() {
     );
 
     release.wait();
-    shutdown
-        .join()
-        .expect("shutdown worker must not panic")
-        .expect("application shutdown succeeds");
+    assert!(
+        shutdown
+            .join()
+            .expect("shutdown worker must not panic")
+            .is_ok(),
+        "application shutdown succeeds"
+    );
+}
+
+#[test]
+fn asynchronous_shutdown_returns_application_when_cleanup_fails() {
+    let log = event_log();
+    let mut app = Application::new();
+    app.register_service(Recorder::new("runtime", Arc::clone(&log)).fail_shutdown_times(1))
+        .expect("register runtime");
+    app.start().expect("application starts");
+
+    let shutdown = app.shutdown_async().expect("spawn shutdown worker");
+    let (mut app, error) = match shutdown.join().expect("shutdown worker must not panic") {
+        Ok(()) => panic!("first shutdown attempt must report the injected failure"),
+        Err(failure) => failure,
+    };
+
+    assert!(matches!(
+        error,
+        LifecycleError::ShutdownFailed { ref failures }
+            if failures.len() == 1 && failures[0].service == "runtime"
+    ));
+    assert_eq!(app.state(), ApplicationState::Failed);
+    app.shutdown().expect("caller can retry failed cleanup");
+    assert_eq!(app.state(), ApplicationState::Stopped);
 }
 
 #[test]
