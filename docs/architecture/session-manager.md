@@ -73,7 +73,7 @@ Closing a session is idempotent once Closed:
 7. Drop the runtime handle. The Linux spawn request has kill-on-drop enabled; the runtime handle's Drop path kills the owned process group and reaps the child.
 8. Clear pending input and transition to Closed.
 
-The same cleanup path is used by application shutdown. The manager attempts to close every session even if another session reports a cleanup error, then shuts down the runtime service. A runtime-shutdown failure remains retryable by the application lifecycle coordinator.
+If closing stdin reports an error, the manager rechecks child status before recording a cleanup failure. If the child exited in the interval between the initial status check and stdin close, that is treated as a successful exit race and no redundant termination signal is sent. The same cleanup path is used by application shutdown. The manager attempts to close every session even if another session reports a cleanup error, then shuts down the runtime service. A runtime-shutdown failure remains retryable by the application lifecycle coordinator.
 
 Dropping a live `ManagedSession` also requests forced termination before dropping its kill-on-drop process handle. Dropping the manager invokes shutdown for all remaining sessions. This is a final safety net, not a replacement for explicit orderly shutdown.
 
@@ -91,7 +91,7 @@ Default limits:
 | Graceful termination wait | 300 ms |
 | Forced termination wait | 500 ms |
 
-All limits are configurable through `SessionManagerLimits`. Input queue growth uses fallible reservation. Session creation is rejected when the manager is not initialized, the session limit is reached, the executable specification is invalid, or the requested backend is not wired.
+All limits are configurable through `SessionManagerLimits`. Input queue growth uses fallible reservation. Session creation is rejected when the manager is not initialized, the session limit is reached, the executable specification is invalid, or the requested backend is not wired. Sessions being closed asynchronously continue to count against the concurrent-session limit until their close worker releases the process/PTY handle.
 
 Errors use safe service-level descriptions. They do not include command arguments, environment values, or secret process data.
 
