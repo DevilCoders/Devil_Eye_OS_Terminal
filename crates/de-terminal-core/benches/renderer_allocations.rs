@@ -83,11 +83,9 @@ fn main() {
     }
 
     let size = TerminalSize::new(80, 24).expect("benchmark dimensions");
-    let mut screen = TerminalScreen::new(
-        size,
-        usize::from(size.columns()) * usize::from(size.rows()),
-    )
-    .expect("allocate benchmark screen");
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate benchmark screen");
     for row in 0..size.rows() {
         for column in 0..size.columns() {
             screen
@@ -112,7 +110,9 @@ fn main() {
     damage.mark_all();
     let full_frame = Frame::new(&screen, &damage, 1).expect("full frame");
     report_allocations("render_full_80x24", || {
-        renderer.render(full_frame, None).expect("full render probe");
+        renderer
+            .render(full_frame, None)
+            .expect("full render probe");
     });
     damage.clear();
 
@@ -120,6 +120,8 @@ fn main() {
     damage.mark_rect(dirty).expect("mark dirty row");
     let dirty_frame = Frame::new(&screen, &damage, 2).expect("dirty frame");
     report_allocations("render_dirty_row_80x24", || {
-        renderer.render(dirty_frame, None).expect("dirty render probe");
+        renderer
+            .render(dirty_frame, None)
+            .expect("dirty render probe");
     });
 }
