@@ -13,7 +13,7 @@ use crate::screen::{CellContent, Color, GraphemeWidth, StyleFlags};
 use crate::TerminalSize;
 
 use super::{
-    CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor ,
+    CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor,
 };
 
 /// One RGBA pixel with an opaque default alpha.
@@ -265,7 +265,8 @@ impl PixelSurface {
         if x >= self.width || y >= self.height {
             return None;
         }
-        let index = ((y * self.width + x) * 4) as usize;
+        let index = (usize::try_from(y).ok()? * usize::try_from(self.width).ok()?
+            + usize::try_from(x).ok()?) * 4;
         Some(Rgba::new(
             self.pixels[index],
             self.pixels[index + 1],
@@ -772,3 +773,267 @@ fn indexed_color(index: u8) -> Rgba {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{GlyphAtlas, GlyphBitmap, RenderPalette, Rgba, SoftwareRenderError, SoftwareRenderer};
+    use crate::render::{
+        CellPosition, CellRect, DamageTracker, Frame, GlyphMetrics, Renderer, ScaleFactor,
+        Selection, SelectionMode,
+    };
+    use crate::screen::{
+        CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen,
+    };
+    use crate::TerminalSize;
+
+    const GLYPH_MASK: [u8; 15] = [
+        255, 0, 255,
+        0, 255, 0,
+        255, 255, 255,
+        255, 0, 255,
+        255, 0, 255,
+    ];
+
+    fn size(columns: u16, rows: u16) -> TerminalSize {
+        TerminalSize::new(columns, rows).expect("valid size")
+    }
+
+    fn atlas() -> GlyphAtlas {
+        let fallback = GlyphBitmap::new(3, 5, GLYPH_MASK.to_vec()).expect("fallback glyph");
+        let mut atlas = GlyphAtlas::new(fallback.clone());
+        atlas.insert("A", fallback).expect("insert A");
+        atlas
+    }
+
+    fn metrics() -> GlyphMetrics {
+        GlyphMetrics::new(3.0, 4.0, 1.0, 5.0).expect("glyph metrics")
+    }
+
+    fn palette() -> RenderPalette {
+        RenderPalette::new(
+            Rgba::rgb(255, 255, 255),
+            Rgba::rgb(0, 0, 0),
+            Rgba::rgb(255, 255, 255),
+            Rgba::rgb(0, 0, 255),
+            Rgba::rgb(0, 0, 0),
+            Rgba::rgb(255, 255, 0),
+        )
+    }
+
+    fn render_frame(
+        renderer: &mut SoftwareRenderer,
+        screen: &TerminalScreen,
+        damage: &DamageTracker,
+        selection: Option<Selection>,
+        clip: Option<CellRect>,
+    ) -> Result<(), SoftwareRenderError> {
+        let frame = Frame::new_with_selection(screen, damage, 1, selection)
+            .expect("valid render frame");
+        renderer.render(frame, clip)
+    }
+
+    #[test]
+    fn golden_bitmap_renders_exact_rgba_pixels() {
+        let terminal_size = size(1, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 1).expect("screen");
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::default(),
+            )
+            .expect("write A");
+        let damage = DamageTracker::new(terminal_size, 4).expect("damage");
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
+                .expect("renderer");
+        renderer.set_cursor_visible(false);
+
+        render_frame(&mut renderer, &screen, &damage, None, None).expect("render");
+
+        let expected: Vec<u8> = GLYPH_MASK
+            .iter()
+            .flat_map(|coverage| {
+                if *coverage == 0 {
+                    [0, 0, 0, 255]
+                } else {
+                    [255, 255, 255, 255]
+                }
+            })
+            .collect();
+        assert_eq!(renderer.surface().width(), 3);
+        assert_eq!(renderer.surface().height(), 5);
+        assert_eq!(renderer.surface().pixels(), expected);
+    }
+
+    #[test]
+    fn applies_indexed_colors_inverse_and_dim_attributes() {
+        let terminal_size = size(1, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 1).expect("screen");
+        screen
+            .set_grapheme(
+                0,
+                0,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::new(
+                    Color::Indexed(1),
+                    Color::Indexed(4),
+                    StyleFlags::INVERSE,
+                ),
+            )
+            .expect("write A");
+        let damage = DamageTracker::new(terminal_size, 4).expect("damage");
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
+                .expect("renderer");
+        renderer.set_cursor_visible(false);
+        render_frame(&mut renderer, &screen, &damage, None, None).expect("render");
+
+        // Inverse swaps indexed red/blue; the transparent glyph pixel exposes
+        // the swapped background while an ink pixel uses the swapped foreground.
+        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(36, 114, 200)));
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(205, 49, 49)));
+
+        let dim_attributes = CellAttributes::new(
+            Color::Rgb {
+                red: 90,
+                green: 60,
+                blue: 30,
+            },
+            Color::Default,
+            StyleFlags::DIM,
+        );
+        screen
+            .set_grapheme(0, 0, "A", GraphemeWidth::Single, dim_attributes)
+            .expect("write dim A");
+        let damage = DamageTracker::new(terminal_size, 4).expect("full damage");
+        render_frame(&mut renderer, &screen, &damage, None, None).expect("render dim");
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(60, 40, 20)));
+    }
+
+    #[test]
+    fn selection_and_block_cursor_override_cell_colors() {
+        let terminal_size = size(2, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 2).expect("screen");
+        let empty_glyph = GlyphBitmap::new(1, 1, vec![0]).expect("empty glyph");
+        let mut glyphs = GlyphAtlas::new(empty_glyph);
+        glyphs
+            .insert("x", GlyphBitmap::new(1, 1, vec![255]).unwrap())
+            .unwrap();
+        let small_metrics = GlyphMetrics::new(1.0, 1.0, 1.0, 1.0).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, small_metrics, palette(), glyphs, 16)
+                .expect("renderer");
+        renderer.set_cursor_visible(false);
+        screen
+            .set_grapheme(0, 1, "x", GraphemeWidth::Single, CellAttributes::default())
+            .unwrap();
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        let selection = Selection::new(
+            CellPosition::new(0, 1),
+            CellPosition::new(0, 1),
+            SelectionMode::Linear,
+            terminal_size,
+        )
+        .unwrap();
+        render_frame(&mut renderer, &screen, &damage, Some(selection), None).unwrap();
+        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(255, 255, 255)));
+
+        renderer.set_cursor_visible(true);
+        let mut cursor_screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        let cursor_damage = DamageTracker::new(terminal_size, 4).unwrap();
+        render_frame(&mut renderer, &cursor_screen, &cursor_damage, None, None).unwrap();
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(255, 255, 0)));
+        cursor_screen.set_cursor(0, 1);
+    }
+
+    #[test]
+    fn clipping_does_not_paint_cells_outside_the_requested_clip() {
+        let terminal_size = size(2, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        screen
+            .set_grapheme(0, 0, "A", GraphemeWidth::Single, CellAttributes::default())
+            .unwrap();
+        screen
+            .set_grapheme(0, 1, "A", GraphemeWidth::Single, CellAttributes::default())
+            .unwrap();
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128).unwrap();
+        renderer.set_cursor_visible(false);
+        let clip = CellRect::new(0, 1, 1, 1).unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, Some(clip)).unwrap();
+
+        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(0, 0, 0)));
+        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(255, 255, 255)));
+    }
+
+    #[test]
+    fn wide_unicode_grapheme_uses_both_cells_without_erasure() {
+        let terminal_size = size(2, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        screen
+            .set_grapheme(0, 0, "中", GraphemeWidth::Wide, CellAttributes::default())
+            .unwrap();
+        let wide = GlyphBitmap::new(6, 5, vec![255; 30]).unwrap();
+        let mut glyphs = GlyphAtlas::new(wide.clone());
+        glyphs.insert("中", wide).unwrap();
+        let wide_metrics = GlyphMetrics::new(3.0, 4.0, 1.0, 5.0).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, wide_metrics, palette(), glyphs, 128).unwrap();
+        renderer.set_cursor_visible(false);
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+
+        for x in 0..6 {
+            assert_eq!(renderer.surface().pixel(x, 2), Some(Rgba::rgb(255, 255, 255)));
+        }
+    }
+
+    #[test]
+    fn resize_scale_and_surface_limits_are_enforced() {
+        let terminal_size = size(1, 1);
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 10_000).unwrap();
+        let resized = size(4, 3);
+        renderer
+            .resize(resized, ScaleFactor::new(2.0).unwrap())
+            .expect("resize");
+        assert_eq!(renderer.size(), resized);
+        assert_eq!(renderer.cell_pixel_size(), (6, 10));
+        assert_eq!(renderer.surface().width(), 24);
+        assert_eq!(renderer.surface().height(), 30);
+
+        assert!(matches!(
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 4),
+            Err(SoftwareRenderError::SurfaceTooLarge)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_clip_and_glyph_atlas_keys() {
+        let terminal_size = size(1, 1);
+        let screen = TerminalScreen::new(terminal_size, 1).unwrap();
+        let damage = DamageTracker::new(terminal_size, 4).unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128).unwrap();
+        assert!(matches!(
+            render_frame(
+                &mut renderer,
+                &screen,
+                &damage,
+                None,
+                Some(CellRect::new(0, 1, 1, 1).unwrap())
+            ),
+            Err(SoftwareRenderError::ClipOutOfBounds)
+        ));
+        assert!(matches!(
+            renderer.atlas.insert("\n", GlyphBitmap::new(1, 1, vec![255]).unwrap()),
+            Err(SoftwareRenderError::InvalidGlyphKey)
+        ));
+    }
+}
+
