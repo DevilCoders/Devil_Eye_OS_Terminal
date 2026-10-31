@@ -86,7 +86,7 @@ fn resolve_executable(
     let explicit_path = program
         .environment()
         .iter()
-        .find(|(key, _)| key == std::ffi::OsStr::new("PATH"))
+        .find(|(key, _)| key.as_os_str() == std::ffi::OsStr::new("PATH"))
         .map(|(_, value)| value.clone());
     let search_path = explicit_path.or_else(|| {
         if program.environment_inheritance() == EnvironmentInheritance::Inherit {
