@@ -566,12 +566,23 @@ impl SoftwareRenderer {
             let row = cursor.row();
             let column = cursor.column();
             let cell = frame.row_cells(row).expect("cursor row in frame")[usize::from(column)];
+            let cursor_span = if matches!(
+                cell.content(),
+                CellContent::Grapheme {
+                    width: GraphemeWidth::Wide,
+                    ..
+                }
+            ) {
+                2u32
+            } else {
+                1u32
+            };
             let x = u32::from(column) * self.cell_width;
             let y = u32::from(row) * self.cell_height;
             self.surface.fill_rect(
                 x,
                 y,
-                self.cell_width,
+                self.cell_width.saturating_mul(cursor_span),
                 self.cell_height,
                 self.palette.cursor_background,
             );
