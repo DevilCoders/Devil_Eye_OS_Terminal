@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Platform-facing process launch specifications and runtime contracts."
 
+[dependencies]
+de-terminal-core = { path = "../de-terminal-core" }
+
 [lib]
 path = "src/lib.rs"
 
