@@ -277,6 +277,10 @@ mod tests {
         let pair = PtyPair::open(TerminalSize::default()).expect("allocate PTY pair");
         let master = pair.try_clone_master().expect("clone master");
         let slave = pair.try_clone_slave().expect("clone slave");
+        let master_flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFD) };
+        let slave_flags = unsafe { libc::fcntl(slave.as_raw_fd(), libc::F_GETFD) };
+        assert_ne!(master_flags & libc::FD_CLOEXEC, 0);
+        assert_ne!(slave_flags & libc::FD_CLOEXEC, 0);
 
         drop(pair);
 
