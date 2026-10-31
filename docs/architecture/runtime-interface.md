@@ -24,7 +24,7 @@ ProcessSpawnRequest validates ProgramSpec before it reaches a backend. It also c
 A child uses one of two explicit modes:
 
 - StdioConfig independently selects Pipe, Null, or Inherit for stdin, stdout, and stderr.
-- PtyConfig attaches the child to one PTY with validated, non-zero columns and rows. PTY-backed stdout/stderr are part of the same terminal stream.
+- PtyConfig attaches the child to one PTY with the shared de-terminal-core TerminalSize type, which rejects zero columns and rows. PTY-backed stdout/stderr are part of the same terminal stream.
 
 The interface never silently chooses inherited stdio or a PTY. The caller selects the intended mode in the spawn request.
 
@@ -51,7 +51,7 @@ The interface provides:
 
 - process_id(): optional platform process identifier; it is not a portable session identity.
 - write_stdin(): accepts a non-empty byte slice and reports partial progress or WouldBlock.
-- read_stdout()/read_stderr(): non-blocking reads returning Data(count), WouldBlock, or EOF.
+- read_stdout()/read_stderr(): non-blocking reads into non-empty output buffers, returning Data(count), WouldBlock, or EOF. Empty buffers are rejected with InvalidArgument.
 - close_stdin(): idempotently closes the child input stream.
 - resize_pty(): changes PTY dimensions or returns UnsupportedCapability for non-PTY sessions.
 - send_signal(): sends a semantic signal to this child only.
