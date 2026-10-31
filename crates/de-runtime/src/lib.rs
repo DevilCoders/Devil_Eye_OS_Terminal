@@ -16,6 +16,7 @@ pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 
 /// Linux-specific runtime resources and adapters.
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)] // Linux libc calls are isolated behind the platform adapter boundary.
 pub mod linux;
 
 /// An owned process launch description, validated before it reaches a runtime backend.
@@ -445,7 +446,8 @@ pub trait RuntimeProcess: Send {
     /// Changes the effective PTY size. Non-PTY processes return UnsupportedCapability.
     fn resize_pty(&mut self, size: TerminalSize) -> Result<(), RuntimeError>;
 
-    /// Sends a semantic signal to this process only.
+    /// Sends a semantic signal to the process group owned by this session handle.
+    /// It must never target processes belonging to another session.
     fn send_signal(&mut self, signal: Signal) -> Result<(), RuntimeError>;
 
     /// Checks whether the child exited without blocking.

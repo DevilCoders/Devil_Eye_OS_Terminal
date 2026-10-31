@@ -130,7 +130,7 @@ A resize request carries non-zero columns and rows. The runtime applies the plat
 
 ### Signals and termination
 
-Signal/termination operations target only the child owned by the supplied session handle. The runtime reports unsupported operations explicitly. Graceful termination uses a bounded timeout; escalation policy is owned by the session manager.
+Signal/termination operations target only the process group owned by the supplied session handle; they must never affect another session. The runtime reports unsupported operations explicitly. Graceful termination uses a bounded timeout; escalation policy is owned by the session manager.
 
 ### Resource ownership
 
