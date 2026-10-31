@@ -82,3 +82,14 @@ pub use diagnostics::{
     ApplicationError, ApplicationErrorCode, Diagnostic, DiagnosticBuffer, DiagnosticField,
     DiagnosticSeverity, ErrorCategory,
 };
+
+
+pub mod session_manager;
+
+pub use session_manager::{ManagedSession, SessionManager, SessionManagerLimits};
+
+#[cfg(target_os = "linux")]
+pub mod linux_runtime;
+
+#[cfg(target_os = "linux")]
+pub use linux_runtime::{LinuxRuntimeProcess, LinuxRuntimeService};
