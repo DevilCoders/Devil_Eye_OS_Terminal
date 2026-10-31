@@ -93,6 +93,7 @@ pub enum RenderContractError {
     ZeroRectangleExtent,
     RectangleOutOfBounds,
     FrameSizeMismatch,
+    SelectionOutOfBounds,
     InvalidGlyphMetrics,
     InvalidScaleFactor,
 }
@@ -104,6 +105,7 @@ impl fmt::Display for RenderContractError {
             Self::ZeroRectangleExtent => "rectangle rows and columns must be non-zero",
             Self::RectangleOutOfBounds => "rectangle exceeds terminal cell bounds",
             Self::FrameSizeMismatch => "damage tracker dimensions do not match terminal frame",
+            Self::SelectionOutOfBounds => "selection endpoint exceeds terminal cell bounds",
             Self::InvalidGlyphMetrics => {
                 "glyph metrics must be finite, positive, and internally consistent"
             }
@@ -267,6 +269,107 @@ impl ScaleFactor {
     }
 }
 
+/// Zero-based cell coordinate used by a terminal selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CellPosition {
+    row: u16,
+    column: u16,
+}
+
+impl CellPosition {
+    pub const fn new(row: u16, column: u16) -> Self {
+        Self { row, column }
+    }
+
+    pub const fn row(self) -> u16 {
+        self.row
+    }
+
+    pub const fn column(self) -> u16 {
+        self.column
+    }
+
+    fn is_within(self, size: TerminalSize) -> bool {
+        self.row < size.rows() && self.column < size.columns()
+    }
+
+    fn linear_index(self, size: TerminalSize) -> u32 {
+        u32::from(self.row) * u32::from(size.columns()) + u32::from(self.column)
+    }
+}
+
+/// Terminal selection semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionMode {
+    /// Select the inclusive row-major range between anchor and extent.
+    Linear,
+    /// Select the inclusive rectangle bounded by anchor and extent.
+    Rectangular,
+}
+
+/// Immutable selection range carried by a render frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Selection {
+    anchor: CellPosition,
+    extent: CellPosition,
+    mode: SelectionMode,
+}
+
+impl Selection {
+    pub fn new(
+        anchor: CellPosition,
+        extent: CellPosition,
+        mode: SelectionMode,
+        size: TerminalSize,
+    ) -> Result<Self, RenderContractError> {
+        if !anchor.is_within(size) || !extent.is_within(size) {
+            return Err(RenderContractError::SelectionOutOfBounds);
+        }
+        Ok(Self {
+            anchor,
+            extent,
+            mode,
+        })
+    }
+
+    pub const fn anchor(self) -> CellPosition {
+        self.anchor
+    }
+
+    pub const fn extent(self) -> CellPosition {
+        self.extent
+    }
+
+    pub const fn mode(self) -> SelectionMode {
+        self.mode
+    }
+
+    fn is_within(self, size: TerminalSize) -> bool {
+        self.anchor.is_within(size) && self.extent.is_within(size)
+    }
+
+    pub fn contains(self, row: u16, column: u16, size: TerminalSize) -> bool {
+        let position = CellPosition::new(row, column);
+        if !position.is_within(size) || !self.is_within(size) {
+            return false;
+        }
+        match self.mode {
+            SelectionMode::Linear => {
+                let anchor = self.anchor.linear_index(size);
+                let extent = self.extent.linear_index(size);
+                let current = position.linear_index(size);
+                current >= anchor.min(extent) && current <= anchor.max(extent)
+            }
+            SelectionMode::Rectangular => {
+                row >= self.anchor.row.min(self.extent.row)
+                    && row <= self.anchor.row.max(self.extent.row)
+                    && column >= self.anchor.column.min(self.extent.column)
+                    && column <= self.anchor.column.max(self.extent.column)
+            }
+        }
+    }
+}
+
 /// Immutable borrowed snapshot passed to a renderer.
 ///
 /// Coordinates are zero-based cells, row-major. The renderer must not retain
@@ -278,6 +381,7 @@ pub struct Frame<'a> {
     cursor: CursorPosition,
     cells: &'a [Cell],
     damage: &'a DamageTracker,
+    selection: Option<Selection>,
     generation: u64,
 }
 
@@ -287,14 +391,27 @@ impl<'a> Frame<'a> {
         damage: &'a DamageTracker,
         generation: u64,
     ) -> Result<Self, RenderContractError> {
+        Self::new_with_selection(screen, damage, generation, None)
+    }
+
+    pub fn new_with_selection(
+        screen: &'a TerminalScreen,
+        damage: &'a DamageTracker,
+        generation: u64,
+        selection: Option<Selection>,
+    ) -> Result<Self, RenderContractError> {
         if screen.size() != damage.size() {
             return Err(RenderContractError::FrameSizeMismatch);
+        }
+        if selection.is_some_and(|value| !value.is_within(screen.size())) {
+            return Err(RenderContractError::SelectionOutOfBounds);
         }
         Ok(Self {
             size: screen.size(),
             cursor: screen.cursor(),
             cells: screen.grid().cells(),
             damage,
+            selection,
             generation,
         })
     }
@@ -311,6 +428,10 @@ impl<'a> Frame<'a> {
     pub const fn damage(self) -> &'a DamageTracker {
         self.damage
     }
+    pub const fn selection(self) -> Option<Selection> {
+        self.selection
+    }
+
     pub const fn generation(self) -> u64 {
         self.generation
     }
@@ -337,6 +458,12 @@ pub trait Renderer {
 
     fn render(&mut self, frame: Frame<'_>, clip: Option<CellRect>) -> Result<(), Self::Error>;
 }
+
+mod software;
+pub use software::{
+    GlyphAtlas, GlyphBitmap, PixelSurface, RenderPalette, Rgba, SoftwareRenderError,
+    SoftwareRenderer,
+};
 
 #[cfg(test)]
 mod tests {
@@ -454,6 +581,72 @@ mod tests {
         assert_eq!(
             Frame::new(&screen, &damage, 0).map(|_| ()),
             Err(RenderContractError::FrameSizeMismatch)
+        );
+    }
+
+    #[test]
+    fn linear_selection_uses_inclusive_row_major_endpoints() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        let selection = Selection::new(
+            CellPosition::new(1, 2),
+            CellPosition::new(2, 1),
+            SelectionMode::Linear,
+            size(),
+        )
+        .expect("valid selection");
+
+        assert!(!selection.contains(1, 1, size()));
+        assert!(selection.contains(1, 2, size()));
+        assert!(selection.contains(1, 79, size()));
+        assert!(selection.contains(2, 0, size()));
+        assert!(selection.contains(2, 1, size()));
+        assert!(!selection.contains(2, 2, size()));
+    }
+
+    #[test]
+    fn rectangular_selection_includes_the_bounded_rectangle() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        let selection = Selection::new(
+            CellPosition::new(3, 7),
+            CellPosition::new(1, 2),
+            SelectionMode::Rectangular,
+            size(),
+        )
+        .expect("valid selection");
+
+        assert!(selection.contains(1, 2, size()));
+        assert!(selection.contains(2, 5, size()));
+        assert!(selection.contains(3, 7, size()));
+        assert!(!selection.contains(0, 2, size()));
+        assert!(!selection.contains(2, 8, size()));
+    }
+
+    #[test]
+    fn selection_rejects_out_of_bounds_endpoints_and_frames() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        assert_eq!(
+            Selection::new(
+                CellPosition::new(24, 0),
+                CellPosition::new(0, 0),
+                SelectionMode::Linear,
+                size(),
+            ),
+            Err(RenderContractError::SelectionOutOfBounds)
+        );
+
+        let screen = TerminalScreen::new(size(), 80 * 24).expect("screen");
+        let damage = DamageTracker::new(size(), 8).expect("damage");
+        let invalid = Selection {
+            anchor: CellPosition::new(0, 0),
+            extent: CellPosition::new(24, 0),
+            mode: SelectionMode::Linear,
+        };
+        assert_eq!(
+            Frame::new_with_selection(&screen, &damage, 1, Some(invalid)).map(|_| ()),
+            Err(RenderContractError::SelectionOutOfBounds)
         );
     }
 

@@ -1,5 +1,7 @@
 name: Rust CI
 
+# Workspace checks include terminal-core renderer modules and headless golden tests.
+
 on:
   workflow_dispatch:
   pull_request:
@@ -14,6 +16,10 @@ on:
   push:
     branches:
       - master
+      - "feat/**"
+      - "test/**"
+      - "build/**"
+      - "docs/**"
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
