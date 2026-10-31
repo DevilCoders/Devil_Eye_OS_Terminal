@@ -222,19 +222,23 @@ de_shell_lex_status_t de_shell_lex(
     size_t offset = 0U;
     size_t token_count = 0U;
 
+    if (out_token_count != NULL) {
+        *out_token_count = 0U;
+    }
+    if (out_diagnostic != NULL) {
+        out_diagnostic->code = DE_SHELL_LEX_STATUS_OK;
+        out_diagnostic->source_offset = 0U;
+    }
+
     if (out_token_count == NULL || out_diagnostic == NULL
         || (source == NULL && source_length != 0U)
         || (tokens == NULL && token_capacity != 0U)) {
         return DE_SHELL_LEX_STATUS_INVALID_ARGUMENT;
     }
 
-    *out_token_count = 0U;
-    out_diagnostic->code = DE_SHELL_LEX_STATUS_OK;
-    out_diagnostic->source_offset = 0U;
-
     while (offset < source_length) {
         de_shell_token_type_t operator_type = DE_SHELL_TOKEN_WORD;
-        const size_t operator_size;
+        size_t operator_size;
 
         if (source[offset] == 0U) {
             out_diagnostic->code = DE_SHELL_LEX_STATUS_INVALID_BYTE;
