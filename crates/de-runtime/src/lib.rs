@@ -14,6 +14,10 @@ use std::path::{Path, PathBuf};
 /// Shared terminal dimensions and validation error used by the terminal core and PTY adapter.
 pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 
+/// Linux-specific runtime resources and adapters.
+#[cfg(target_os = "linux")]
+pub mod linux;
+
 /// An owned process launch description, validated before it reaches a runtime backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramSpec {
