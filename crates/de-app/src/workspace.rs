@@ -25,6 +25,8 @@ const MAX_PANE_DEPTH: usize = 8;
 const MAX_LAYOUT_NODES: usize = 255;
 const MIN_SPLIT_RATIO_PER_MILLE: u16 = 100;
 const MAX_SPLIT_RATIO_PER_MILLE: u16 = 900;
+const MAX_TERMINAL_COLUMNS: u16 = 500;
+const MAX_TERMINAL_ROWS: u16 = 300;
 
 macro_rules! persistent_id {
     ($name:ident, $description:literal) => {
@@ -281,8 +283,18 @@ impl WorkspaceSnapshot {
                 return Err(invalid("sessions.id", "persistent session IDs must be unique"));
             }
             validate_title(&session.title, "sessions.title")?;
-            if session.terminal_size.columns() == 0 || session.terminal_size.rows() == 0 {
-                return Err(invalid("sessions.terminal_size", "dimensions must be non-zero"));
+            let columns = session.terminal_size.columns();
+            let rows = session.terminal_size.rows();
+            if columns == 0
+                || rows == 0
+                || columns > MAX_TERMINAL_COLUMNS
+                || rows > MAX_TERMINAL_ROWS
+                || usize::from(columns).saturating_mul(usize::from(rows)) > 150_000
+            {
+                return Err(invalid(
+                    "sessions.terminal_size",
+                    "dimensions exceed the validated terminal bounds",
+                ));
             }
         }
 
@@ -424,12 +436,20 @@ impl WorkspaceSnapshot {
         )?)
         .ok_or_else(|| invalid("active_workspace_id", "must be non-zero"))?;
 
-        let workspaces = take_array(&mut root, "workspaces", "root")?
+        let workspace_values = take_array(&mut root, "workspaces", "root")?;
+        if workspace_values.len() > MAX_WORKSPACES {
+            return Err(invalid("workspaces", "must not exceed 32 workspaces"));
+        }
+        let workspaces = workspace_values
             .into_iter()
             .enumerate()
             .map(|(index, value)| decode_workspace(value, index))
             .collect::<Result<Vec<_>, _>>()?;
-        let sessions = take_array(&mut root, "sessions", "root")?
+        let session_values = take_array(&mut root, "sessions", "root")?;
+        if session_values.len() > MAX_SESSIONS {
+            return Err(invalid("sessions", "must not exceed 128 saved sessions"));
+        }
+        let sessions = session_values
             .into_iter()
             .enumerate()
             .map(|(index, value)| decode_session(value, index))
@@ -649,7 +669,14 @@ fn decode_workspace(value: ConfigValue, index: usize) -> Result<WorkspaceMetadat
     let name = take_string(&mut table, "name", &section)?;
     let active_tab_id = TabId::new(take_u64(&mut table, "active_tab_id", &section)?)
         .ok_or_else(|| invalid("workspaces.active_tab_id", "must be non-zero"))?;
-    let tabs = take_array(&mut table, "tabs", &section)?
+    let tab_values = take_array(&mut table, "tabs", &section)?;
+    if tab_values.len() > MAX_TABS_PER_WORKSPACE {
+        return Err(invalid(
+            "workspaces.tabs",
+            "must not exceed 32 tabs per workspace",
+        ));
+    }
+    let tabs = tab_values
         .into_iter()
         .enumerate()
         .map(|(tab_index, value)| decode_tab(value, index, tab_index))
@@ -786,7 +813,9 @@ fn take_u64(
     section: &str,
 ) -> Result<u64, WorkspaceError> {
     match take_required(table, key, section)? {
-        ConfigValue::Integer(value) if value >= 0 => Ok(value as u64),
+        ConfigValue::Integer(value) if value >= 0 => {
+            u64::try_from(value).map_err(|_| invalid("workspace.identifier", "out of range"))
+        }
         ConfigValue::Integer(_) => Err(invalid("workspace.identifier", "must be non-negative")),
         _ => Err(wrong_type(section, key, "an integer")),
     }
