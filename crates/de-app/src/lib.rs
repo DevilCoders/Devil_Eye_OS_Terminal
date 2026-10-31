@@ -83,7 +83,6 @@ pub use diagnostics::{
     DiagnosticSeverity, ErrorCategory,
 };
 
-
 pub mod session_manager;
 
 pub use session_manager::{ManagedSession, SessionManager, SessionManagerLimits};
