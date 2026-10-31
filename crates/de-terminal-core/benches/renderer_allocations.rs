@@ -10,8 +10,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use de_terminal_core::render::{
-    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette,
-    Renderer, SoftwareRenderer,
+    CellRect, DamageTracker, Frame, GlyphAtlas, GlyphBitmap, GlyphMetrics, RenderPalette, Renderer,
+    SoftwareRenderer,
 };
 use de_terminal_core::screen::{CellAttributes, GraphemeWidth, TerminalScreen};
 use de_terminal_core::TerminalSize;
