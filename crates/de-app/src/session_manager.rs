@@ -259,15 +259,9 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
             .process
             .as_mut()
             .ok_or_else(|| ServiceError::new("session process handle is unavailable"))?;
-        let read = process.read(buffer)?;
-        let exit = process.try_wait()?;
-        if let Some(status) = exit {
-            self.exit_status = Some(status);
-            if self.lifecycle.state() == SessionLifecycleState::Running {
-                self.lifecycle.transition(SessionLifecycleState::Exited)?;
-            }
-        }
-        Ok(read)
+        // Do not poll child status after a successful read: a wait error must
+        // never turn already-read output bytes into a lost error result.
+        process.read(buffer)
     }
 
     fn poll_exit(&mut self) -> Result<Option<ProcessExit>, ServiceError> {
@@ -312,13 +306,14 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
 
         let mut failures = Vec::new();
         if let Some(process) = self.process.as_mut() {
-            if let Err(error) = process.close_input() {
-                Self::push_failure(&mut failures, "close session input", error);
-            }
-
             match process.try_wait() {
+                // An already-exited child needs no stdin close or termination
+                // request; those operations may legitimately return ECHILD.
                 Ok(Some(status)) => self.exit_status = Some(status),
                 Ok(None) => {
+                    if let Err(error) = process.close_input() {
+                        Self::push_failure(&mut failures, "close session input", error);
+                    }
                     if let Err(error) = process.terminate(TerminationMode::Graceful) {
                         Self::push_failure(&mut failures, "request graceful termination", error);
                     }
@@ -335,9 +330,11 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
                                      dropping the kill-on-drop runtime handle"
                                         .to_owned(),
                                 ),
-                                Err(error) => {
-                                    Self::push_failure(&mut failures, "wait after force termination", error);
-                                }
+                                Err(error) => Self::push_failure(
+                                    &mut failures,
+                                    "wait after force termination",
+                                    error,
+                                ),
                             }
                         }
                         Err(error) => {
@@ -349,13 +346,34 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
                             if let Err(force_error) = process.terminate(TerminationMode::Force) {
                                 Self::push_failure(&mut failures, "force termination", force_error);
                             }
+                            if let Err(wait_error) =
+                                Self::wait_for_exit(process, self.forced_shutdown_timeout)
+                            {
+                                Self::push_failure(
+                                    &mut failures,
+                                    "wait after force termination",
+                                    wait_error,
+                                );
+                            }
                         }
                     }
                 }
                 Err(error) => {
                     Self::push_failure(&mut failures, "poll child before shutdown", error);
+                    if let Err(close_error) = process.close_input() {
+                        Self::push_failure(&mut failures, "close session input", close_error);
+                    }
                     if let Err(force_error) = process.terminate(TerminationMode::Force) {
                         Self::push_failure(&mut failures, "force termination", force_error);
+                    }
+                    if let Err(wait_error) =
+                        Self::wait_for_exit(process, self.forced_shutdown_timeout)
+                    {
+                        Self::push_failure(
+                            &mut failures,
+                            "wait after force termination",
+                            wait_error,
+                        );
                     }
                 }
             }
