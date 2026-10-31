@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::num::NonZeroUsize;
+use std::num::NonZerousize;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
@@ -53,7 +53,15 @@ impl RuntimeService for LinuxRuntime {
                 )
                 .map_err(map_spawn_error)?;
 
-                let master = child.try_clone_master().map_err(map_io_error)?;
+                let master = match child.try_clone_master() {
+                    Ok(master) => master,
+                    Err(error) => {
+                        let mut child = child;
+                        let _ = child.terminate(TerminationMode::Force);
+                        let _ = child.wait();
+                        return Err(map_io_error(error));
+                    }
+                };
                 let master = File::from(master);
                 if let Err(error) = set_nonblocking(master.as_raw_fd()) {
                     let mut child = child;
@@ -334,7 +342,7 @@ impl RuntimeProcess for LinuxRuntimeProcess {
                 if process.stdin_closed {
                     return Ok(());
                 }
-                match write_nonblocking(&mut process.master, &[4U8])? {
+                match write_nonblocking(&mut process.master, &[4u8])? {
                     WriteOutcome::Written(_) => {
                         process.stdin_closed = true;
                         Ok(())
@@ -444,7 +452,7 @@ fn read_nonblocking<R: Read>(
         match stream.read(output) {
             Ok(0) => return Ok(ReadOutcome::Eof),
             Ok(count) => {
-                let count = NonZeroUsize::new(count).ok_or(RuntimeError::IoFailed)?;
+                let count = NonZerousize::new(count).ok_or(RuntimeError::IoFailed)?;
                 return Ok(ReadOutcome::Data(count));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -467,14 +475,19 @@ fn write_nonblocking<W: Write>(
         match stream.write(input) {
             Ok(0) => return Err(RuntimeError::IoFailed),
             Ok(count) => {
-                let count = NonZeroUsize::new(count).ok_or(RuntimeError::IoFailed)?;
+                let count = NonZerousize::new(count).ok_or(RuntimeError::IoFailed)?;
                 return Ok(WriteOutcome::Written(count));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 return Ok(WriteOutcome::WouldBlock);
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) if error.raw_os_error() == Some(libc::EPIPE) => {
+            Err(error)
+                if matches!(
+                    error.raw_os_error(),
+                    Some(libc::EPIPE) | Some(libc::EIO)
+                ) =>
+            {
                 return Err(RuntimeError::ProcessAlreadyExited);
             }
             Err(_) => return Err(RuntimeError::IoFailed),
@@ -518,11 +531,12 @@ mod tests {
         RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
         StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
+    use std::num::NonZerousize;
     use std::thread;
     use std::time::{Duration, Instant};
 
     fn size() -> TerminalSize {
-        TerminalSize::new(80U16, 24U16).expect("valid terminal size")
+        TerminalSize::new(80u16, 24u16).expect("valid terminal size")
     }
 
     fn pipe_config() -> StdioConfig {
@@ -539,7 +553,7 @@ mod tests {
     ) -> Result<Vec<u8>, RuntimeError> {
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut collected = Vec::new();
-        let mut buffer = [0U8; 256Usize];
+        let mut buffer = [0u8; 256usize];
 
         loop {
             let outcome = if stderr {
@@ -612,14 +626,14 @@ mod tests {
         )
         .expect("PTY request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn PTY child");
-        let resized = TerminalSize::new(120U16, 40U16).expect("resized size");
+        let resized = TerminalSize::new(120u16, 40u16).expect("resized size");
 
         process.resize_pty(resized).expect("resize PTY");
         assert_eq!(process.wait().expect("wait PTY child"), ProcessExitStatus::Exited(0));
         let output = read_to_eof(&mut process, false).expect("read PTY output");
         assert!(String::from_utf8(output).expect("UTF-8 PTY output").contains("pty-output"));
         assert_eq!(
-            process.read_stderr(&mut [0U8; 16Usize]),
+            process.read_stderr(&mut [0u8; 16usize]),
             Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
         );
     }
@@ -633,7 +647,7 @@ mod tests {
 
         assert_eq!(
             process.write_stdin(b"input-data"),
-            Ok(WriteOutcome::Written(NonZeroUsize::new(10Usize).expect("nonzero")))
+            Ok(WriteOutcome::Written(NonZerousize::new(10usize).expect("nonzero")))
         );
         process.close_stdin().expect("close stdin");
         assert_eq!(process.close_stdin(), Ok(()));
@@ -703,7 +717,7 @@ mod tests {
             Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
         );
         assert_eq!(
-            process.read_stdout(&mut [0U8; 1Usize]),
+            process.read_stdout(&mut [0u8; 1usize]),
             Err(RuntimeError::UnsupportedCapability(RuntimeCapability::StdioPipes))
         );
         assert_eq!(
