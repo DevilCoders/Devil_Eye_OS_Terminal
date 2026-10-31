@@ -5,6 +5,7 @@ This directory contains the system architecture baseline, component contracts, a
 ## System architecture and cross-component contracts
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
+- [Architecture Decision Records](decisions/README.md) — accepted ownership, shell/terminal separation, session lifecycle, renderer-frame, and Linux-first platform decisions.
 - [Cross-Component API Contracts](api-contracts.md)
 - [Terminal Session Manager](session-manager.md) — session identity, PTY/process ownership, bounded I/O, exit polling, resize, worker-thread close, shutdown, and orphan prevention.
 - [Workspace and Session Restoration Metadata](workspace-restoration.md) — versioned workspace/tab/pane layout, safe session metadata, strict validation, and the no-implicit-process-restoration boundary.
