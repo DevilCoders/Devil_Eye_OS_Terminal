@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 const SOURCES: &[&str] = &[
@@ -108,6 +108,4 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=de_shell");
 
-    // Keep paths absolute and stable for diagnostics from native build tools.
-    let _ = Path::new(&archive);
 }
