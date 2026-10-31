@@ -23,7 +23,7 @@ fn sensitive_context_values_are_redacted_in_log_records() {
     let record = diagnostic.as_record();
 
     assert!(!record.contains("top-secret"));
-    assert!(record.matches("[REDACTED]").count() == 3);
+    assert_eq!(record.matches("[REDACTED]").count(), 3);
     assert!(record.contains("/usr/bin/example"));
     assert!(record.contains("DE_RUNTIME_FAILED"));
 }
