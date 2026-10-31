@@ -674,11 +674,8 @@ mod tests {
         let missing = ProgramSpec::new("de-runtime-no-such-executable")
             .expect("program")
             .clear_environment();
-        let request = ProcessSpawnRequest::new(
-            missing,
-            IoAttachment::Pty(PtyConfig::new(size())),
-        )
-        .expect("valid request structure");
+        let request = ProcessSpawnRequest::new(missing, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("valid request structure");
         match runtime.spawn(request) {
             Err(error) => assert_eq!(
                 error,
@@ -690,11 +687,9 @@ mod tests {
         let invalid_directory = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_working_directory("/etc/passwd");
-        let request = ProcessSpawnRequest::new(
-            invalid_directory,
-            IoAttachment::Pty(PtyConfig::new(size())),
-        )
-        .expect("valid request structure");
+        let request =
+            ProcessSpawnRequest::new(invalid_directory, IoAttachment::Pty(PtyConfig::new(size())))
+                .expect("valid request structure");
         match runtime.spawn(request) {
             Err(error) => assert_eq!(
                 error,
