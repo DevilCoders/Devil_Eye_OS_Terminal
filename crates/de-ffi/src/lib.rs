@@ -420,7 +420,7 @@ impl Drop for Shell {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandExecutor, DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
+        DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
         ExecutionStage, ExternalCommand, ExternalExecutionError, Shell, ShellError, ABI_VERSION,
         MAX_SOURCE_BYTES,
     };
