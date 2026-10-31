@@ -51,15 +51,6 @@ fn sample_snapshot() -> WorkspaceSnapshot {
     .expect("valid workspace snapshot")
 }
 
-fn table(entries: &[(&str, ConfigValue)]) -> ConfigValue {
-    ConfigValue::Table(
-        entries
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), value.clone()))
-            .collect(),
-    )
-}
-
 fn root_table(value: &mut ConfigValue) -> &mut BTreeMap<String, ConfigValue> {
     match value {
         ConfigValue::Table(table) => table,
