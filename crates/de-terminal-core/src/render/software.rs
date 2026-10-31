@@ -12,9 +12,7 @@ use std::fmt;
 use crate::screen::{CellContent, Color, GraphemeWidth, StyleFlags};
 use crate::TerminalSize;
 
-use super::{
-    CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor,
-};
+use super::{CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor};
 
 /// One RGBA pixel with an opaque default alpha.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -195,10 +193,7 @@ impl GlyphAtlas {
         grapheme: &str,
         bitmap: GlyphBitmap,
     ) -> Result<Option<GlyphBitmap>, SoftwareRenderError> {
-        if grapheme.is_empty()
-            || grapheme.len() > 64
-            || grapheme.chars().any(char::is_control)
-        {
+        if grapheme.is_empty() || grapheme.len() > 64 || grapheme.chars().any(char::is_control) {
             return Err(SoftwareRenderError::InvalidGlyphKey);
         }
         Ok(self.glyphs.insert(grapheme.to_owned(), bitmap))
@@ -225,11 +220,7 @@ impl PixelSurface {
     fn new(width: u32, height: u32, max_pixels: usize) -> Result<Self, SoftwareRenderError> {
         let pixel_count = usize::try_from(width)
             .ok()
-            .and_then(|w| {
-                usize::try_from(height)
-                    .ok()
-                    .and_then(|h| w.checked_mul(h))
-            })
+            .and_then(|w| usize::try_from(height).ok().and_then(|h| w.checked_mul(h)))
             .ok_or(SoftwareRenderError::SurfaceTooLarge)?;
         if pixel_count > max_pixels {
             return Err(SoftwareRenderError::SurfaceTooLarge);
@@ -266,7 +257,8 @@ impl PixelSurface {
             return None;
         }
         let index = (usize::try_from(y).ok()? * usize::try_from(self.width).ok()?
-            + usize::try_from(x).ok()?) * 4;
+            + usize::try_from(x).ok()?)
+            * 4;
         Some(Rgba::new(
             self.pixels[index],
             self.pixels[index + 1],
@@ -311,10 +303,8 @@ impl PixelSurface {
         let inverse_alpha = 255 - source_alpha;
         for (offset, source) in [(0usize, color.red), (1, color.green), (2, color.blue)] {
             let destination = u32::from(self.pixels[index + offset]);
-            let blended = (u32::from(source) * source_alpha
-                + destination * inverse_alpha
-                + 127)
-                / 255;
+            let blended =
+                (u32::from(source) * source_alpha + destination * inverse_alpha + 127) / 255;
             self.pixels[index + offset] = blended as u8;
         }
         self.pixels[index + 3] = 255;
@@ -464,18 +454,14 @@ impl SoftwareRenderer {
         (foreground, background)
     }
 
-    fn render_region(
-        &mut self,
-        frame: Frame<'_>,
-        region: CellRect,
-        clip: CellRect,
-    ) {
+    fn render_region(&mut self, frame: Frame<'_>, region: CellRect, clip: CellRect) {
         // Paint all cell backgrounds first. A wide glyph is drawn in a second
         // pass so its trailing half is not erased by the continuation cell.
         for row in region.top()..region.bottom_exclusive() as u16 {
             let cells = frame.row_cells(row).expect("validated frame row");
             for column in region.left()..region.right_exclusive() as u16 {
-                let (_, background) = self.cell_colors(frame, row, column, cells[usize::from(column)]);
+                let (_, background) =
+                    self.cell_colors(frame, row, column, cells[usize::from(column)]);
                 let x = u32::from(column) * self.cell_width;
                 let y = u32::from(row) * self.cell_height;
                 self.surface
@@ -495,7 +481,11 @@ impl SoftwareRenderer {
                 let CellContent::Grapheme { value, width } = cell.content() else {
                     continue;
                 };
-                let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
+                let span = if width == GraphemeWidth::Wide {
+                    2u32
+                } else {
+                    1u32
+                };
                 if u32::from(column) + span <= u32::from(region.left()) {
                     continue;
                 }
@@ -592,7 +582,11 @@ impl SoftwareRenderer {
                 let visible = !styles.contains(StyleFlags::HIDDEN)
                     && (!styles.contains(StyleFlags::BLINK) || self.blink_visible);
                 if visible {
-                    let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
+                    let span = if width == GraphemeWidth::Wide {
+                        2u32
+                    } else {
+                        1u32
+                    };
                     let bitmap = self.atlas.get(value.as_str());
                     Self::draw_glyph(
                     &mut self.surface,
@@ -672,11 +666,7 @@ impl SoftwareRenderer {
 impl Renderer for SoftwareRenderer {
     type Error = SoftwareRenderError;
 
-    fn resize(
-        &mut self,
-        size: TerminalSize,
-        scale_factor: ScaleFactor,
-    ) -> Result<(), Self::Error> {
+    fn resize(&mut self, size: TerminalSize, scale_factor: ScaleFactor) -> Result<(), Self::Error> {
         let cell_width = (self.metrics.advance_width() * scale_factor.get())
             .ceil()
             .max(1.0) as u32;
@@ -690,13 +680,7 @@ impl Renderer for SoftwareRenderer {
             .checked_mul(cell_height)
             .ok_or(SoftwareRenderError::SurfaceTooLarge)?;
         let mut surface = PixelSurface::new(width, height, self.max_pixels)?;
-        surface.fill_rect(
-            0,
-            0,
-            width,
-            height,
-            self.palette.default_background,
-        );
+        surface.fill_rect(0, 0, width, height, self.palette.default_background);
 
         self.size = size;
         self.scale_factor = scale_factor;
@@ -707,11 +691,7 @@ impl Renderer for SoftwareRenderer {
         Ok(())
     }
 
-    fn render(
-        &mut self,
-        frame: Frame<'_>,
-        clip: Option<CellRect>,
-    ) -> Result<(), Self::Error> {
+    fn render(&mut self, frame: Frame<'_>, clip: Option<CellRect>) -> Result<(), Self::Error> {
         if frame.size() != self.size {
             return Err(SoftwareRenderError::FrameSizeMismatch);
         }
@@ -810,22 +790,18 @@ fn indexed_color(index: u8) -> Rgba {
 
 #[cfg(test)]
 mod tests {
-    use super::{GlyphAtlas, GlyphBitmap, RenderPalette, Rgba, SoftwareRenderError, SoftwareRenderer};
+    use super::{
+        GlyphAtlas, GlyphBitmap, RenderPalette, Rgba, SoftwareRenderError, SoftwareRenderer,
+    };
     use crate::render::{
         CellPosition, CellRect, DamageTracker, Frame, GlyphMetrics, Renderer, ScaleFactor,
         Selection, SelectionMode,
     };
-    use crate::screen::{
-        CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen,
-    };
+    use crate::screen::{CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen};
     use crate::TerminalSize;
 
     const GLYPH_MASK: [u8; 15] = [
-        255, 0, 255,
-        0, 255, 0,
-        255, 255, 255,
-        255, 0, 255,
-        255, 0, 255,
+        255, 0, 255, 0, 255, 0, 255, 255, 255, 255, 0, 255, 255, 0, 255,
     ];
 
     fn size(columns: u16, rows: u16) -> TerminalSize {
@@ -861,8 +837,8 @@ mod tests {
         selection: Option<Selection>,
         clip: Option<CellRect>,
     ) -> Result<(), SoftwareRenderError> {
-        let frame = Frame::new_with_selection(screen, damage, 1, selection)
-            .expect("valid render frame");
+        let frame =
+            Frame::new_with_selection(screen, damage, 1, selection).expect("valid render frame");
         renderer.render(frame, clip)
     }
 
@@ -871,18 +847,11 @@ mod tests {
         let terminal_size = size(1, 1);
         let mut screen = TerminalScreen::new(terminal_size, 1).expect("screen");
         screen
-            .set_grapheme(
-                0,
-                0,
-                "A",
-                GraphemeWidth::Single,
-                CellAttributes::default(),
-            )
+            .set_grapheme(0, 0, "A", GraphemeWidth::Single, CellAttributes::default())
             .expect("write A");
         let damage = DamageTracker::new(terminal_size, 4).expect("damage");
-        let mut renderer =
-            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
-                .expect("renderer");
+        let mut renderer = SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
+            .expect("renderer");
         renderer.set_cursor_visible(false);
 
         render_frame(&mut renderer, &screen, &damage, None, None).expect("render");
@@ -912,11 +881,7 @@ mod tests {
                 0,
                 "A",
                 GraphemeWidth::Single,
-                CellAttributes::new(
-                    Color::Indexed(1),
-                    Color::Indexed(4),
-                    StyleFlags::INVERSE,
-                ),
+                CellAttributes::new(Color::Indexed(1), Color::Indexed(4), StyleFlags::INVERSE),
             )
             .expect("write A");
         let damage = DamageTracker::new(terminal_size, 4).expect("damage");
@@ -928,7 +893,10 @@ mod tests {
 
         // Inverse swaps indexed red/blue; the transparent glyph pixel exposes
         // the swapped background while an ink pixel uses the swapped foreground.
-        assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(36, 114, 200)));
+        assert_eq!(
+            renderer.surface().pixel(0, 0),
+            Some(Rgba::rgb(36, 114, 200))
+        );
         assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(205, 49, 49)));
 
         let dim_attributes = CellAttributes::new(
@@ -1004,8 +972,14 @@ mod tests {
         renderer.set_cursor_visible(false);
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
 
-        assert_eq!(renderer.surface().pixel(1, 2), Some(Rgba::rgb(255, 255, 255)));
-        assert_eq!(renderer.surface().pixel(1, 4), Some(Rgba::rgb(255, 255, 255)));
+        assert_eq!(
+            renderer.surface().pixel(1, 2),
+            Some(Rgba::rgb(255, 255, 255))
+        );
+        assert_eq!(
+            renderer.surface().pixel(1, 4),
+            Some(Rgba::rgb(255, 255, 255))
+        );
     }
 
     #[test]
@@ -1018,11 +992,7 @@ mod tests {
                 0,
                 "A",
                 GraphemeWidth::Single,
-                CellAttributes::new(
-                    Color::Default,
-                    Color::Default,
-                    StyleFlags::BLINK,
-                ),
+                CellAttributes::new(Color::Default, Color::Default, StyleFlags::BLINK),
             )
             .unwrap();
         let damage = DamageTracker::new(terminal_size, 4).unwrap();
@@ -1046,11 +1016,7 @@ mod tests {
                 0,
                 "A",
                 GraphemeWidth::Single,
-                CellAttributes::new(
-                    Color::Default,
-                    Color::Default,
-                    StyleFlags::HIDDEN,
-                ),
+                CellAttributes::new(Color::Default, Color::Default, StyleFlags::HIDDEN),
             )
             .unwrap();
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
@@ -1075,7 +1041,10 @@ mod tests {
         render_frame(&mut renderer, &screen, &damage, None, Some(clip)).unwrap();
 
         assert_eq!(renderer.surface().pixel(0, 0), Some(Rgba::rgb(0, 0, 0)));
-        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(255, 255, 255)));
+        assert_eq!(
+            renderer.surface().pixel(3, 0),
+            Some(Rgba::rgb(255, 255, 255))
+        );
     }
 
     #[test]
@@ -1096,7 +1065,10 @@ mod tests {
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
 
         for x in 0..6 {
-            assert_eq!(renderer.surface().pixel(x, 2), Some(Rgba::rgb(255, 255, 255)));
+            assert_eq!(
+                renderer.surface().pixel(x, 2),
+                Some(Rgba::rgb(255, 255, 255))
+            );
         }
     }
 
@@ -1140,7 +1112,9 @@ mod tests {
             Err(SoftwareRenderError::ClipOutOfBounds)
         ));
         assert!(matches!(
-            renderer.atlas.insert("\n", GlyphBitmap::new(1, 1, vec![255]).unwrap()),
+            renderer
+                .atlas
+                .insert("\n", GlyphBitmap::new(1, 1, vec![255]).unwrap()),
             Err(SoftwareRenderError::InvalidGlyphKey)
         ));
     }
