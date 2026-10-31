@@ -1,6 +1,8 @@
 #ifndef DE_SHELL_SHELL_H
 #define DE_SHELL_SHELL_H
 
+#include "de_shell/abi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -13,23 +15,6 @@ extern "C" {
  * unless a future API version explicitly documents synchronization.
  */
 typedef struct de_shell de_shell_t;
-
-/**
- * Stable status values shared with the initial Rust DeStatus definition.
- *
- * Existing numeric assignments must never be changed or reused.
- */
-typedef enum de_shell_status {
-    DE_SHELL_STATUS_OK = 0,
-    DE_SHELL_STATUS_INVALID_ARGUMENT = 1,
-    DE_SHELL_STATUS_INTERNAL_ERROR = 2,
-    DE_SHELL_STATUS_BUSY = 3,
-    DE_SHELL_STATUS_PARSE_ERROR = 4,
-    DE_SHELL_STATUS_RESOURCE_LIMIT = 5,
-    DE_SHELL_STATUS_UNSUPPORTED_OPERATION = 6,
-    DE_SHELL_STATUS_EXECUTION_UNAVAILABLE = 7,
-    DE_SHELL_STATUS_EXTERNAL_EXECUTION_FAILED = 8
-} de_shell_status_t;
 
 /**
  * Creates an independent DE-Shell instance.
