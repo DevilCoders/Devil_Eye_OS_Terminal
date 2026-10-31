@@ -506,19 +506,16 @@ pub trait RuntimeService: Send + Sync {
     fn capabilities(&self) -> PlatformCapabilities;
 
     /// Creates a child process and transfers OS-resource ownership to its handle.
-    fn spawn(
-        &self,
-        request: ProcessSpawnRequest,
-    ) -> Result<Box<dyn RuntimeProcess>, RuntimeError>;
+    fn spawn(&self, request: ProcessSpawnRequest) -> Result<Box<dyn RuntimeProcess>, RuntimeError>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest,
-        ProgramSpec, ProgramSpecError, PtyConfig, PtySize, PtySizeError, ReadOutcome,
-        RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
-        StreamAttachment, TerminationMode, WriteOutcome,
+        IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
+        ProgramSpecError, PtyConfig, PtySize, PtySizeError, ReadOutcome, RuntimeCapability,
+        RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
+        TerminationMode, WriteOutcome,
     };
     use std::ffi::{OsStr, OsString};
     use std::num::NonZeroUsize;
@@ -704,7 +701,9 @@ mod tests {
                 return Err(RuntimeError::InvalidArgument);
             }
             output[0] = b'o';
-            Ok(ReadOutcome::Data(NonZeroUsize::new(1Usize).expect("non-zero")))
+            Ok(ReadOutcome::Data(
+                NonZeroUsize::new(1Usize).expect("non-zero"),
+            ))
         }
 
         fn read_stderr(&mut self, _output: &mut [u8]) -> Result<ReadOutcome, RuntimeError> {
@@ -771,14 +770,19 @@ mod tests {
             ReadOutcome::Data(NonZeroUsize::new(1Usize).expect("non-zero"))
         );
         assert_eq!(output[0], b'o');
-        assert_eq!(process.read_stderr(&mut output), Ok(ReadOutcome::WouldBlock));
+        assert_eq!(
+            process.read_stderr(&mut output),
+            Ok(ReadOutcome::WouldBlock)
+        );
         process.resize_pty(size).expect("PTY resize");
         process.send_signal(Signal::Interrupt).expect("signal");
         assert_eq!(process.try_wait(), Ok(None));
         assert_eq!(process.wait(), Ok(ProcessExitStatus::Exited(0)));
         assert!(ProcessExitStatus::Exited(0).success());
         assert!(!ProcessExitStatus::Signaled(Signal::Kill).success());
-        process.terminate(TerminationMode::Force).expect("terminate");
+        process
+            .terminate(TerminationMode::Force)
+            .expect("terminate");
         process.close_stdin().expect("close stdin");
     }
 }
