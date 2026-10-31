@@ -8,12 +8,13 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::{
-    IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
-    ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal,
-    StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
+    EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
+    ProcessSpawnRequest, ProgramSpec, ProgramSpecError, ReadOutcome, RuntimeCapability,
+    RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
+    TerminalSize, TerminationMode, WriteOutcome,
 };
 
-use super::process::{map_exit_status, reap_detached_child, LinuxPtyChild};
+use super::process::{map_exit_status, reap_detached_child, resolve_program, LinuxPtyChild};
 
 /// Linux process runtime supporting PTY sessions and explicit stdio attachments.
 #[derive(Debug, Default, Clone, Copy)]
@@ -111,8 +112,12 @@ impl StdioRuntimeProcess {
         config: StdioConfig,
         kill_on_drop: bool,
     ) -> Result<Self, RuntimeError> {
-        let mut command = Command::new(program.program());
+        let resolved = resolve_program(program).map_err(RuntimeError::InvalidProgram)?;
+        let mut command = Command::new(&resolved.executable);
         command.args(program.args());
+        if program.environment_inheritance() == EnvironmentInheritance::Clear {
+            command.env_clear();
+        }
         command.envs(
             program
                 .environment()
@@ -120,7 +125,7 @@ impl StdioRuntimeProcess {
                 .map(|(key, value)| (key, value)),
         );
 
-        if let Some(directory) = program.working_directory() {
+        if let Some(directory) = resolved.working_directory.as_deref() {
             command.current_dir(directory);
         }
 
