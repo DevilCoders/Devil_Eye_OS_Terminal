@@ -954,7 +954,10 @@ mod tests {
             .insert("x", GlyphBitmap::new(1, 1, vec![255]).unwrap())
             .unwrap();
         render_frame(&mut renderer, &screen, &damage, Some(selection), None).unwrap();
-        assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(255, 255, 255)));
+        assert_eq!(
+            renderer.surface().pixel(1, 0),
+            Some(Rgba::rgb(255, 255, 255))
+        );
 
         renderer.set_cursor_visible(true);
         let mut cursor_screen = TerminalScreen::new(terminal_size, 2).unwrap();
@@ -1100,14 +1103,8 @@ mod tests {
         let wide = GlyphBitmap::new(6, 5, vec![255; 30]).unwrap();
         let mut glyphs = GlyphAtlas::new(wide.clone());
         glyphs.insert("中", wide).unwrap();
-        let mut renderer = SoftwareRenderer::new(
-            terminal_size,
-            metrics(),
-            palette(),
-            glyphs,
-            128,
-        )
-        .unwrap();
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), glyphs, 128).unwrap();
         renderer.set_cursor_visible(false);
         let mut damage = DamageTracker::new(terminal_size, 4).unwrap();
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
@@ -1127,10 +1124,7 @@ mod tests {
             .unwrap();
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
 
-        assert_eq!(
-            renderer.surface().pixel(3, 2),
-            Some(Rgba::rgb(205, 49, 49))
-        );
+        assert_eq!(renderer.surface().pixel(3, 2), Some(Rgba::rgb(205, 49, 49)));
     }
 
     #[test]
