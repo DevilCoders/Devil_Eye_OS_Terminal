@@ -325,7 +325,7 @@ impl Selection {
         if !anchor.is_within(size) || !extent.is_within(size) {
             return Err(RenderContractError::SelectionOutOfBounds);
         }
-        Ok(Self { anchor, extent, mode })
+        Ok(Self {\n            anchor,\n            extent,\n            mode,\n        })
     }
 
     pub const fn anchor(self) -> CellPosition {
@@ -457,8 +457,8 @@ pub trait Renderer {
 
 mod software;
 pub use software::{
-    GlyphAtlas, GlyphBitmap, PixelSurface, RenderPalette, Rgba, SoftwareRenderer,
-    SoftwareRenderError,
+    GlyphAtlas, GlyphBitmap, PixelSurface, RenderPalette, Rgba, SoftwareRenderError,
+    SoftwareRenderer,
 };
 
 #[cfg(test)]
