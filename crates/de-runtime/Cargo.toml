@@ -1,0 +1,11 @@
+[package]
+name = "de-runtime"
+version.workspace = true
+edition.workspace = true
+description = "Platform-facing process launch specifications and runtime contracts."
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
