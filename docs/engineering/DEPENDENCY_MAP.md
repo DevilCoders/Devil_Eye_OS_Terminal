@@ -41,3 +41,15 @@ DE-019-01 #38 ─> DE-019-03 #66
 - Use `Blocked by #N` and `Blocks #N` consistently.
 - Revisit downstream readiness when a dependency changes.
 - Do not close issues solely to unblock a board.
+
+
+## Backlog governance automation chain
+
+```text
+DE-001-01 #25
+  └─> DE-001-05 #83 (taxonomy and milestones)
+        └─> DE-001-06 #84 (dependency-aware readiness)
+              └─> DE-001-07 #85 (metadata audit)
+```
+
+The dependency-status workflow derives blocked/ready labels from the task's Dependencies section and the open/closed state of referenced issues. When a dependency closes, downstream eligible tasks are moved to Todo; when it reopens, they return to Blocked. In-progress, review, and done labels are protected.
