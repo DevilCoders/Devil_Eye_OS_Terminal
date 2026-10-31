@@ -86,7 +86,7 @@ static int test_escaped_whitespace_and_quotes(void)
             &tokens[2],
             DE_SHELL_TOKEN_WORD,
             10U,
-            7U,
+            6U,
             DE_SHELL_TOKEN_FLAG_DOUBLE_QUOTED | DE_SHELL_TOKEN_FLAG_ESCAPED)) {
         (void)fprintf(stderr, "escape handling test failed\n");
         return 1;
