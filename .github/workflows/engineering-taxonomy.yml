@@ -261,7 +261,7 @@ jobs:
                 ? rawMilestoneTarget.match(/\bM(?:10|[0-9])\b/)?.[0]
                 : null;
               const milestoneTitle = milestoneCode
-                ? (milestones.find(([title]) => title.startsWith(\`${milestoneCode} \`)) || [null])[0]
+                ? (milestones.find(([title]) => title.startsWith(milestoneCode + " ")) || [null])[0]
                 : (rawMilestoneTarget || (epicId ? epicMilestones[epicId] : null));
               if (milestoneTitle) {
                 const number = milestoneByTitle.get(milestoneTitle);
