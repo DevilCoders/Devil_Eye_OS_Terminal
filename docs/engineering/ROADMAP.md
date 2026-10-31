@@ -89,7 +89,7 @@ Every task issue should include a stable ID, parent Epic, priority, status, comp
 
 ## Current setup note
 
-The initial 24 Epic issues and 14 first-wave task issues are created in GitHub. This roadmap is the human-readable index. Native GitHub Milestones, Labels, and Projects/Kanban still need provisioning; they are not represented as created by this file.
+The repository's 24 Epics and 62 Tasks are tracked through GitHub Issues, Labels, Milestones, and Actions. The M0–M10 milestones and engineering taxonomy are provisioned. GitHub Projects V2 is optional and is not part of the required engineering workflow.
 
 
 ## Expanded engineering management system
@@ -97,18 +97,18 @@ The initial 24 Epic issues and 14 first-wave task issues are created in GitHub. 
 - [Task Catalog](TASK_CATALOG.md) — complete index of 62 task Issues (#25–#86).
 - [Workflow](WORKFLOW.md) — hierarchy, statuses, priorities, dependencies, Definition of Done, and PR rules.
 - [Milestones](MILESTONES.md) — M0–M10 exit criteria.
-- [Kanban operating model](KANBAN.md) — recommended Project views and fields.
+- [Optional Kanban reference](KANBAN.md) — retained for reference only; GitHub Projects V2 is not required.
 - [Dependency Map](DEPENDENCY_MAP.md) — initial critical-path graph.
 
 ## Current backlog inventory
 
 - 24 Epic Issues: #1–#24.
 - 62 Task Issues: #25–#86.
-- 86 total open engineering Issues at the time this index was updated.
+- 86 total engineering Issues: 85 open and #86 closed as not planned (GitHub Projects setup is optional).
 - Issue templates: Epic, Task, Bug.
 - Pull request template with validation and evidence checklist.
 - GitHub Actions automation: `.github/workflows/engineering-taxonomy.yml` provisions taxonomy labels and M0–M10 milestones, then classifies open issues. It runs on new/reopened issues and can be run manually for a full backfill. `.github/workflows/dependency-status.yml` reconciles blocked/ready states when issues open, reopen, or close.
 
-## Native Project board
+## Project board (optional)
 
-The current GitHub integration does not expose a create/configure GitHub Projects action. Create a repository-level Project named **DEVIL_EYE OS Terminal — Engineering**, add this repository's Issues, and configure the views/fields in [KANBAN.md](KANBAN.md). The labels and milestones can be provisioned by the included workflow after it is run.
+GitHub Projects V2 is not required for this repository. GitHub Issues, Labels, Milestones, dependency references, and the two repository Actions workflows are the source of truth for planning and execution. Do not block implementation on Project views, custom fields, or board configuration.
