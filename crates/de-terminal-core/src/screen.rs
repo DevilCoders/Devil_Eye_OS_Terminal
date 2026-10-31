@@ -4,7 +4,6 @@
 //! upstream input/parser layer supplies grapheme boundaries and display width;
 //! the grid enforces storage, cell-pair, indexing, and allocation invariants.
 
-use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 
@@ -620,7 +619,7 @@ impl TerminalScreen {
     /// Rows are retained at their original column width. Changing the screen's
     /// column count clears history rather than silently reflowing old rows.
     /// The effective row capacity is `max_scrollback_cells / columns`; any
-    /// remainder is unused. Row metadata is also bounded by that row capacity.
+    /// remainder is unused. Cell storage is preallocated at construction.
     pub fn new_with_scrollback(
         size: TerminalSize,
         max_cells: usize,
