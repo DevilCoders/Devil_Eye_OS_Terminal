@@ -107,7 +107,10 @@ impl fmt::Display for ConfigError {
                 "configuration schema version {found} is unsupported; expected {expected}"
             ),
             Self::InvalidValue { field, reason } => {
-                write!(formatter, "invalid configuration value for {field}: {reason}")
+                write!(
+                    formatter,
+                    "invalid configuration value for {field}: {reason}"
+                )
             }
             Self::NonUtf8Value { field } => {
                 write!(formatter, "configuration field {field} is not valid UTF-8")
@@ -168,12 +171,7 @@ impl AppConfig {
         }
 
         let mut terminal = take_table(&mut root, "terminal", "root")?;
-        let columns = take_integer(
-            &mut terminal,
-            "columns",
-            "terminal",
-            Some(DEFAULT_COLUMNS),
-        )?;
+        let columns = take_integer(&mut terminal, "columns", "terminal", Some(DEFAULT_COLUMNS))?;
         let rows = take_integer(&mut terminal, "rows", "terminal", Some(DEFAULT_ROWS))?;
         let scrollback_lines = take_usize(
             &mut terminal,
@@ -186,8 +184,7 @@ impl AppConfig {
         let mut startup = take_table(&mut root, "startup", "root")?;
         let executable = take_string(&mut startup, "program", "startup", Some("/bin/sh"))?;
         let arguments = take_string_array(&mut startup, "args", "startup")?;
-        let working_directory =
-            take_optional_string(&mut startup, "working_directory", "startup")?;
+        let working_directory = take_optional_string(&mut startup, "working_directory", "startup")?;
         let environment = take_string_map(&mut startup, "environment", "startup")?;
         ensure_no_unknown(startup, "startup")?;
 
@@ -268,10 +265,7 @@ impl AppConfig {
         for (key, value) in self.initial_program.environment() {
             environment.insert(
                 os_str_to_string(key, "startup.environment.key")?,
-                ConfigValue::String(os_str_to_string(
-                    value,
-                    "startup.environment.value",
-                )?),
+                ConfigValue::String(os_str_to_string(value, "startup.environment.value")?),
             );
         }
 
@@ -326,12 +320,12 @@ impl AppConfig {
         let mut root = BTreeMap::new();
         root.insert(
             "schema_version".to_owned(),
-            ConfigValue::Integer(
-                i64::try_from(self.schema_version).map_err(|_| ConfigError::InvalidValue {
+            ConfigValue::Integer(i64::try_from(self.schema_version).map_err(|_| {
+                ConfigError::InvalidValue {
                     field: "schema_version",
                     reason: "does not fit in a signed 64-bit integer",
-                })?,
-            ),
+                }
+            })?),
         );
         root.insert("terminal".to_owned(), ConfigValue::Table(terminal));
         root.insert("startup".to_owned(), ConfigValue::Table(startup));
@@ -562,8 +556,7 @@ fn take_usize(
     section: &str,
     default: Option<usize>,
 ) -> Result<usize, ConfigError> {
-    let default = default
-        .map(|value| u64::try_from(value).expect("supported defaults fit u64"));
+    let default = default.map(|value| u64::try_from(value).expect("supported defaults fit u64"));
     let value = take_integer(table, key, section, default)?;
     usize::try_from(value).map_err(|_| invalid_value(section, key, "does not fit usize"))
 }
@@ -575,10 +568,12 @@ fn take_string(
     default: Option<&str>,
 ) -> Result<String, ConfigError> {
     match table.remove(key) {
-        None => default.map(str::to_owned).ok_or_else(|| ConfigError::MissingField {
-            section: section.to_owned(),
-            key: key.to_owned(),
-        }),
+        None => default
+            .map(str::to_owned)
+            .ok_or_else(|| ConfigError::MissingField {
+                section: section.to_owned(),
+                key: key.to_owned(),
+            }),
         Some(ConfigValue::String(value)) => Ok(value),
         Some(_) => Err(wrong_type(section, key, "a string")),
     }
@@ -625,7 +620,11 @@ fn take_string_map(
             .into_iter()
             .map(|(key, value)| match value {
                 ConfigValue::String(value) => Ok((key, value)),
-                _ => Err(wrong_type(section, key.as_str(), "a string environment value")),
+                _ => Err(wrong_type(
+                    section,
+                    key.as_str(),
+                    "a string environment value",
+                )),
             })
             .collect(),
         Some(_) => Err(wrong_type(section, key, "a table of string values")),
@@ -711,7 +710,7 @@ fn usize_to_value(value: usize, field: &'static str) -> Result<ConfigValue, Conf
 mod tests {
     use super::{
         AppConfig, ConfigError, ConfigValue, CURRENT_CONFIG_SCHEMA_VERSION,
-        DEFAULT_MAX_PENDING_INPUT_BYTES, DEFAULT_MAX_PASTE_BYTES, DEFAULT_MAX_SESSIONS,
+        DEFAULT_MAX_PASTE_BYTES, DEFAULT_MAX_PENDING_INPUT_BYTES, DEFAULT_MAX_SESSIONS,
         DEFAULT_SCROLLBACK_LINES,
     };
     use de_runtime::{ProgramSpec, ProgramSpecError};
@@ -750,10 +749,7 @@ mod tests {
                     ),
                     (
                         "environment",
-                        table([(
-                            "TERM",
-                            ConfigValue::String("xterm-256color".to_owned()),
-                        )]),
+                        table([("TERM", ConfigValue::String("xterm-256color".to_owned()))]),
                     ),
                 ]),
             ),
@@ -789,7 +785,10 @@ mod tests {
         assert_eq!(config.initial_terminal_size().columns(), 120);
         assert_eq!(config.initial_terminal_size().rows(), 40);
         assert_eq!(config.initial_program().program(), OsStr::new("/bin/zsh"));
-        assert_eq!(config.initial_program().args(), &[std::ffi::OsString::from("-l")]);
+        assert_eq!(
+            config.initial_program().args(),
+            &[std::ffi::OsString::from("-l")]
+        );
         assert_eq!(config.max_sessions(), 12);
     }
 
@@ -844,10 +843,7 @@ mod tests {
                 "schema_version",
                 ConfigValue::Integer(CURRENT_CONFIG_SCHEMA_VERSION as i64),
             ),
-            (
-                "terminal",
-                table([("columns", ConfigValue::Integer(0))]),
-            ),
+            ("terminal", table([("columns", ConfigValue::Integer(0))])),
         ]);
         assert!(matches!(
             AppConfig::from_value(invalid_columns),
@@ -887,10 +883,7 @@ mod tests {
                 "startup",
                 table([(
                     "environment",
-                    table([(
-                        "BAD=KEY",
-                        ConfigValue::String("value".to_owned()),
-                    )]),
+                    table([("BAD=KEY", ConfigValue::String("value".to_owned()))]),
                 )]),
             ),
         ]);
@@ -910,10 +903,7 @@ mod tests {
                 "schema_version",
                 ConfigValue::Integer(CURRENT_CONFIG_SCHEMA_VERSION as i64),
             ),
-            (
-                "startup",
-                table([("args", ConfigValue::Array(arguments))]),
-            ),
+            ("startup", table([("args", ConfigValue::Array(arguments))])),
         ]);
         assert!(matches!(
             AppConfig::from_value(excessive_arguments),
