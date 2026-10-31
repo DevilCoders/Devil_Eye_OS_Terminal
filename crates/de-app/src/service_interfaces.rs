@@ -329,8 +329,18 @@ pub trait SessionManagerService: ApplicationService {
     /// Closes one session synchronously. Other sessions remain unaffected.
     ///
     /// This operation may wait for graceful/forced child termination and must
-    /// run on a lifecycle worker, never on the GUI/event-loop thread. Concrete
-    /// SessionManager callers on the GUI thread should use
-    /// `SessionManager::close_session_async` instead.
+    /// run on a lifecycle worker, never on the GUI/event-loop thread. GUI
+    /// callers should use `close_session_async`.
     fn close_session(&mut self, id: SessionId) -> Result<(), ServiceError>;
+
+    /// Starts session cleanup on a worker and returns a handle for completion polling.
+    ///
+    /// The session is removed from the active registry immediately. Callers may
+    /// use `is_finished` without blocking and should join only after completion.
+    fn close_session_async(
+        &mut self,
+        id: SessionId,
+    ) -> Result<std::thread::JoinHandle<Result<(), ServiceError>>, ServiceError>
+    where
+        Self::Session: Send + 'static;
 }
