@@ -891,9 +891,8 @@ mod tests {
             )
             .expect("write A");
         let damage = DamageTracker::new(terminal_size, 4).expect("damage");
-        let mut renderer =
-            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
-                .expect("renderer");
+        let mut renderer = SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128)
+            .expect("renderer");
         renderer.set_cursor_visible(false);
         render_frame(&mut renderer, &screen, &damage, None, None).expect("render");
 
