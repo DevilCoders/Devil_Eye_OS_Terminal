@@ -558,7 +558,7 @@ mod tests {
             match process.read_stdout(&mut buffer)? {
                 ReadOutcome::Data(count) => {
                     collected.extend_from_slice(&buffer[..count.get()]);
-                    if collected.windows(marker.len()).any(|window| window == marker) {
+                    if collected\n                        .windows(marker.len())\n                        .any(|window| window == marker) {
                         return Ok(collected);
                     }
                 }
@@ -807,7 +807,7 @@ mod tests {
             .with_arg("/dev/zero");
         let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
             .expect("PTY request");
-        let mut process = LinuxRuntime.spawn(request).expect("spawn high-volume writer");
+        let mut process = LinuxRuntime\n            .spawn(request)\n            .expect("spawn high-volume writer");
 
         let (output, status) = drain_until_exit(process.as_mut(), Duration::from_secs(10))
             .expect("drain output while child is running");
@@ -840,7 +840,7 @@ mod tests {
 
         while offset < payload.len() || echoed.len() < payload.len() {
             if offset < payload.len() {
-                match process.write_stdin(&payload[offset..]).expect("write PTY payload") {
+                match process\n                    .write_stdin(&payload[offset..])\n                    .expect("write PTY payload")\n                {
                     WriteOutcome::Written(count) => offset += count.get(),
                     WriteOutcome::WouldBlock => observed_backpressure = true,
                 }
@@ -872,7 +872,7 @@ mod tests {
             }
         }
 
-        assert!(observed_backpressure, "test did not exercise PTY backpressure");
+        assert!(\n            observed_backpressure,\n            "test did not exercise PTY backpressure"\n        );
         assert_eq!(echoed, payload);
         process.terminate(TerminationMode::Force).expect("stop cat");
         let _ = process.wait();
