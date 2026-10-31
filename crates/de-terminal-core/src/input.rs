@@ -500,6 +500,13 @@ mod tests {
             InputResult::Bytes(b"\x1b[1;7A".to_vec())
         );
         assert_eq!(
+            mapper.map_key(KeyEvent::pressed(
+                KeyCode::ArrowUp,
+                Modifiers::new(false, false, true, false)
+            )),
+            InputResult::Bytes(b"\x1b[1;3A".to_vec())
+        );
+        assert_eq!(
             mapper.map_key(KeyEvent::pressed(KeyCode::Function(5), Modifiers::NONE)),
             InputResult::Bytes(b"\x1b[15~".to_vec())
         );
@@ -580,6 +587,10 @@ mod tests {
         let ctrl_shift = Modifiers::new(true, true, false, false);
         assert_eq!(
             mapper.map_key(KeyEvent::pressed(KeyCode::Character('c'), ctrl_shift)),
+            InputResult::Shortcut(ShortcutAction::Copy)
+        );
+        assert_eq!(
+            mapper.map_key(KeyEvent::pressed(KeyCode::Character('C'), ctrl_shift)),
             InputResult::Shortcut(ShortcutAction::Copy)
         );
         assert_eq!(
