@@ -32,7 +32,7 @@ The budget is expressed in cell slots, not a number of lines. Effective row capa
 
 `max_rows = max_scrollback_cells / current_columns`
 
-Any remainder smaller than one complete row is unused. A budget smaller than one row therefore retains no rows. The retained cell payload never exceeds the configured number of cells; row-vector metadata is bounded by the effective row capacity. Row and deque allocations use fallible reservation and report `ScreenGridError::AllocationFailed` before visible-grid mutation.
+Any remainder smaller than one complete row is unused. A budget smaller than one row therefore retains no rows. The ring buffer allocates exactly the effective number of cell slots during construction using fallible reservation. Scroll operations then copy rows into preallocated storage and perform no heap allocation. If the requested history capacity cannot be allocated, construction returns `ScreenGridError::AllocationFailed`; no partially initialized screen is returned.
 
 This budget excludes allocator metadata and the visible screen grid, which is separately bounded by `max_cells`.
 
@@ -51,7 +51,7 @@ A future viewport/history integration may introduce an explicit reflow operation
 - Zero capacity disables history without changing scroll behavior.
 - `clear_scrollback()` drops retained rows only.
 - Invalid scroll regions continue to return `InvalidScrollRegion`.
-- If capturing a row or reserving bounded history storage fails, `scroll_up` returns `AllocationFailed`; the history and visible grid remain unchanged.
+- Scrollback capture itself does not allocate. Invalid internal row ranges return `OutOfBounds` before changing history; visible-grid scrolling remains bounded and allocation-free.
 - No history operation launches processes, reads files, or invokes external services.
 
 ## Verification
