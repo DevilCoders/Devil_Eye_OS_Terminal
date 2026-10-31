@@ -718,13 +718,8 @@ impl Renderer for SoftwareRenderer {
             None => CellRect::new(0, 0, self.size.rows(), self.size.columns())?,
         };
         let full = self.force_full_redraw || frame.damage().is_full();
-        let regions = if full {
-            vec![CellRect::new(0, 0, self.size.rows(), self.size.columns())?]
-        } else {
-            frame.damage().rectangles().to_vec()
-        };
-
-        for region in regions {
+        if full {
+            let region = CellRect::new(0, 0, self.size.rows(), self.size.columns())?;
             let clipped = if let Some(clip) = clip {
                 intersect_rect(region, clip)
             } else {
@@ -732,6 +727,17 @@ impl Renderer for SoftwareRenderer {
             };
             if let Some(clipped) = clipped {
                 self.render_region(frame, clipped, clip_bounds);
+            }
+        } else {
+            for region in frame.damage().rectangles().iter().copied() {
+                let clipped = if let Some(clip) = clip {
+                    intersect_rect(region, clip)
+                } else {
+                    Some(region)
+                };
+                if let Some(clipped) = clipped {
+                    self.render_region(frame, clipped, clip_bounds);
+                }
             }
         }
 
