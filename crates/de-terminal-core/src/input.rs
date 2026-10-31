@@ -312,7 +312,8 @@ impl InputMapper {
             return InputResult::Ignored;
         }
 
-        let extra = if modifiers.alt() { 1 } else { 0 };\n        let mut bytes = Vec::with_capacity(text.len() + extra);
+        let extra = if modifiers.alt() { 1 } else { 0 };
+        let mut bytes = Vec::with_capacity(text.len() + extra);
         if modifiers.alt() {
             bytes.push(0x1b);
         }
