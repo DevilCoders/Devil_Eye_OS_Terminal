@@ -37,6 +37,7 @@ This directory contains the system architecture baseline, component contracts, a
 - [Linux PTY Child Process Lifecycle](linux-pty-process.md) — session/controlling-terminal setup, process groups, signal delivery, exit-status caching, kill-on-drop, and reaping.
 - [Application Lifecycle](application-lifecycle.md) — service initialization, rollback, reverse-order shutdown, retry semantics, and integration-test coverage.
 - [Application Errors and Diagnostics](application-diagnostics.md) — stable error categories/codes, safe summaries, source-chain handling, secret redaction, bounded records, and log-injection protection.
+- [Linux Process Hardening](../security/PROCESS_HARDENING.md) — executable resolution, explicit environment inheritance, working-directory validation, descriptor ownership, argv[0] preservation, and redacted diagnostics.
 
 ## Platform abstraction
 
