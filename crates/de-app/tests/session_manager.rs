@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::num::{NonZeroUsize, NonZeroU64};
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -93,7 +93,10 @@ impl RuntimeProcess for MockProcess {
         }
         let count = buffer.len().min(state.output.len());
         for slot in &mut buffer[..count] {
-            *slot = state.output.pop_front().expect("count is bounded by queue length");
+            *slot = state
+                .output
+                .pop_front()
+                .expect("count is bounded by queue length");
         }
         Ok(ProcessRead::Data(
             NonZeroUsize::new(count).expect("non-empty output"),
@@ -200,7 +203,9 @@ fn initialized_manager(
 fn creates_independent_session_queues_input_and_closes_owned_process() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(4, 1024, 1024));
-    let id = manager.create_session(spec(SessionKind::ExternalProgram)).expect("create session");
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
 
     assert_eq!(
@@ -217,7 +222,9 @@ fn creates_independent_session_queues_input_and_closes_owned_process() {
     manager.close_session(id).expect("close session");
     let process = process_state.lock().unwrap();
     assert!(process.input_closed);
-    assert!(process.termination_modes.contains(&TerminationMode::Graceful));
+    assert!(process
+        .termination_modes
+        .contains(&TerminationMode::Graceful));
     assert!(process.dropped);
     assert!(manager.session_state(id).is_err());
 }
@@ -246,8 +253,12 @@ fn observed_child_exit_transitions_session_and_rejects_new_input() {
 fn application_shutdown_closes_every_session_before_runtime_shutdown() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(4, 1024, 1024));
-    let first = manager.create_session(spec(SessionKind::ExternalProgram)).expect("first");
-    let second = manager.create_session(spec(SessionKind::ExternalProgram)).expect("second");
+    let first = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("first");
+    let second = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("second");
     assert_eq!(manager.session_ids(), vec![first, second]);
 
     manager.shutdown().expect("shutdown all sessions");
@@ -255,7 +266,10 @@ fn application_shutdown_closes_every_session_before_runtime_shutdown() {
     let runtime = state.lock().unwrap();
     assert_eq!(runtime.shutdown_count, 1);
     assert!(!runtime.initialized);
-    assert!(runtime.processes.iter().all(|process| process.lock().unwrap().dropped));
+    assert!(runtime
+        .processes
+        .iter()
+        .all(|process| process.lock().unwrap().dropped));
     assert!(manager.session_ids().is_empty());
 }
 
@@ -267,7 +281,9 @@ fn failed_spawn_does_not_publish_a_partial_session() {
     }));
     let mut manager = initialized_manager(Arc::clone(&state), limits(4, 1024, 1024));
 
-    assert!(manager.create_session(spec(SessionKind::ExternalProgram)).is_err());
+    assert!(manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .is_err());
     assert!(manager.session_ids().is_empty());
     assert_eq!(state.lock().unwrap().spawn_count, 1);
 }
@@ -276,7 +292,9 @@ fn failed_spawn_does_not_publish_a_partial_session() {
 fn manager_drop_forces_and_drops_any_remaining_child_handle() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(4, 1024, 1024));
-    let id = manager.create_session(spec(SessionKind::ExternalProgram)).expect("create");
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create");
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
     process_state.lock().unwrap().graceful_terminates = false;
 
@@ -325,7 +343,11 @@ fn resize_commits_cached_size_only_after_runtime_success() {
     assert_eq!(manager.session(id).unwrap().terminal_size(), original);
 
     process_state.lock().unwrap().resize_fails = false;
-    manager.session_mut(id).unwrap().resize(resized).expect("resize");
+    manager
+        .session_mut(id)
+        .unwrap()
+        .resize(resized)
+        .expect("resize");
     assert_eq!(manager.session(id).unwrap().terminal_size(), resized);
 }
 
@@ -345,7 +367,9 @@ fn session_identifiers_are_never_reused_after_close() {
     let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
     let first = manager.create_session(spec(SessionKind::ExternalProgram)).expect("first");
     manager.close_session(first).expect("close first");
-    let second = manager.create_session(spec(SessionKind::ExternalProgram)).expect("second");
+    let second = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("second");
 
     assert_eq!(first.get(), 1);
     assert_eq!(second.get(), 2);
