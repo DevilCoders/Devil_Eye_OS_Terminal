@@ -455,6 +455,12 @@ pub trait Renderer {
     fn render(&mut self, frame: Frame<'_>, clip: Option<CellRect>) -> Result<(), Self::Error>;
 }
 
+mod software;
+pub use software::{
+    GlyphAtlas, GlyphBitmap, PixelSurface, RenderPalette, Rgba, SoftwareRenderer,
+    SoftwareRenderError,
+};
+
 #[cfg(test)]
 mod tests {
     use super::{CellRect, DamageTracker, Frame, GlyphMetrics, RenderContractError, ScaleFactor};
@@ -571,6 +577,72 @@ mod tests {
         assert_eq!(
             Frame::new(&screen, &damage, 0).map(|_| ()),
             Err(RenderContractError::FrameSizeMismatch)
+        );
+    }
+
+    #[test]
+    fn linear_selection_uses_inclusive_row_major_endpoints() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        let selection = Selection::new(
+            CellPosition::new(1, 2),
+            CellPosition::new(2, 1),
+            SelectionMode::Linear,
+            size(),
+        )
+        .expect("valid selection");
+
+        assert!(!selection.contains(1, 1, size()));
+        assert!(selection.contains(1, 2, size()));
+        assert!(selection.contains(1, 79, size()));
+        assert!(selection.contains(2, 0, size()));
+        assert!(selection.contains(2, 1, size()));
+        assert!(!selection.contains(2, 2, size()));
+    }
+
+    #[test]
+    fn rectangular_selection_includes_the_bounded_rectangle() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        let selection = Selection::new(
+            CellPosition::new(3, 7),
+            CellPosition::new(1, 2),
+            SelectionMode::Rectangular,
+            size(),
+        )
+        .expect("valid selection");
+
+        assert!(selection.contains(1, 2, size()));
+        assert!(selection.contains(2, 5, size()));
+        assert!(selection.contains(3, 7, size()));
+        assert!(!selection.contains(0, 2, size()));
+        assert!(!selection.contains(2, 8, size()));
+    }
+
+    #[test]
+    fn selection_rejects_out_of_bounds_endpoints_and_frames() {
+        use super::{CellPosition, Selection, SelectionMode};
+
+        assert_eq!(
+            Selection::new(
+                CellPosition::new(24, 0),
+                CellPosition::new(0, 0),
+                SelectionMode::Linear,
+                size(),
+            ),
+            Err(RenderContractError::SelectionOutOfBounds)
+        );
+
+        let screen = TerminalScreen::new(size(), 80 * 24).expect("screen");
+        let damage = DamageTracker::new(size(), 8).expect("damage");
+        let invalid = Selection {
+            anchor: CellPosition::new(0, 0),
+            extent: CellPosition::new(24, 0),
+            mode: SelectionMode::Linear,
+        };
+        assert_eq!(
+            Frame::new_with_selection(&screen, &damage, 1, Some(invalid)).map(|_| ()),
+            Err(RenderContractError::SelectionOutOfBounds)
         );
     }
 
