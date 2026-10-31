@@ -83,3 +83,11 @@ gcovr --root . --object-directory build-coverage --xml-pretty --output build-cov
 ```
 
 CI uploads the Rust LCOV and C Cobertura XML reports as separate workflow artifacts. C coverage requires `gcovr`; on Ubuntu 24.04 install it with `sudo apt-get install gcovr`. Generated coverage data stays under ignored build/target directories and must not be committed.
+
+## Repository automation tests
+
+The dependency-status rules are pure JavaScript and use Node's built-in test runner. No npm dependencies are required:
+
+```sh
+node --test tests/automation/dependency-status.test.cjs
+```
