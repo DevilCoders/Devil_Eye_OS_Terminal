@@ -147,7 +147,10 @@ fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpec
         return Err(ProgramSpecError::ExecutableNotExecutable);
     }
 
-    Ok(canonical)
+    // Execute through the absolute path the caller selected, not the canonical target.
+    // Linux passes the execve path to a shebang interpreter as the script filename;
+    // replacing it with the canonical target would change the script's `$0` semantics.
+    Ok(candidate.to_path_buf())
 }
 
 /// A child process with its own session, process group, controlling terminal,
@@ -616,6 +619,53 @@ mod tests {
             "sh"
         );
         fs::remove_file(output_path).expect("remove argv0 output");
+    }
+
+    #[test]
+    fn preserves_symlink_invocation_path_for_shebang_scripts() {
+        let _guard = process_test_lock();
+        let root = std::env::temp_dir().join(format!(
+            "de-runtime-shebang-alias-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("create temporary directory");
+
+        let target = root.join("real-script");
+        let alias = root.join("command-alias");
+        let output = root.join("observed-script-path");
+        fs::write(
+            &target,
+            "#!/bin/sh\nprintf '%s' \"$0\" > \"$DE_SCRIPT_OUTPUT\"\n",
+        )
+        .expect("write shebang script");
+        let mut permissions = fs::metadata(&target)
+            .expect("script metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&target, permissions).expect("make script executable");
+        std::os::unix::fs::symlink(&target, &alias).expect("create invocation symlink");
+
+        let alias_text = alias.to_string_lossy().into_owned();
+        let program = ProgramSpec::new(&alias_text)
+            .expect("script alias")
+            .clear_environment()
+            .with_env("DE_SCRIPT_OUTPUT", output.as_os_str());
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn shebang alias");
+        assert_eq!(
+            child.wait().expect("wait shebang script"),
+            ProcessExitStatus::Exited(0)
+        );
+        assert_eq!(
+            fs::read_to_string(&output).expect("read observed script path"),
+            alias_text
+        );
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
     }
 
     #[test]
