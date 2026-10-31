@@ -130,13 +130,6 @@ impl LinuxPtyChild {
 
     /// Sends a semantic signal to this child process group only.
     pub fn send_signal(&mut self, signal: Signal) -> io::Result<()> {
-        if self.try_wait()?.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "child process has already exited",
-            ));
-        }
-
         let process_group = i32::try_from(self.process_id()).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -186,15 +179,15 @@ impl LinuxPtyChild {
 
     /// Requests graceful or forced termination of the owned process group.
     pub fn terminate(&mut self, mode: TerminationMode) -> io::Result<()> {
-        if self.try_wait()?.is_some() {
-            return Ok(());
-        }
-
         let signal = match mode {
             TerminationMode::Graceful => Signal::Terminate,
             TerminationMode::Force => Signal::Kill,
         };
-        self.send_signal(signal)
+
+        match self.send_signal(signal) {
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+            result => result,
+        }
     }
 
     /// Whether the process is configured to be terminated when this handle drops.
@@ -209,19 +202,19 @@ impl Drop for LinuxPtyChild {
             return;
         };
 
-        if self.exit_status.is_some() {
-            return;
-        }
-
         if self.kill_on_drop {
             if let Ok(process_group) = i32::try_from(child.id()) {
                 // SAFETY: the process group was created by this handle in pre_exec.
+                // Kill it even if its leader has exited; descendants may remain.
                 let _ = unsafe { libc::kill(-process_group, libc::SIGKILL) };
-            } else {
+            } else if self.exit_status.is_none() {
                 let _ = child.kill();
             }
-            let _ = child.wait();
-        } else {
+
+            if self.exit_status.is_none() {
+                let _ = child.wait();
+            }
+        } else if self.exit_status.is_none() {
             reap_detached_child(child);
         }
     }
