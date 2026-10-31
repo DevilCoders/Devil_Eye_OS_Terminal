@@ -289,7 +289,10 @@ impl PixelSurface {
         if x >= self.width || y >= self.height {
             return;
         }
-        let index = ((y * self.width + x) * 4) as usize;
+        let index = (usize::try_from(y).expect("y fits usize")
+            * usize::try_from(self.width).expect("width fits usize")
+            + usize::try_from(x).expect("x fits usize"))
+            * 4;
         self.pixels[index] = color.red;
         self.pixels[index + 1] = color.green;
         self.pixels[index + 2] = color.blue;
@@ -300,7 +303,10 @@ impl PixelSurface {
         if x >= self.width || y >= self.height || coverage == 0 {
             return;
         }
-        let index = ((y * self.width + x) * 4) as usize;
+        let index = (usize::try_from(y).expect("y fits usize")
+            * usize::try_from(self.width).expect("width fits usize")
+            + usize::try_from(x).expect("x fits usize"))
+            * 4;
         let source_alpha = (u16::from(color.alpha) * u16::from(coverage) / 255) as u32;
         let inverse_alpha = 255 - source_alpha;
         for (offset, source) in [(0usize, color.red), (1, color.green), (2, color.blue)] {
@@ -702,6 +708,10 @@ impl Renderer for SoftwareRenderer {
             return Err(SoftwareRenderError::ClipOutOfBounds);
         }
 
+        let clip_bounds = match clip {
+            Some(rectangle) => rectangle,
+            None => CellRect::new(0, 0, self.size.rows(), self.size.columns())?,
+        };
         let full = self.force_full_redraw || frame.damage().is_full();
         let regions = if full {
             vec![CellRect::new(0, 0, self.size.rows(), self.size.columns())?]
@@ -716,7 +726,7 @@ impl Renderer for SoftwareRenderer {
                 Some(region)
             };
             if let Some(clipped) = clipped {
-                self.render_region(frame, clipped);
+                self.render_region(frame, clipped, clip_bounds);
             }
         }
 
