@@ -3,6 +3,8 @@
 //! This crate owns terminal state invariants. PTY handling, escape-sequence
 //! parsing, rendering, and GUI integration belong to separate components.
 
+pub mod screen;
+
 /// Default terminal dimensions used when no user preference is available.
 pub const DEFAULT_COLUMNS: u16 = 80;
 pub const DEFAULT_ROWS: u16 = 24;
