@@ -126,3 +126,20 @@ The allocation probes reported **0 allocation calls / 0 requested bytes** for wa
 
 **Comparison limitation:** the pre-optimization baseline used an AMD EPYC 7763 runner, while this after-run used an AMD EPYC 9V74 runner. Both used the same `ubuntu-24.04` label, 4-vCPU allocation, kernel, and Rust toolchain, but the CPU model differs. Therefore the timing values are recorded as separate environment-specific observations and must not be presented as a verified frame-time speedup. The zero-allocation result is directly comparable because it is a per-call count, not a throughput comparison.
 
+
+### Background-only isolation — 2026-10-31
+
+The expanded workload was captured in [workflow run 41251407496](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41251407496), source commit `b2d527ead064b593d19dbadb43d8b6c2779c75e6`.
+
+**Environment:** GitHub-hosted `ubuntu-24.04`, Linux kernel `7.0.0-1017-azure`, 4 vCPU, Intel Xeon Platinum 8573C, Rust/Cargo 1.99.1.
+
+| Workload | Median sample mean | p95 of sample means |
+| --- | ---: | ---: |
+| Background-only, 80×24 | 245.42 µs | 249.89 µs |
+| Full frame, 80×24 | 2.205 ms | 2.225 ms |
+| Background-only, 160×48 | 977.65 µs | 985.57 µs |
+| Full frame, 160×48 | 8.898 ms | 8.948 ms |
+| Background-only, 240×80 | 2.538 ms | 2.564 ms |
+| Full frame, 240×80 | 22.393 ms | 22.570 ms |
+
+Within this same run and CPU, background composition/fill accounts for roughly 11% of full-frame time; the remaining ~89% is attributable to the glyph/style pass and its pixel blending. This isolates the next optimization target to `draw_glyph` / `blend_pixel`, rather than `PixelSurface::fill_rect`. The conclusion is workload-specific to the deterministic fallback atlas and must be revalidated with real font atlases when integrated.
