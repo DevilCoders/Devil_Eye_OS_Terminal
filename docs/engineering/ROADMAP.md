@@ -94,7 +94,7 @@ The initial 24 Epic issues and 14 first-wave task issues are created in GitHub. 
 
 ## Expanded engineering management system
 
-- [Task Catalog](TASK_CATALOG.md) — complete index of 61 task Issues (#25–#85).
+- [Task Catalog](TASK_CATALOG.md) — complete index of 62 task Issues (#25–#86).
 - [Workflow](WORKFLOW.md) — hierarchy, statuses, priorities, dependencies, Definition of Done, and PR rules.
 - [Milestones](MILESTONES.md) — M0–M10 exit criteria.
 - [Kanban operating model](KANBAN.md) — recommended Project views and fields.
@@ -103,8 +103,8 @@ The initial 24 Epic issues and 14 first-wave task issues are created in GitHub. 
 ## Current backlog inventory
 
 - 24 Epic Issues: #1–#24.
-- 61 Task Issues: #25–#85.
-- 85 total open engineering Issues at the time this index was updated.
+- 62 Task Issues: #25–#86.
+- 86 total open engineering Issues at the time this index was updated.
 - Issue templates: Epic, Task, Bug.
 - Pull request template with validation and evidence checklist.
 - GitHub Actions automation: `.github/workflows/engineering-taxonomy.yml` provisions taxonomy labels and M0–M10 milestones, then classifies open issues. It runs on new/reopened issues and can be run manually for a full backfill. `.github/workflows/dependency-status.yml` reconciles blocked/ready states when issues open, reopen, or close.
