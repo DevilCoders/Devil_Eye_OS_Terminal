@@ -1165,8 +1165,7 @@ mod tests {
     #[test]
     fn rejects_unallocatable_scrollback_capacity_without_panicking() {
         assert_eq!(
-            TerminalScreen::new_with_scrollback(size(1u16, 1u16), 1usize, usize::MAX)
-                .err(),
+            TerminalScreen::new_with_scrollback(size(1u16, 1u16), 1usize, usize::MAX).err(),
             Some(ScreenGridError::AllocationFailed)
         );
     }
