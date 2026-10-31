@@ -13,7 +13,6 @@ use super::{
 
 pub(super) const MAX_ARGUMENTS: usize = 256;
 pub(super) const MAX_ENVIRONMENT_ENTRIES: usize = 256;
-pub(super) const MAX_SOURCE_BYTES: usize = 65_536;
 
 #[repr(C)]
 pub(super) struct DeShellOpaque {
@@ -147,7 +146,7 @@ unsafe fn parse_external_command<'a>(
     // library's synchronous callback contract.
     let executable = unsafe { CStr::from_ptr(command.executable) };
     let argv = unsafe { slice::from_raw_parts(command.argv, command.argc + 1) };
-    if argv[0].is_null() || !unsafe { CStr::from_ptr(argv[0]) }.eq(executable) {
+    if argv[0].is_null() || unsafe { CStr::from_ptr(argv[0]) } != executable {
         return Err(DeStatus::INVALID_ARGUMENT);
     }
     if !argv[command.argc].is_null() {
