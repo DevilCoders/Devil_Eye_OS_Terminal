@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: dependency-status
+  group: issue-metadata-reconciliation
   cancel-in-progress: false
 
 jobs:
@@ -62,9 +62,15 @@ jobs:
               );
 
               for (const label of changes.remove) {
-                await github.rest.issues.removeLabel({
-                  owner, repo, issue_number: issue.number, name: label
-                });
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: issue.number, name: label
+                  });
+                } catch (error) {
+                  // The taxonomy reconciler may have removed the same
+                  // status label after this run read its issue snapshot.
+                  if (error.status !== 404) throw error;
+                }
               }
 
               if (changes.add.length) {
