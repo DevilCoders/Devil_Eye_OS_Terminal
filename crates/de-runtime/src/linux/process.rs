@@ -1,18 +1,157 @@
 //! Linux child-process lifecycle attached to an owned PTY.
 
-use std::fs::File;
+use std::ffi::CString;
+use std::fs::{self, File};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
-use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
+use crate::{
+    EnvironmentInheritance, ProcessExitStatus, ProgramSpec, ProgramSpecError, Signal, TerminalSize,
+    TerminationMode,
+};
 
 use super::pty::{duplicate_cloexec, set_window_size, PtyPair};
+
+/// Canonical executable and working directory resolved before acquiring process resources.
+pub(super) struct ResolvedProgram {
+    pub(super) executable: PathBuf,
+    pub(super) working_directory: Option<PathBuf>,
+}
+
+/// Resolves a program without relying on Command's implicit PATH search.
+///
+/// Empty and relative PATH entries are ignored so a child cannot accidentally
+/// execute a binary from the current working directory.
+pub(super) fn resolve_program(program: &ProgramSpec) -> Result<ResolvedProgram, ProgramSpecError> {
+    program.validate()?;
+
+    let working_directory = resolve_working_directory(program)?;
+    let executable = resolve_executable(program, working_directory.as_deref())?;
+
+    Ok(ResolvedProgram {
+        executable,
+        working_directory,
+    })
+}
+
+fn resolve_working_directory(program: &ProgramSpec) -> Result<Option<PathBuf>, ProgramSpecError> {
+    let Some(directory) = program.working_directory() else {
+        return Ok(None);
+    };
+
+    let canonical = fs::canonicalize(directory).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ProgramSpecError::WorkingDirectoryNotFound,
+        _ => ProgramSpecError::PathResolutionFailed,
+    })?;
+    let metadata = fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    if !metadata.is_dir() {
+        return Err(ProgramSpecError::WorkingDirectoryNotDirectory);
+    }
+
+    Ok(Some(canonical))
+}
+
+fn resolve_executable(
+    program: &ProgramSpec,
+    working_directory: Option<&Path>,
+) -> Result<PathBuf, ProgramSpecError> {
+    let requested = Path::new(program.program());
+    if requested.as_os_str().as_bytes().contains(&b'/') {
+        let candidate = if requested.is_absolute() {
+            requested.to_path_buf()
+        } else {
+            let base = match working_directory {
+                Some(directory) => directory.to_path_buf(),
+                None => {
+                    std::env::current_dir().map_err(|_| ProgramSpecError::PathResolutionFailed)?
+                }
+            };
+            base.join(requested)
+        };
+        return resolve_executable_candidate(&candidate);
+    }
+
+    let explicit_path = program
+        .environment()
+        .iter()
+        .find(|(key, _)| key.as_os_str() == std::ffi::OsStr::new("PATH"))
+        .map(|(_, value)| value.clone());
+    let search_path = explicit_path.or_else(|| {
+        if program.environment_inheritance() == EnvironmentInheritance::Inherit {
+            std::env::var_os("PATH")
+        } else {
+            None
+        }
+    });
+    let Some(search_path) = search_path else {
+        return Err(ProgramSpecError::ExecutableNotFound);
+    };
+
+    let mut saw_non_executable = false;
+    let mut saw_non_regular = false;
+    for directory in std::env::split_paths(&search_path) {
+        if directory.as_os_str().is_empty() || !directory.is_absolute() {
+            continue;
+        }
+        let candidate = directory.join(requested);
+        match resolve_executable_candidate(&candidate) {
+            Ok(path) => return Ok(path),
+            // Missing candidates and ENOTDIR are misses; later PATH entries may still resolve.
+            Err(ProgramSpecError::ExecutableNotFound) => {}
+            Err(ProgramSpecError::ExecutableNotExecutable) => saw_non_executable = true,
+            Err(ProgramSpecError::ExecutableNotRegularFile) => saw_non_regular = true,
+            Err(error) => return Err(error),
+        }
+    }
+
+    if saw_non_executable {
+        Err(ProgramSpecError::ExecutableNotExecutable)
+    } else if saw_non_regular {
+        Err(ProgramSpecError::ExecutableNotRegularFile)
+    } else {
+        Err(ProgramSpecError::ExecutableNotFound)
+    }
+}
+
+fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpecError> {
+    let canonical = fs::canonicalize(candidate).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            ProgramSpecError::ExecutableNotFound
+        }
+        io::ErrorKind::PermissionDenied => ProgramSpecError::ExecutableNotExecutable,
+        _ => ProgramSpecError::PathResolutionFailed,
+    })?;
+    let metadata = fs::metadata(&canonical).map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    if !metadata.is_file() {
+        return Err(ProgramSpecError::ExecutableNotRegularFile);
+    }
+
+    let c_path = CString::new(canonical.as_os_str().as_bytes())
+        .map_err(|_| ProgramSpecError::PathResolutionFailed)?;
+    // SAFETY: c_path is NUL-terminated and AT_EACCESS checks the effective
+    // credentials that will be used by Command::spawn.
+    if unsafe {
+        libc::faccessat(
+            libc::AT_FDCWD,
+            c_path.as_ptr(),
+            libc::X_OK,
+            libc::AT_EACCESS,
+        )
+    } == -1
+    {
+        return Err(ProgramSpecError::ExecutableNotExecutable);
+    }
+
+    Ok(canonical)
+}
 
 /// A child process with its own session, process group, controlling terminal,
 /// and PTY master descriptor.
@@ -38,8 +177,7 @@ impl LinuxPtyChild {
         size: TerminalSize,
         kill_on_drop: bool,
     ) -> io::Result<Self> {
-        program
-            .validate()
+        let resolved = resolve_program(program)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
 
         let pty = PtyPair::open(size)?;
@@ -51,15 +189,19 @@ impl LinuxPtyChild {
         let (master, parent_slave) = pty.into_parts();
         drop(parent_slave);
 
-        let mut command = Command::new(program.program());
+        let mut command = Command::new(&resolved.executable);
+        command.arg0(program.program());
         command.args(program.args());
+        if program.environment_inheritance() == EnvironmentInheritance::Clear {
+            command.env_clear();
+        }
         command.envs(
             program
                 .environment()
                 .iter()
                 .map(|(key, value)| (key, value)),
         );
-        if let Some(directory) = program.working_directory() {
+        if let Some(directory) = resolved.working_directory.as_deref() {
             command.current_dir(directory);
         }
 
@@ -312,12 +454,16 @@ pub(super) fn reap_detached_child(child: Child) {
 
 #[cfg(test)]
 mod tests {
-    use super::LinuxPtyChild;
-    use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
+    use super::{resolve_program, LinuxPtyChild};
+    use crate::{
+        ProcessExitStatus, ProgramSpec, ProgramSpecError, Signal, TerminalSize, TerminationMode,
+    };
+    use std::fs;
     use std::io;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::MutexGuard;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     fn process_test_lock() -> MutexGuard<'static, ()> {
         super::super::test_resource_lock()
@@ -331,6 +477,175 @@ mod tests {
         ProgramSpec::new("/bin/sleep")
             .expect("program")
             .with_arg("30")
+    }
+
+    #[test]
+    fn resolves_absolute_executable_and_explicit_path_search() {
+        let absolute = ProgramSpec::new("/bin/sh").expect("absolute executable");
+        let resolved = resolve_program(&absolute).expect("resolve absolute executable");
+        assert!(resolved.executable.is_absolute());
+        assert!(resolved.executable.is_file());
+
+        let searched = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin");
+        let resolved = resolve_program(&searched).expect("resolve from explicit PATH");
+        assert!(resolved.executable.is_absolute());
+        assert!(resolved.executable.is_file());
+    }
+
+    #[test]
+    fn path_search_continues_after_non_directory_entry() {
+        let root = std::env::temp_dir().join(format!(
+            "de-runtime-path-not-dir-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("create temporary directory");
+        let not_directory = root.join("not-a-directory");
+        fs::write(&not_directory, b"file, not directory").expect("create PATH file component");
+        let path = std::env::join_paths([not_directory.as_os_str(), std::ffi::OsStr::new("/bin")])
+            .expect("join PATH components");
+        let program = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", path);
+
+        let resolved = resolve_program(&program).expect("continue to valid PATH directory");
+        assert!(resolved.executable.is_file());
+        assert!(resolved.executable.is_absolute());
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn ignores_relative_path_entries_and_requires_path_when_environment_is_cleared() {
+        let relative_path = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", ".");
+        assert!(matches!(
+            resolve_program(&relative_path),
+            Err(ProgramSpecError::ExecutableNotFound)
+        ));
+
+        let no_path = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment();
+        assert!(matches!(
+            resolve_program(&no_path),
+            Err(ProgramSpecError::ExecutableNotFound)
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_non_directory_and_non_executable_paths() {
+        let missing_cwd = std::env::temp_dir().join(format!(
+            "de-runtime-missing-cwd-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let missing_directory = ProgramSpec::new("/bin/sh")
+            .expect("executable")
+            .with_working_directory(missing_cwd);
+        assert!(matches!(
+            resolve_program(&missing_directory),
+            Err(ProgramSpecError::WorkingDirectoryNotFound)
+        ));
+
+        let file_as_directory = ProgramSpec::new("/bin/sh")
+            .expect("executable")
+            .with_working_directory("/etc/passwd");
+        assert!(matches!(
+            resolve_program(&file_as_directory),
+            Err(ProgramSpecError::WorkingDirectoryNotDirectory)
+        ));
+
+        let directory_as_executable =
+            ProgramSpec::new("/bin").expect("directory path is structurally valid");
+        assert!(matches!(
+            resolve_program(&directory_as_executable),
+            Err(ProgramSpecError::ExecutableNotRegularFile)
+        ));
+
+        let non_executable = ProgramSpec::new("/etc/passwd").expect("file path");
+        assert!(matches!(
+            resolve_program(&non_executable),
+            Err(ProgramSpecError::ExecutableNotExecutable)
+        ));
+    }
+
+    #[test]
+    fn resolves_relative_executable_against_configured_working_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "de-runtime-relative-exec-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("create temporary directory");
+        let executable = root.join("test-child");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").expect("write executable");
+        let mut permissions = fs::metadata(&executable)
+            .expect("executable metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).expect("set executable permissions");
+
+        let program = ProgramSpec::new("./test-child")
+            .expect("relative executable")
+            .with_working_directory(root.clone());
+        let resolved = resolve_program(&program).expect("resolve relative executable");
+        assert_eq!(
+            resolved.executable,
+            fs::canonicalize(&executable).expect("canonical executable")
+        );
+        assert_eq!(
+            resolved.working_directory,
+            Some(fs::canonicalize(&root).expect("canonical working directory"))
+        );
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn preserves_requested_argv0_for_pty_spawn() {
+        let _guard = process_test_lock();
+        let output_path = std::env::temp_dir().join(format!(
+            "de-runtime-argv0-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let script = format!("printf '%s' \"$0\" > {}", output_path.display());
+        let program = ProgramSpec::new("sh")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin")
+            .with_arg("-c")
+            .with_arg(script);
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn alias through PATH");
+
+        assert_eq!(
+            child.wait().expect("wait alias child"),
+            ProcessExitStatus::Exited(0)
+        );
+        assert_eq!(
+            fs::read_to_string(&output_path).expect("read argv0 output"),
+            "sh"
+        );
+        fs::remove_file(output_path).expect("remove argv0 output");
     }
 
     #[test]
@@ -478,6 +793,12 @@ mod tests {
         let error = LinuxPtyChild::spawn(&program, test_size(), true)
             .expect_err("invalid executable must fail");
 
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<ProgramSpecError>()),
+            Some(&ProgramSpecError::ExecutableNotFound)
+        );
     }
 }
