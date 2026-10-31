@@ -295,7 +295,9 @@ fn manager_shutdown_waits_for_async_close_workers_before_runtime_shutdown() {
     });
 
     assert!(
-        completed_rx.recv_timeout(Duration::from_millis(25)).is_err(),
+        completed_rx
+            .recv_timeout(Duration::from_millis(25))
+            .is_err(),
         "runtime shutdown must wait while a session-close worker owns a process handle"
     );
 
@@ -304,7 +306,9 @@ fn manager_shutdown_waits_for_async_close_workers_before_runtime_shutdown() {
         .recv_timeout(Duration::from_secs(1))
         .expect("shutdown should finish after the close worker")
         .expect("manager shutdown");
-    shutdown_worker.join().expect("shutdown worker must not panic");
+    shutdown_worker
+        .join()
+        .expect("shutdown worker must not panic");
     close
         .join()
         .expect("close worker must not panic")
