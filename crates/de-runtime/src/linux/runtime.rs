@@ -546,6 +546,67 @@ mod tests {
         )
     }
 
+    fn read_until_marker(
+        process: &mut dyn RuntimeProcess,
+        marker: &[u8],
+    ) -> Result<Vec<u8>, RuntimeError> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut collected = Vec::new();
+        let mut buffer = [0u8; 1024usize];
+
+        loop {
+            match process.read_stdout(&mut buffer)? {
+                ReadOutcome::Data(count) => {
+                    collected.extend_from_slice(&buffer[..count.get()]);
+                    if collected.windows(marker.len()).any(|window| window == marker) {
+                        return Ok(collected);
+                    }
+                }
+                ReadOutcome::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Err(RuntimeError::IoFailed);
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+                ReadOutcome::Eof => return Err(RuntimeError::ProcessAlreadyExited),
+            }
+        }
+    }
+
+    fn drain_until_exit(
+        process: &mut dyn RuntimeProcess,
+        timeout: Duration,
+    ) -> Result<(Vec<u8>, ProcessExitStatus), RuntimeError> {
+        let deadline = Instant::now() + timeout;
+        let mut collected = Vec::new();
+        let mut buffer = [0u8; 4096usize];
+        let mut exit_status = None;
+        let mut eof = false;
+
+        while !(exit_status.is_some() && eof) {
+            match process.read_stdout(&mut buffer)? {
+                ReadOutcome::Data(count) => {
+                    collected.extend_from_slice(&buffer[..count.get()]);
+                }
+                ReadOutcome::WouldBlock => {}
+                ReadOutcome::Eof => eof = true,
+            }
+
+            if exit_status.is_none() {
+                exit_status = process.try_wait()?;
+            }
+
+            if Instant::now() >= deadline {
+                return Err(RuntimeError::WaitFailed);
+            }
+            if !eof || exit_status.is_none() {
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+
+        Ok((collected, exit_status.expect("checked above")))
+    }
+
     fn read_to_eof(
         process: &mut dyn RuntimeProcess,
         stderr: bool,
@@ -676,6 +737,190 @@ mod tests {
         assert_eq!(
             read_to_eof(process.as_mut(), false).expect("read echoed input"),
             b"input-data"
+        );
+    }
+
+    #[test]
+    fn pty_input_is_delivered_to_child_and_output_returns_to_master() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_arg("-c")
+            .with_arg("stty raw -echo; printf READY; exec /bin/cat");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn raw cat");
+
+        let startup = read_until_marker(process.as_mut(), b"READY").expect("wait for raw mode");
+        assert!(startup.windows(5).any(|window| window == b"READY"));
+
+        let payload = b"bidirectional-pty-input\0\xff\n";
+        let mut offset = 0usize;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while offset < payload.len() {
+            match process.write_stdin(&payload[offset..]).expect("PTY write") {
+                WriteOutcome::Written(count) => offset += count.get(),
+                WriteOutcome::WouldBlock => {
+                    let mut buffer = [0u8; 128usize];
+                    match process.read_stdout(&mut buffer).expect("drain PTY output") {
+                        ReadOutcome::Data(_) | ReadOutcome::WouldBlock => {}
+                        ReadOutcome::Eof => panic!("PTY reached EOF before input was echoed"),
+                    }
+                    if Instant::now() >= deadline {
+                        panic!("PTY input did not make progress before deadline");
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+
+        let mut echoed = Vec::new();
+        let mut buffer = [0u8; 128usize];
+        while echoed.len() < payload.len() {
+            match process.read_stdout(&mut buffer).expect("read PTY echo") {
+                ReadOutcome::Data(count) => {
+                    echoed.extend_from_slice(&buffer[..count.get()]);
+                }
+                ReadOutcome::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        panic!("PTY output did not arrive before deadline");
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+                ReadOutcome::Eof => panic!("PTY reached EOF before returning all input"),
+            }
+        }
+
+        assert_eq!(echoed, payload);
+        process.terminate(TerminationMode::Force).expect("stop cat");
+        let _ = process.wait();
+    }
+
+    #[test]
+    fn pty_high_volume_output_is_drained_without_deadlock() {
+        let _guard = runtime_test_lock();
+        const OUTPUT_BYTES: usize = 256 * 1024;
+        let program = ProgramSpec::new("/usr/bin/head")
+            .expect("program")
+            .with_arg("-c")
+            .with_arg(OUTPUT_BYTES.to_string())
+            .with_arg("/dev/zero");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn high-volume writer");
+
+        let (output, status) = drain_until_exit(process.as_mut(), Duration::from_secs(10))
+            .expect("drain output while child is running");
+        assert_eq!(status, ProcessExitStatus::Exited(0));
+        assert_eq!(output.len(), OUTPUT_BYTES);
+        assert!(output.iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn pty_backpressure_reports_would_block_and_resumes_after_drain() {
+        let _guard = runtime_test_lock();
+        const PAYLOAD_BYTES: usize = 1024 * 1024;
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_arg("-c")
+            .with_arg("stty raw -echo; printf READY; exec /bin/cat");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn raw cat");
+        let _ = read_until_marker(process.as_mut(), b"READY").expect("wait for raw mode");
+
+        let payload: Vec<u8> = (0..PAYLOAD_BYTES)
+            .map(|index| (index % 251) as u8)
+            .collect();
+        let mut offset = 0usize;
+        let mut echoed = Vec::with_capacity(PAYLOAD_BYTES);
+        let mut buffer = [0u8; 8192usize];
+        let mut observed_backpressure = false;
+        let deadline = Instant::now() + Duration::from_secs(20);
+
+        while offset < payload.len() || echoed.len() < payload.len() {
+            if offset < payload.len() {
+                match process.write_stdin(&payload[offset..]).expect("write PTY payload") {
+                    WriteOutcome::Written(count) => offset += count.get(),
+                    WriteOutcome::WouldBlock => observed_backpressure = true,
+                }
+            }
+
+            loop {
+                match process.read_stdout(&mut buffer).expect("drain PTY output") {
+                    ReadOutcome::Data(count) => {
+                        echoed.extend_from_slice(&buffer[..count.get()]);
+                        if echoed.len() >= payload.len() {
+                            break;
+                        }
+                    }
+                    ReadOutcome::WouldBlock => break,
+                    ReadOutcome::Eof => panic!("PTY closed before all payload bytes were echoed"),
+                }
+            }
+
+            if Instant::now() >= deadline {
+                panic!(
+                    "PTY I/O stalled: wrote {offset}/{} bytes and received {}/{}",
+                    payload.len(),
+                    echoed.len(),
+                    payload.len()
+                );
+            }
+            if offset < payload.len() || echoed.len() < payload.len() {
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+
+        assert!(observed_backpressure, "test did not exercise PTY backpressure");
+        assert_eq!(echoed, payload);
+        process.terminate(TerminationMode::Force).expect("stop cat");
+        let _ = process.wait();
+    }
+
+    #[test]
+    fn pty_resize_is_observed_by_the_child_terminal() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_arg("-c")
+            .with_arg("sleep 0.1; stty size");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn size reporter");
+        let resized = TerminalSize::new(132u16, 43u16).expect("resized size");
+
+        process.resize_pty(resized).expect("apply PTY resize");
+        assert_eq!(
+            process.wait().expect("wait size reporter"),
+            ProcessExitStatus::Exited(0)
+        );
+        let output = read_to_eof(process.as_mut(), false).expect("read reported size");
+        let output = String::from_utf8(output).expect("UTF-8 size output");
+        assert!(
+            output.contains("43 132"),
+            "child observed unexpected terminal size: {output:?}"
+        );
+    }
+
+    #[test]
+    fn dropping_pty_runtime_handle_cancels_and_reaps_child() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("/bin/sleep")
+            .expect("program")
+            .with_arg("30");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("PTY request");
+        let process = LinuxRuntime.spawn(request).expect("spawn sleep");
+        let pid = process.process_id().expect("child PID");
+        drop(process);
+
+        let pid = i32::try_from(pid).expect("PID fits pid_t");
+        // Drop must kill the private process group and wait for its child.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
         );
     }
 
