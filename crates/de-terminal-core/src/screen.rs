@@ -932,9 +932,8 @@ mod tests {
 
     #[test]
     fn full_screen_scroll_retains_complete_rows_in_chronological_order() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
-                .expect("screen with scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
+            .expect("screen with scrollback");
         for (row, value) in [(0u16, "A"), (1u16, "B")] {
             screen
                 .set_grapheme(
@@ -959,7 +958,11 @@ mod tests {
         assert_eq!(history, ["A"]);
         assert_eq!(screen.scrollback_cell_count(), 3usize);
         assert_eq!(
-            screen.grid().get_cell(0u16, 0u16).expect("visible top").content(),
+            screen
+                .grid()
+                .get_cell(0u16, 0u16)
+                .expect("visible top")
+                .content(),
             CellContent::Grapheme {
                 value: Grapheme::new("B").expect("grapheme"),
                 width: GraphemeWidth::Single,
@@ -969,9 +972,8 @@ mod tests {
 
     #[test]
     fn scrollback_evicts_oldest_rows_and_never_exceeds_cell_limit() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
-                .expect("screen with bounded scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+            .expect("screen with bounded scrollback");
         for (row, value) in [(0u16, "A"), (1u16, "B")] {
             screen
                 .set_grapheme(
@@ -1013,9 +1015,8 @@ mod tests {
 
     #[test]
     fn partial_region_and_downward_scroll_do_not_append_history() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(2u16, 4u16), 8usize, 8usize)
-                .expect("screen with scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 4u16), 8usize, 8usize)
+            .expect("screen with scrollback");
         for (row, value) in [(0u16, "A"), (1u16, "B"), (2u16, "C"), (3u16, "D")] {
             screen
                 .set_grapheme(
@@ -1028,7 +1029,9 @@ mod tests {
                 .expect("write row marker");
         }
 
-        screen.set_scroll_region(1u16, 2u16).expect("partial region");
+        screen
+            .set_scroll_region(1u16, 2u16)
+            .expect("partial region");
         screen.scroll_up(1u16).expect("partial scroll");
         screen.scroll_down(1u16).expect("partial scroll down");
         assert_eq!(screen.scrollback_row_count(), 0usize);
@@ -1040,9 +1043,8 @@ mod tests {
 
     #[test]
     fn line_feed_at_full_screen_bottom_retains_top_row() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
-                .expect("screen with scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+            .expect("screen with scrollback");
         screen
             .set_grapheme(
                 0u16,
@@ -1063,9 +1065,8 @@ mod tests {
 
     #[test]
     fn wide_grapheme_pairs_are_preserved_in_scrollback_rows() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
-                .expect("screen with scrollback");
+        let mut screen = TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
+            .expect("screen with scrollback");
         screen
             .set_grapheme(
                 0u16,
@@ -1079,7 +1080,10 @@ mod tests {
         let row = screen.scrollback_rows().next().expect("retained row");
         assert!(matches!(
             row[0].content(),
-            CellContent::Grapheme { width: GraphemeWidth::Wide, .. }
+            CellContent::Grapheme {
+                width: GraphemeWidth::Wide,
+                ..
+            }
         ));
         assert!(matches!(row[1].content(), CellContent::Continuation));
     }
@@ -1136,9 +1140,8 @@ mod tests {
 
     #[test]
     fn scrollback_capacity_smaller_than_one_row_retains_nothing() {
-        let mut screen =
-            TerminalScreen::new_with_scrollback(size(4u16, 2u16), 8usize, 3usize)
-                .expect("screen with sub-row history capacity");
+        let mut screen = TerminalScreen::new_with_scrollback(size(4u16, 2u16), 8usize, 3usize)
+            .expect("screen with sub-row history capacity");
         screen.scroll_up(1u16).expect("scroll");
         assert_eq!(screen.scrollback_row_count(), 0usize);
         assert_eq!(screen.scrollback_cell_count(), 0usize);
