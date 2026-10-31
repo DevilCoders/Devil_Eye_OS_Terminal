@@ -3,7 +3,7 @@ name: Dependency-aware issue status
 on:
   workflow_dispatch:
   issues:
-    types: [opened, reopened, closed]
+    types: [opened, reopened, closed, edited]
 
 permissions:
   contents: read
@@ -15,43 +15,69 @@ concurrency:
 
 jobs:
   reconcile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Reconcile blocked and ready task labels
         uses: actions/github-script@v7
         with:
           script: |
+            const {
+              chooseTaskStatus,
+              reconcileStatusLabels,
+            } = require("./.github/scripts/dependency-status.cjs");
+
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const allOpen = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, state: "open", per_page: 100
-            });
-            const openNumbers = new Set(allOpen.filter(i => !i.pull_request).map(i => i.number));
+            const allOpen = await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, state: "open", per_page: 100 }
+            );
+            const openIssueNumbers = new Set(
+              allOpen
+                .filter(issue => !issue.pull_request)
+                .map(issue => issue.number)
+            );
+
+            let taskCount = 0;
+            let changedCount = 0;
 
             for (const issue of allOpen) {
               if (issue.pull_request || !/^\[TASK\]/i.test(issue.title)) continue;
-              const section = (issue.body || "").match(/### Dependencies\s*([\s\S]*?)(?:\n###|$)/i);
-              const refs = section ? [...section[1].matchAll(/#(\d+)/g)].map(m => Number(m[1])) : [];
-              const blocked = refs.some(number => openNumbers.has(number));
-              const current = new Set((issue.labels || []).map(label => typeof label === "string" ? label : label.name));
-              const protectedStatuses = ["status:in-progress", "status:review", "status:done"];
-              if (protectedStatuses.some(label => current.has(label))) continue;
+              taskCount += 1;
 
-              if (blocked) {
-                if (current.has("status:todo")) {
-                  await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: "status:todo" });
-                }
-                if (!current.has("status:blocked")) {
-                  await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ["status:blocked"] });
-                }
-              } else {
-                if (current.has("status:blocked")) {
-                  await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: "status:blocked" });
-                }
-                if (!current.has("status:todo")) {
-                  await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ["status:todo"] });
-                }
+              const currentLabels = (issue.labels || []).map(label =>
+                typeof label === "string" ? label : label.name
+              );
+              const desiredStatus = chooseTaskStatus({
+                body: issue.body || "",
+                currentLabels,
+                openIssueNumbers,
+              });
+              const changes = reconcileStatusLabels(
+                currentLabels,
+                desiredStatus
+              );
+
+              for (const label of changes.remove) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: issue.number, name: label
+                });
+              }
+
+              if (changes.add.length) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: issue.number, labels: changes.add
+                });
+              }
+
+              if (changes.remove.length || changes.add.length) {
+                changedCount += 1;
               }
             }
 
-            core.info(`Reconciled dependency status for ${allOpen.length} open repository issues.`);
+            core.info(
+              `Reconciled dependency status for ${taskCount} open Tasks; changed ${changedCount}.`
+            );
