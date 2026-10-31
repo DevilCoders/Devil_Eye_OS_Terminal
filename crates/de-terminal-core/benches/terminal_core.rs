@@ -346,11 +346,8 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
 }
 
 fn render_background_benchmarks(size: TerminalSize, label: &str) {
-    let screen = TerminalScreen::new(
-        size,
-        usize::from(size.columns()) * usize::from(size.rows()),
-    )
-    .expect("allocate empty background benchmark screen");
+    let screen = TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+        .expect("allocate empty background benchmark screen");
     let mut damage = DamageTracker::new(size, 128).expect("background damage tracker");
     let mut renderer = make_renderer(size);
     renderer.set_cursor_visible(false);
