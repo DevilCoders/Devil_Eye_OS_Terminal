@@ -496,6 +496,15 @@ impl VtParser {
                 finish_control_string(kind, overflowed, events);
                 State::Ground
             }
+            0x07 if kind == ControlStringKind::Osc => {
+                let new_length = length.saturating_add(1);
+                finish_control_string(
+                    kind,
+                    overflowed || new_length > MAX_CONTROL_STRING_BYTES,
+                    events,
+                );
+                State::Ground
+            }
             0x18 | 0x1a => {
                 events.push(TerminalEvent::Cancelled);
                 State::Ground
@@ -636,6 +645,32 @@ mod tests {
                 ControlStringKind::Dcs
             )]
         );
+    }
+
+    #[test]
+    fn osc_bel_terminates_after_an_escape_payload_byte() {
+        let mut parser = VtParser::new();
+        assert_eq!(
+            parser.process(b"\x1b]title\x1b\x07").expect("OSC"),
+            vec![TerminalEvent::UnsupportedControlString(
+                ControlStringKind::Osc
+            )]
+        );
+        assert!(parser.is_ground());
+    }
+
+    #[test]
+    fn overlong_escape_is_ignored_until_final_then_recovers() {
+        let mut parser = VtParser::new();
+        let events = parser.process(b"\x1b( #AZ").expect("bounded input");
+        assert_eq!(
+            events,
+            vec![
+                TerminalEvent::Malformed(SequenceError::EscapeTooLong),
+                TerminalEvent::PrintByte(b'Z')
+            ]
+        );
+        assert!(parser.is_ground());
     }
 
     #[test]
