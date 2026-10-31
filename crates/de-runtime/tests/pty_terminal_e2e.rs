@@ -1,9 +1,9 @@
 use de_runtime::{
-    IoAttachment, LinuxRuntime, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig,
+    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig,
     ReadOutcome, RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize,
     TerminationMode, WriteOutcome,
 };
-use de_terminal_core::parser::{TerminalEvent, VtParser};
+use de_runtime::linux::runtime::LinuxRuntime;\nuse de_terminal_core::parser::{TerminalEvent, VtParser};
 use de_terminal_core::screen::{
     CellAttributes, CellContent, Color, GraphemeWidth, StyleFlags, TerminalScreen,
 };
