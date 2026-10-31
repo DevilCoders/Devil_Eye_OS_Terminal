@@ -179,9 +179,9 @@ Fuzz targets should be deterministic, bounded, and runnable in CI. A fuzz failur
 
 The following distinction prevents design intent from being mistaken for shipped protection:
 
-- **Implemented in current master:** validated `ProgramSpec` values; separate executable/argument/environment fields; Rust/C ABI types and versioning foundation; terminal screen dimension limits; structured application diagnostics; Linux PTY/process runtime with kill-on-drop behavior; headless CPU software renderer with bounded surface/glyph validation and clipped redraw; key/text input mapping; documented configuration schema design (runtime parser/validator not implemented); Linux platform capability reporting; pinned Rust toolchain and CI.
-- **Under review in open PRs:** DE-Shell grammar/semantics specification (#126); session lifecycle manager and per-session I/O limits (#127); Linux process/environment hardening (#130, Draft); architecture decision records (#132).
-- **Not yet implemented:** application configuration parser/validator; paste, mouse, and focus input handling; complete side-effecting OSC policy; full parser fuzz coverage; persistent configuration atomic-write/backup flow; plugin capability isolation; complete cross-session adversarial integration suite; release artifact provenance/signing.
+- **Implemented in current master:** validated `ProgramSpec` values; separate executable/argument/environment fields; Rust/C ABI types and versioning foundation; terminal screen dimension limits; structured application diagnostics; Linux PTY/process runtime with kill-on-drop behavior; headless CPU software renderer with bounded surface/glyph validation and clipped redraw; key/text input mapping; DE-Shell grammar/semantics specification (#126, merged); Linux platform capability reporting; pinned Rust toolchain and CI.
+- **Under review in open PRs:** terminal security threat model and requirements (#129); Linux process/environment hardening (#130); core architecture decision records (#132); renderer profiling and optimization (#137).
+- **Not yet implemented:** configuration schema design and application configuration parser/validator; paste, mouse, and focus input handling; complete side-effecting OSC policy; full parser fuzz coverage; persistent configuration atomic-write/backup flow; plugin capability isolation; complete cross-session adversarial integration suite; release artifact provenance/signing.
 
 An open PR is not a shipped mitigation. Release qualification must re-evaluate this table against the merged `master` branch.
 
