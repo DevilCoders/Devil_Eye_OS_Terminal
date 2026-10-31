@@ -22,7 +22,8 @@ This directory contains the system architecture baseline, component contracts, a
 - [DE-Shell Library Lifecycle](de-shell-lifecycle.md) — opaque C handle ownership, create/destroy semantics, status codes, and lifecycle tests.
 - [DE-Shell Input Buffer](de-shell-input-buffer.md) — bounded byte storage, explicit line submission, EOF flushing, capacity behavior, and ownership.
 - [DE-Shell Lexer](de-shell-lexer.md) — token types, source spans, quote/escape grouping, supported operators, and deterministic diagnostics.
-- [DE-Shell Alpha Parser](de-shell-parser.md) — alpha grammar, AST ownership, operator precedence, source-positioned diagnostics, and bounded nesting.
+- [DE-Shell Alpha Parser](de-shell-parser.md)
+- [DE-Shell Language Grammar and Semantics](de-shell-language.md) — normative grammar, quoting, expansion order, redirection, pipeline/list execution, diagnostics, and current implementation gaps. — alpha grammar, AST ownership, operator precedence, source-positioned diagnostics, and bounded nesting.
 - [DE-Shell Command Registry](de-shell-command-registry.md) — per-shell command metadata, registration/collision policy, lookup, built-in dispatch, and ownership.
 - [DE-Shell Execution Engine](de-shell-execution.md) — bounded AST evaluation, quote removal, explicit external-executor callback, environment/working-directory forwarding, exit propagation, and unsupported alpha nodes.
 
