@@ -319,7 +319,6 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-
     fn process_test_lock() -> MutexGuard<'static, ()> {
         super::super::test_resource_lock()
     }
