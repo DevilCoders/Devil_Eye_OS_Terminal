@@ -60,6 +60,15 @@ mod tests {
     }
 }
 
+pub mod service_interfaces;
+
+pub use service_interfaces::{
+    ConfigurationService, ProcessExit, ProcessRead, RendererService, RuntimeProcess,
+    RuntimeService, SessionId, SessionKind, SessionLifecycle, SessionLifecycleState,
+    SessionManagerService, SessionSpec, ShellEvent, ShellIntegrationService, TerminalEngineService,
+    TerminalFrame, TerminalSession, TerminationMode,
+};
+
 pub mod lifecycle;
 
 pub use lifecycle::{
