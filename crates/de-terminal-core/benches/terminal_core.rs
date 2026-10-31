@@ -10,7 +10,7 @@
 
 use std::fs;
 use std::hint::black_box;
-use std::mem::size_of;
+use std::mem::size_of_val;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -187,6 +187,10 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
 }
 
 fn main() {
+    if cfg!(debug_assertions) {
+        eprintln!("benchmark target skipped in debug/test profile; use cargo bench");
+        return;
+    }
     metadata();
 
     let parser_payload = b"hello terminal \x1b[38;2;120;180;240mcolor\x1b[0m \xe7\x95\x8c\r\n";
@@ -231,7 +235,7 @@ fn main() {
         black_box(screen.grid().cells());
     });
 
-    let screen_bytes = screen.grid().cells().len() * size_of::<de_terminal_core::screen::Cell>();
+    let screen_bytes = size_of_val(screen.grid().cells());
     println!("# memory_screen_80x24_bytes={screen_bytes}");
     println!(
         "# memory_screen_80x24_bytes_per_cell={}",
