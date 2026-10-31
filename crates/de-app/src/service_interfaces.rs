@@ -165,6 +165,8 @@ pub enum ProcessExit {
     Exited { code: i32 },
     /// The process was terminated by a platform signal.
     Signaled { signal: i32 },
+    /// The backend could not map the platform's termination status.
+    Unknown,
 }
 
 impl ProcessExit {
@@ -179,12 +181,16 @@ impl ProcessExit {
 /// The runtime implementation owns native process/PTY resources. A session
 /// owns the returned handle and must release it through its lifecycle contract.
 pub trait RuntimeProcess: Send {
-    /// Writes input bytes. A partial count is valid; unwritten bytes remain
-    /// the caller's responsibility.
+    /// Writes input bytes without blocking. A partial count is valid; zero
+    /// means the transport currently applies backpressure and no bytes were
+    /// accepted. The caller retains all unwritten bytes.
     fn write(&mut self, bytes: &[u8]) -> Result<usize, ServiceError>;
 
     /// Reads into a caller-owned buffer without blocking the application thread.
     fn read(&mut self, buffer: &mut [u8]) -> Result<ProcessRead, ServiceError>;
+
+    /// Closes the child's input stream. Repeated calls must be idempotent.
+    fn close_input(&mut self) -> Result<(), ServiceError>;
 
     /// Applies a non-zero terminal size to the process's PTY.
     fn resize(&mut self, size: TerminalSize) -> Result<(), ServiceError>;
@@ -276,8 +282,25 @@ pub trait TerminalSession: Send {
     /// Current lifecycle state.
     fn state(&self) -> SessionLifecycleState;
 
-    /// Delivers terminal input bytes to the session's active backend.
+    /// Current PTY/terminal dimensions.
+    fn terminal_size(&self) -> TerminalSize;
+
+    /// Queues terminal input for this session. The queue is bounded; no bytes
+    /// are dropped when the runtime transport applies backpressure.
     fn send_input(&mut self, input: &[u8]) -> Result<(), ServiceError>;
+
+    /// Flushes queued input without blocking. Returns the number of bytes
+    /// accepted by the runtime; call again when the transport becomes writable.
+    fn flush_input(&mut self) -> Result<usize, ServiceError>;
+
+    /// Reads one non-blocking output chunk from this session's PTY.
+    fn read_output(&mut self, buffer: &mut [u8]) -> Result<ProcessRead, ServiceError>;
+
+    /// Polls child exit and updates the session lifecycle when it has exited.
+    fn poll_exit(&mut self) -> Result<Option<ProcessExit>, ServiceError>;
+
+    /// Cached child exit status, if one has been observed.
+    fn exit_status(&self) -> Option<ProcessExit>;
 
     /// Resizes the terminal model and its associated runtime transport.
     fn resize(&mut self, size: TerminalSize) -> Result<(), ServiceError>;
@@ -296,6 +319,12 @@ pub trait SessionManagerService: ApplicationService {
 
     /// Queries the current state without transferring session ownership.
     fn session_state(&self, id: SessionId) -> Result<SessionLifecycleState, ServiceError>;
+
+    /// Borrows one session mutably for event-loop I/O and resize operations.
+    fn session_mut(&mut self, id: SessionId) -> Result<&mut Self::Session, ServiceError>;
+
+    /// Returns stable identities in ascending creation order.
+    fn session_ids(&self) -> Vec<SessionId>;
 
     /// Closes one session. Other sessions remain unaffected.
     fn close_session(&mut self, id: SessionId) -> Result<(), ServiceError>;
