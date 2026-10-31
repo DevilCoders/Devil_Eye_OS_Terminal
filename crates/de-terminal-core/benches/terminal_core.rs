@@ -30,8 +30,12 @@ static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
 
 struct CountingAllocator;
 
+// SAFETY: this benchmark-only wrapper forwards each pointer/layout unchanged
+// to System and only observes successful allocation sizes with atomics.
+#[allow(unsafe_code)]
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the requested layout is forwarded unchanged to System.
         let pointer = unsafe { System.alloc(layout) };
         if !pointer.is_null() {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -41,10 +45,12 @@ unsafe impl GlobalAlloc for CountingAllocator {
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: pointer and its original layout came from this same System allocator.
         unsafe { System.dealloc(pointer, layout) };
     }
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: pointer and its original layout came from this same System allocator.
         let resized = unsafe { System.realloc(pointer, layout, new_size) };
         if !resized.is_null() {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
