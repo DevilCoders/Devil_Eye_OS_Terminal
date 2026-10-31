@@ -925,6 +925,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_working_directory_path() {
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("valid executable")
+            .with_working_directory("");
+        let config = AppConfig::new(
+            TerminalSize::new(80, 24).expect("valid dimensions"),
+            program,
+        );
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidValue {
+                field: "startup.working_directory",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn value_tree_round_trip_preserves_supported_configuration() {
         let config = AppConfig::from_value(valid_config_value()).expect("valid config");
         let encoded = config.to_value().expect("encode config");
