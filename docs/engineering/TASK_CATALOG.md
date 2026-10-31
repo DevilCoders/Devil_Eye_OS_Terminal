@@ -78,3 +78,7 @@ All task records below are GitHub Issues. Each task links to its parent Epic and
 ## Important
 
 This catalog is an index, not a replacement for the GitHub Issues. Use the Issues as the source of truth for task state, discussion, acceptance evidence, and dependency updates.
+
+## Subtask decomposition status
+
+All 62 Task Issues (#25–#86) now contain a checked, task-scoped `Subtasks (implementation checklist)` section. The checklist decomposes design/review, implementation, acceptance verification, testing, integration, documentation, and evidence into actionable work. These are Markdown checklist items within each Task Issue, not separate GitHub child Issues and not native Projects sub-issue relationships. Promote a checklist item to a separate Issue only when it needs independent ownership, dependencies, review, or milestone tracking.
