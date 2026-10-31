@@ -1,6 +1,5 @@
 //! Linux child-process lifecycle attached to an owned PTY.
 
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
@@ -16,6 +15,7 @@ use super::pty::{duplicate_cloexec, set_window_size, PtyPair};
 
 /// A child process with its own session, process group, controlling terminal,
 /// and PTY master descriptor.
+#[derive(Debug)]
 pub struct LinuxPtyChild {
     child: Option<Child>,
     master: OwnedFd,
