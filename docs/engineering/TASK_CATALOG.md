@@ -63,10 +63,14 @@ All task records below are GitHub Issues. Each task links to its parent Epic and
 | DE-024-01 | #81 | Create production release qualification checklist | #24 |
 | DE-024-02 | #82 | Run release candidate verification and sign-off | #24 |
 
+| DE-001-05 | #83 | Provision and validate GitHub engineering taxonomy | #1 |
+| DE-001-06 | #84 | Implement dependency-aware task readiness automation | #1 |
+| DE-001-07 | #85 | Audit and normalize backlog metadata | #1 |
+
 ## Coverage
 
 - 24 Epics: #1–#24.
-- 58 implementation tasks: #25–#82.
+- 61 implementation tasks: #25–#85.
 - 10 delivery milestones: M0–M10 (11 milestones including M0).
 - Initial critical-path tasks are explicitly ordered in the Dependency Map.
 
