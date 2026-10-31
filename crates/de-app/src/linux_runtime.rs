@@ -21,6 +21,7 @@ pub struct LinuxRuntimeService {
 }
 
 impl LinuxRuntimeService {
+    /// Creates an uninitialized Linux runtime service.
     pub fn new() -> Self {
         Self::default()
     }
