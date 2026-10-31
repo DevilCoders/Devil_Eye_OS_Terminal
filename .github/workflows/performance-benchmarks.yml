@@ -60,7 +60,9 @@ jobs:
           DE_BENCH_SAMPLE_MS: "200"
           DE_BENCH_SAMPLES: "12"
           GITHUB_SHA: ${{ github.sha }}
-        run: cargo bench -p de-terminal-core --bench terminal_core | tee target/performance/terminal-core.csv
+        run: |
+          set -o pipefail
+          cargo bench -p de-terminal-core --bench terminal_core | tee target/performance/terminal-core.csv
 
       - name: Run Linux session and PTY benchmarks
         env:
@@ -68,7 +70,9 @@ jobs:
           DE_BENCH_SAMPLE_MS: "200"
           DE_BENCH_SAMPLES: "12"
           GITHUB_SHA: ${{ github.sha }}
-        run: cargo bench -p de-app --bench session_io | tee target/performance/session-io.csv
+        run: |
+          set -o pipefail
+          cargo bench -p de-app --bench session_io | tee target/performance/session-io.csv
 
       - name: Upload reproducible baseline
         uses: actions/upload-artifact@v4
