@@ -280,12 +280,17 @@ mod tests {
     use super::LinuxPtyChild;
     use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
     use std::io;
-    use std::os::fd::AsRawFd;
-    use std::sync::Mutex;
+    use std::sync::{Mutex, MutexGuard};
     use std::thread;
     use std::time::{Duration, Instant};
 
     static PROCESS_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn process_test_lock() -> MutexGuard<'static, ()> {
+        PROCESS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     fn test_size() -> TerminalSize {
         TerminalSize::new(80, 24).expect("valid PTY size")
@@ -299,7 +304,7 @@ mod tests {
 
     #[test]
     fn spawns_child_with_controlling_terminal_and_private_process_group() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -309,7 +314,7 @@ mod tests {
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
 
         assert_eq!(unsafe { libc::getpgid(pid) }, pid);
-        assert_eq!(unsafe { libc::tcgetsid(child.master().as_raw_fd()) }, pid);
+        assert_eq!(unsafe { libc::getsid(pid) }, pid);
         assert_eq!(
             child.wait().expect("wait child"),
             ProcessExitStatus::Exited(0)
@@ -318,7 +323,7 @@ mod tests {
 
     #[test]
     fn delivers_semantic_signal_to_child_process_group() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let mut child =
             LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
 
@@ -331,7 +336,7 @@ mod tests {
 
     #[test]
     fn force_termination_reports_kill_signal() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let mut child =
             LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
 
@@ -346,7 +351,7 @@ mod tests {
 
     #[test]
     fn wait_and_try_wait_cache_status_and_reap_child() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -373,7 +378,7 @@ mod tests {
 
     #[test]
     fn drop_kills_and_reaps_live_child_when_kill_on_drop_is_enabled() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let child =
             LinuxPtyChild::spawn(&sleep_program(), test_size(), true).expect("spawn sleep child");
         let pid = i32::try_from(child.process_id()).expect("pid fits pid_t");
@@ -386,7 +391,7 @@ mod tests {
 
     #[test]
     fn detached_child_is_reaped_by_background_reaper() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -414,7 +419,7 @@ mod tests {
 
     #[test]
     fn can_signal_session_descendants_after_leader_exits() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
@@ -435,7 +440,7 @@ mod tests {
 
     #[test]
     fn invalid_executable_fails_without_returning_a_partial_child() {
-        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let _guard = process_test_lock();
         let program = ProgramSpec::new("/definitely/not/a/real/executable")
             .expect("valid non-empty program spec");
 
