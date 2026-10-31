@@ -11,6 +11,8 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
+pub use de_terminal_core::TerminalSize;
+
 /// An owned process launch description, validated before it reaches a runtime backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramSpec {
@@ -215,63 +217,18 @@ impl StdioConfig {
     }
 }
 
-/// Validated terminal dimensions requested for a PTY-backed child.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PtySize {
-    columns: u16,
-    rows: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PtySizeError {
-    ZeroColumns,
-    ZeroRows,
-}
-
-impl fmt::Display for PtySizeError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ZeroColumns => formatter.write_str("PTY columns must be non-zero"),
-            Self::ZeroRows => formatter.write_str("PTY rows must be non-zero"),
-        }
-    }
-}
-
-impl Error for PtySizeError {}
-
-impl PtySize {
-    pub fn new(columns: u16, rows: u16) -> Result<Self, PtySizeError> {
-        if columns == 0u16 {
-            return Err(PtySizeError::ZeroColumns);
-        }
-        if rows == 0u16 {
-            return Err(PtySizeError::ZeroRows);
-        }
-
-        Ok(Self { columns, rows })
-    }
-
-    pub const fn columns(self) -> u16 {
-        self.columns
-    }
-
-    pub const fn rows(self) -> u16 {
-        self.rows
-    }
-}
-
 /// PTY configuration. A PTY combines the child's terminal-facing streams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PtyConfig {
-    size: PtySize,
+    size: TerminalSize,
 }
 
 impl PtyConfig {
-    pub const fn new(size: PtySize) -> Self {
+    pub const fn new(size: TerminalSize) -> Self {
         Self { size }
     }
 
-    pub const fn size(self) -> PtySize {
+    pub const fn size(self) -> TerminalSize {
         self.size
     }
 }
@@ -479,7 +436,7 @@ pub trait RuntimeProcess: Send {
     fn close_stdin(&mut self) -> Result<(), RuntimeError>;
 
     /// Changes the effective PTY size. Non-PTY processes return UnsupportedCapability.
-    fn resize_pty(&mut self, size: PtySize) -> Result<(), RuntimeError>;
+    fn resize_pty(&mut self, size: TerminalSize) -> Result<(), RuntimeError>;
 
     /// Sends a semantic signal to this process only.
     fn send_signal(&mut self, signal: Signal) -> Result<(), RuntimeError>;
@@ -513,8 +470,8 @@ pub trait RuntimeService: Send + Sync {
 mod tests {
     use super::{
         IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
-        ProgramSpecError, PtyConfig, PtySize, PtySizeError, ReadOutcome, RuntimeCapability,
-        RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
+        ProgramSpecError, PtyConfig, ReadOutcome, RuntimeCapability,
+        RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment, TerminalSize,
         TerminationMode, WriteOutcome,
     };
     use std::ffi::{OsStr, OsString};
@@ -601,10 +558,10 @@ mod tests {
 
     #[test]
     fn validates_pty_dimensions_and_explicit_stdio_modes() {
-        assert_eq!(PtySize::new(0u16, 24u16), Err(PtySizeError::ZeroColumns));
-        assert_eq!(PtySize::new(80u16, 0u16), Err(PtySizeError::ZeroRows));
+        assert_eq!(TerminalSize::new(0u16, 24u16), Err(de_terminal_core::TerminalSizeError::ZeroColumns));
+        assert_eq!(TerminalSize::new(80u16, 0u16), Err(de_terminal_core::TerminalSizeError::ZeroRows));
 
-        let size = PtySize::new(120u16, 40u16).expect("valid PTY dimensions");
+        let size = TerminalSize::new(120u16, 40u16).expect("valid PTY dimensions");
         let request = ProcessSpawnRequest::new(
             ProgramSpec::new("sh").expect("program"),
             IoAttachment::Pty(PtyConfig::new(size)),
@@ -714,7 +671,7 @@ mod tests {
             Ok(())
         }
 
-        fn resize_pty(&mut self, _size: PtySize) -> Result<(), RuntimeError> {
+        fn resize_pty(&mut self, _size: TerminalSize) -> Result<(), RuntimeError> {
             Ok(())
         }
 
@@ -748,7 +705,7 @@ mod tests {
         let capabilities = runtime.capabilities();
         assert!(capabilities.supports(RuntimeCapability::PseudoTerminal));
 
-        let size = PtySize::new(80u16, 24u16).expect("valid PTY dimensions");
+        let size = TerminalSize::new(80u16, 24u16).expect("valid PTY dimensions");
         let request = ProcessSpawnRequest::new(
             ProgramSpec::new("sh").expect("program"),
             IoAttachment::Pty(PtyConfig::new(size)),
