@@ -649,7 +649,10 @@ fn wrong_type(section: &str, key: &str, expected: &'static str) -> ConfigError {
 
 fn invalid_value(section: &str, key: &str, reason: &'static str) -> ConfigError {
     let field = match section {
-        "root" => key,
+        "root" => match key {
+            "schema_version" => "schema_version",
+            _ => "configuration",
+        },
         "terminal" => match key {
             "columns" => "terminal.columns",
             "rows" => "terminal.rows",
