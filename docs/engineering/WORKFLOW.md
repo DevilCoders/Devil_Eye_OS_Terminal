@@ -67,3 +67,7 @@ Every Task must have a stable ID, parent Epic, priority, status, component, plat
 - NASM is reserved for measured, justified low-level routines.
 - Linux x86_64 is the first implementation target; platform-specific behavior stays behind adapters.
 - Each terminal tab owns a distinct PTY/process session.
+
+## Subtask execution protocol
+
+Every Task Issue must contain a `Subtasks (implementation checklist)` section. Keep checklist items independently verifiable and scoped to the parent Task. Check an item only when its evidence is attached. If a checklist item needs a separate owner, dependency chain, review, or delivery schedule, create a dedicated Task Issue and link it to the parent Epic; do not represent an independent workstream as a checkbox. The current backlog's 62 task issues have been decomposed into checklists; native GitHub child-issue relationships are not configured.
