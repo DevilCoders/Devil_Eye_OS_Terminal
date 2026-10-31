@@ -7,7 +7,7 @@ The repository has two independent build graphs:
 - **Rust workspace:** Cargo builds `de-app`, `de-terminal-core`, `de-runtime`, and `de-ffi`. The runtime crate defines validated process launch requests and platform-neutral process/PTY service interfaces; concrete OS adapters are separate tasks.
 - **C subsystem:** CMake builds the DE-Shell static library and its CTest suite.
 
-The C library exposes build metadata, the opaque DE-Shell lifecycle API, bounded input buffering, a quote-aware lexer, an alpha parser, and a per-shell built-in command registry. Variable expansion, external process execution, and Rust/C FFI remain separate tasks.
+The C library exposes build metadata, the opaque DE-Shell lifecycle API, bounded input buffering, a quote-aware lexer, an alpha parser, a per-shell built-in command registry, and a controlled alpha execution engine. External process creation remains delegated to the host runtime callback; variable expansion and Rust/C FFI remain separate tasks.
 
 ## Prerequisites
 
