@@ -5,7 +5,6 @@ use de_runtime::{
 };
 use de_terminal_core::parser::{TerminalEvent, VtParser};
 use de_terminal_core::screen::{CellAttributes, CellContent, Color, GraphemeWidth, StyleFlags, TerminalScreen};
-use std::num::NonZeroUsize;
 use std::thread;
 use std::time::{Duration, Instant};
 
