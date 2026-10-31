@@ -6,9 +6,7 @@
 
 pub mod config;
 
-pub use config::{
-    AppConfig, ConfigError, ConfigValue, CURRENT_CONFIG_SCHEMA_VERSION,
-};
+pub use config::{AppConfig, ConfigError, ConfigValue, CURRENT_CONFIG_SCHEMA_VERSION};
 
 pub mod service_interfaces;
 
