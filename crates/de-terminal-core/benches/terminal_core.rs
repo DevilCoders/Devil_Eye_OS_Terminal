@@ -181,6 +181,26 @@ fn make_screen(size: TerminalSize) -> TerminalScreen {
     screen
 }
 
+fn make_ascii_screen(size: TerminalSize) -> TerminalScreen {
+    let mut screen =
+        TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
+            .expect("allocate cursor benchmark screen");
+    for row in 0..size.rows() {
+        for column in 0..size.columns() {
+            screen
+                .set_grapheme(
+                    row,
+                    column,
+                    "x",
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("populate ASCII cursor benchmark screen");
+        }
+    }
+    screen
+}
+
 fn make_styled_screen(size: TerminalSize) -> TerminalScreen {
     let mut screen =
         TerminalScreen::new(size, usize::from(size.columns()) * usize::from(size.rows()))
@@ -360,7 +380,7 @@ fn render_feature_benchmarks(size: TerminalSize, label: &str) {
 }
 
 fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
-    let mut screen = make_screen(size);
+    let mut screen = make_ascii_screen(size);
     let mut damage = DamageTracker::new(size, 128).expect("cursor damage tracker");
     let mut renderer = make_renderer(size);
     screen.set_cursor(0, 0);
