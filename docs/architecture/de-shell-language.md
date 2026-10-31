@@ -133,7 +133,7 @@ The alpha parser already implements this precedence for tokenized `;`, `&`, `&&`
 
 ## 5. Word expansion
 
-Expansion is performed after parsing and before command lookup or redirection setup. Expansion never changes the AST operator structure: bytes produced by a variable cannot become a new pipe, separator, or redirection operator.
+The complete source buffer is parsed before execution begins, but word expansion is performed just in time for each list item when that item is about to execute, before its command lookup or redirection setup. List items are evaluated left-to-right, so assignments and `$?` produced by an earlier completed item are visible to expansion in later items. Expansion never changes the AST operator structure: bytes produced by a variable cannot become a new pipe, separator, or redirection operator.
 
 ### 5.1 Supported parameter forms
 
@@ -164,7 +164,7 @@ For each word:
 4. Produce exactly one UTF-8 argument, preserving empty results and embedded spaces.
 5. Validate the decoded byte limit and UTF-8 validity before command dispatch.
 
-No field splitting, pathname expansion, command substitution, arithmetic expansion, or recursive re-expansion of variable values occurs. A value such as `$OTHER` stored inside variable `NAME` remains literal when `$NAME` is expanded; expansion is not recursively evaluated.
+No field splitting, pathname expansion, command substitution, arithmetic expansion, or recursive re-expansion of variable values occurs. A value such as `$OTHER` stored inside variable `NAME` remains literal when `$NAME` is expanded; expansion is not recursively evaluated. For example, `x=one; echo "$x"` prints `one`, and `false; echo "$?"` expands `$?` using the status of `false`.
 
 ### 5.4 Assignment words and variable scope
 
@@ -263,7 +263,8 @@ The parser currently emits BACKGROUND nodes, but execution rejects them. Full jo
 - A sequential list reports the last executed item status.
 - A pipeline reports the last stage status; no pipefail behavior is implied.
 - An explicit `exit` request stops the remaining list and asks the owning shell session to terminate.
-- Parse and expansion failures are detected before any command in the source buffer is executed. Runtime failures after earlier list items cannot roll back their side effects.
+- Syntax/parse errors for the complete source buffer are detected before any command executes.
+- Expansion errors are detected immediately before the affected list item executes. Earlier items remain completed and their side effects are not rolled back; later items are skipped after an expansion or runtime failure.
 
 The current API result reports exit code, exit-request flag, and completed command count. These values describe work completed before an execution error.
 
