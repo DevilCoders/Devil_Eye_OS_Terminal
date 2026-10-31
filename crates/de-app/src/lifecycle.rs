@@ -6,6 +6,9 @@
 
 use std::error::Error;
 use std::fmt;
+use std::io;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 /// Observable state of the top-level application lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,6 +247,49 @@ impl Application {
         } else {
             self.state = ApplicationState::Failed;
             Err(LifecycleError::ShutdownFailed { failures })
+        }
+    }
+
+    /// Consumes the application and performs service shutdown on a dedicated worker.
+    ///
+    /// GUI/event-loop callers must use this method rather than calling shutdown
+    /// directly because service cleanup may wait for child processes and native
+    /// resources. The returned handle can be polled with is_finished; join it
+    /// only after completion.
+    ///
+    /// If the operating system cannot create the worker thread, the original
+    /// application is returned with the I/O error so the caller can retry or
+    /// arrange cleanup on another lifecycle worker. No service is dropped as
+    /// a side effect of a failed worker spawn.
+    pub fn shutdown_async(
+        self,
+    ) -> Result<thread::JoinHandle<Result<(), LifecycleError>>, (Self, io::Error)> {
+        let application = Arc::new(Mutex::new(Some(self)));
+        let worker_application = Arc::clone(&application);
+        let result = thread::Builder::new()
+            .name("de-application-shutdown".to_owned())
+            .spawn(move || {
+                let mut application = worker_application
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take()
+                    .expect("shutdown worker owns the application exactly once");
+                application.shutdown()
+            });
+
+        match result {
+            Ok(handle) => Ok(handle),
+            Err(error) => {
+                let application = match Arc::try_unwrap(application) {
+                    Ok(application) => application,
+                    Err(_) => unreachable!("failed thread spawn must drop its closure"),
+                };
+                let application = application
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .expect("application remains available when worker spawn fails");
+                Err((application, error))
+            }
         }
     }
 
