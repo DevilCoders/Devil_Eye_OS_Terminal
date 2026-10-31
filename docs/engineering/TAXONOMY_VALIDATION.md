@@ -36,7 +36,7 @@ All 86 Issues were checked against the repository taxonomy:
 - #16 and #22 specify `Continuous; release gate M9`; both are correctly assigned to M9 Release Candidate.
 - #86 was closed as `not_planned` because native GitHub Projects V2 board creation requires owner-side UI actions. It retains its M0 target for historical traceability and is classified as `status:done` because the decision is resolved; it is not a blocker.
 
-The taxonomy workflow now extracts an explicit milestone code from descriptive targets such as `Continuous; release gate M9`, so those tasks remain correctly assigned even if their milestone field is ever missing.
+The taxonomy workflow revision in this PR extracts an explicit milestone code from descriptive targets such as `Continuous; release gate M9`, so those tasks remain correctly assigned even if their milestone field is ever missing.
 
 ## Dependency readiness audit
 
