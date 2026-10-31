@@ -18,6 +18,7 @@ The Linux adapter resolves an executable before spawning:
 - Empty and relative `PATH` entries are ignored; the current working directory is never implicitly searched through `PATH`.
 - Candidate paths are canonicalized, required to be regular files, and checked for effective execute permission.
 - The resolved executable path is passed to `Command::new`; arguments remain a separate vector.
+- The requested program name is preserved as `argv[0]` in both PTY and stdio spawn paths, so PATH aliases and symlink invocation names retain their expected applet/compatibility behavior.
 
 Resolution errors use stable, non-sensitive error categories. Raw argument and environment values are not included in the public error descriptions.
 
