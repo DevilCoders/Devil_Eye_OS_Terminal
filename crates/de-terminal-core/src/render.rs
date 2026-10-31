@@ -325,7 +325,11 @@ impl Selection {
         if !anchor.is_within(size) || !extent.is_within(size) {
             return Err(RenderContractError::SelectionOutOfBounds);
         }
-        Ok(Self {\n            anchor,\n            extent,\n            mode,\n        })
+        Ok(Self {
+            anchor,
+            extent,
+            mode,
+        })
     }
 
     pub const fn anchor(self) -> CellPosition {
