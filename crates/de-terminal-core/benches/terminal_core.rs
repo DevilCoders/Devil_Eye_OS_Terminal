@@ -412,7 +412,7 @@ fn scrollback_benchmarks(size: TerminalSize, label: &str) {
     println!("# memory_scrollback_{label}_capacity_cells={history_cells}");
     println!(
         "# memory_scrollback_{label}_capacity_bytes={}",
-        history_cells * size_of::<de_terminal_core::screen::Cell>()
+        history_cells * std::mem::size_of::<de_terminal_core::screen::Cell>()
     );
 
     benchmark(
