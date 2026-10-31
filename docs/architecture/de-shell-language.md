@@ -133,7 +133,7 @@ The alpha parser already implements this precedence for tokenized `;`, `&`, `&&`
 
 ## 5. Word expansion
 
-The complete source buffer is parsed before execution begins, but word expansion is performed just in time for each list item when that item is about to execute, before its command lookup or redirection setup. List items are evaluated left-to-right, so assignments and `$?` produced by an earlier completed item are visible to expansion in later items. Expansion never changes the AST operator structure: bytes produced by a variable cannot become a new pipe, separator, or redirection operator.
+The complete source buffer is parsed before execution begins, but word expansion is deferred until a pipeline operand is selected for execution. A list is evaluated left-to-right; within each `and_or`, the next pipeline operand is expanded only if the preceding status satisfies its `&&` or `||` condition. Expansion happens immediately before that selected operand's command lookup or redirection setup. This makes assignments and `$?` from a completed operand visible to the next selected operand, while skipped operands are neither expanded nor executed. Expansion never changes the AST operator structure: bytes produced by a variable cannot become a new pipe, separator, or redirection operator.
 
 ### 5.1 Supported parameter forms
 
@@ -164,7 +164,7 @@ For each word:
 4. Produce exactly one UTF-8 argument, preserving empty results and embedded spaces.
 5. Validate the decoded byte limit and UTF-8 validity before command dispatch.
 
-No field splitting, pathname expansion, command substitution, arithmetic expansion, or recursive re-expansion of variable values occurs. A value such as `$OTHER` stored inside variable `NAME` remains literal when `$NAME` is expanded; expansion is not recursively evaluated. For example, `x=one; echo "$x"` prints `one`, and `false; echo "$?"` expands `$?` using the status of `false`.
+No field splitting, pathname expansion, command substitution, arithmetic expansion, or recursive re-expansion of variable values occurs. A value such as `$OTHER` stored inside variable `NAME` remains literal when `$NAME` is expanded; expansion is not recursively evaluated. For example, `x=one; echo "$x"` prints `one`; `x=one && echo "$x"` also prints `one`; and `true && echo "$?"` expands `$?` using the completed status of `true`. The right operand of `false && echo "$?"` is skipped and is not expanded.
 
 ### 5.4 Assignment words and variable scope
 
@@ -264,7 +264,7 @@ The parser currently emits BACKGROUND nodes, but execution rejects them. Full jo
 - A pipeline reports the last stage status; no pipefail behavior is implied.
 - An explicit `exit` request stops the remaining list and asks the owning shell session to terminate.
 - Syntax/parse errors for the complete source buffer are detected before any command executes.
-- Expansion errors are detected immediately before the affected list item executes. Earlier items remain completed and their side effects are not rolled back; later items are skipped after an expansion or runtime failure.
+- Expansion errors are detected immediately before the affected pipeline operand executes, and only after its enclosing `&&`/`||` condition selects it. Earlier operands remain completed and their side effects are not rolled back; later operands/items are skipped after an expansion or runtime failure. Operands skipped by conditional execution are not expanded.
 
 The current API result reports exit code, exit-request flag, and completed command count. These values describe work completed before an execution error.
 
