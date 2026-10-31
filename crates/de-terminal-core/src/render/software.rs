@@ -305,18 +305,15 @@ impl PixelSurface {
         let destination_red = u32::from(self.pixels[index]);
         let destination_green = u32::from(self.pixels[index + 1]);
         let destination_blue = u32::from(self.pixels[index + 2]);
-        self.pixels[index] = ((u32::from(color.red) * source_alpha
-            + destination_red * inverse_alpha
-            + 127)
-            / 255) as u8;
-        self.pixels[index + 1] = ((u32::from(color.green) * source_alpha
-            + destination_green * inverse_alpha
-            + 127)
-            / 255) as u8;
-        self.pixels[index + 2] = ((u32::from(color.blue) * source_alpha
-            + destination_blue * inverse_alpha
-            + 127)
-            / 255) as u8;
+        self.pixels[index] =
+            ((u32::from(color.red) * source_alpha + destination_red * inverse_alpha + 127) / 255)
+                as u8;
+        self.pixels[index + 1] =
+            ((u32::from(color.green) * source_alpha + destination_green * inverse_alpha + 127)
+                / 255) as u8;
+        self.pixels[index + 2] =
+            ((u32::from(color.blue) * source_alpha + destination_blue * inverse_alpha + 127) / 255)
+                as u8;
         self.pixels[index + 3] = 255;
     }
 }
