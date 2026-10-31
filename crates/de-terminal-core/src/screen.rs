@@ -190,6 +190,7 @@ pub enum ScreenGridError {
     GraphemeTooLong,
     ControlCharacterInGrapheme,
     WideGraphemeAtRightEdge,
+    InvalidScrollRegion,
 }
 
 impl fmt::Display for ScreenGridError {
@@ -204,6 +205,7 @@ impl fmt::Display for ScreenGridError {
             Self::GraphemeTooLong => "grapheme exceeds the inline byte limit",
             Self::ControlCharacterInGrapheme => "grapheme contains a control character",
             Self::WideGraphemeAtRightEdge => "wide grapheme cannot start at the final column",
+            Self::InvalidScrollRegion => "scroll region bounds are invalid for the screen",
         };
 
         formatter.write_str(message)
@@ -371,6 +373,41 @@ impl ScreenGrid {
         Some(usize::from(row) * usize::from(self.size.columns()) + usize::from(column))
     }
 
+
+    fn scroll_rows(
+        &mut self,
+        top: u16,
+        bottom: u16,
+        count: u16,
+        downward: bool,
+    ) -> Result<(), ScreenGridError> {
+        if top > bottom || bottom >= self.size.rows() {
+            return Err(ScreenGridError::InvalidScrollRegion);
+        }
+        if count == 0U16 {
+            return Ok(());
+        }
+
+        let columns = usize::from(self.size.columns());
+        let top_index = usize::from(top) * columns;
+        let end_index = (usize::from(bottom) + 1Usize) * columns;
+        let region_rows = usize::from(bottom - top) + 1Usize;
+        let shift_rows = usize::from(count).min(region_rows);
+        let shift_cells = shift_rows * columns;
+
+        if shift_rows == region_rows {
+            self.cells[top_index..end_index].fill(Cell::default());
+        } else if downward {
+            self.cells.copy_within(top_index..end_index - shift_cells, top_index + shift_cells);
+            self.cells[top_index..top_index + shift_cells].fill(Cell::default());
+        } else {
+            self.cells.copy_within(top_index + shift_cells..end_index, top_index);
+            self.cells[end_index - shift_cells..end_index].fill(Cell::default());
+        }
+
+        Ok(())
+    }
+
     fn clear_cell_pair(&mut self, index: usize) {
         let columns = usize::from(self.size.columns());
         let column = index % columns;
@@ -416,16 +453,363 @@ fn allocate_cells(count: usize) -> Result<Vec<Cell>, ScreenGridError> {
     Ok(cells)
 }
 
+
+/// Zero-based terminal cursor position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CursorPosition {
+    row: u16,
+    column: u16,
+}
+
+impl CursorPosition {
+    pub const fn row(self) -> u16 {
+        self.row
+    }
+
+    pub const fn column(self) -> u16 {
+        self.column
+    }
+}
+
+/// Inclusive top and bottom rows of the active scrolling region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollRegion {
+    top: u16,
+    bottom: u16,
+}
+
+impl ScrollRegion {
+    pub const fn top(self) -> u16 {
+        self.top
+    }
+
+    pub const fn bottom(self) -> u16 {
+        self.bottom
+    }
+
+    const fn full(size: TerminalSize) -> Self {
+        Self {
+            top: 0U16,
+            bottom: size.rows() - 1U16,
+        }
+    }
+}
+
+/// Range affected by a terminal erase operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EraseMode {
+    /// Erase from the cursor through the end of the selected row or display.
+    ToEnd,
+    /// Erase from the beginning through the cursor, inclusive.
+    ToBeginning,
+    /// Erase the complete selected row or display.
+    All,
+}
+
+/// Screen grid plus cursor and scrolling-region state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalScreen {
+    grid: ScreenGrid,
+    cursor: CursorPosition,
+    scroll_region: ScrollRegion,
+}
+
+impl TerminalScreen {
+    pub fn new(size: TerminalSize, max_cells: usize) -> Result<Self, ScreenGridError> {
+        Ok(Self {
+            grid: ScreenGrid::new(size, max_cells)?,
+            cursor: CursorPosition::default(),
+            scroll_region: ScrollRegion::full(size),
+        })
+    }
+
+    pub const fn size(&self) -> TerminalSize {
+        self.grid.size()
+    }
+
+    pub const fn cursor(&self) -> CursorPosition {
+        self.cursor
+    }
+
+    pub const fn scroll_region(&self) -> ScrollRegion {
+        self.scroll_region
+    }
+
+    pub const fn grid(&self) -> &ScreenGrid {
+        &self.grid
+    }
+
+    pub fn grid_mut(&mut self) -> &mut ScreenGrid {
+        &mut self.grid
+    }
+
+    /// Sets the cursor, clamping both coordinates to the current screen bounds.
+    pub fn set_cursor(&mut self, row: u16, column: u16) {
+        self.cursor.row = row.min(self.size().rows() - 1U16);
+        self.cursor.column = column.min(self.size().columns() - 1U16);
+    }
+
+    pub fn move_cursor_up(&mut self, count: u16) {
+        self.cursor.row = self.cursor.row.saturating_sub(count);
+    }
+
+    pub fn move_cursor_down(&mut self, count: u16) {
+        self.cursor.row = self
+            .cursor
+            .row
+            .saturating_add(count)
+            .min(self.size().rows() - 1U16);
+    }
+
+    pub fn move_cursor_left(&mut self, count: u16) {
+        self.cursor.column = self.cursor.column.saturating_sub(count);
+    }
+
+    pub fn move_cursor_right(&mut self, count: u16) {
+        self.cursor.column = self
+            .cursor
+            .column
+            .saturating_add(count)
+            .min(self.size().columns() - 1U16);
+    }
+
+    /// Implements carriage return: move to column zero without changing row.
+    pub fn carriage_return(&mut self) {
+        self.cursor.column = 0U16;
+    }
+
+    /// Implements line feed, scrolling the active region when the cursor is at its bottom.
+    pub fn line_feed(&mut self) -> Result<(), ScreenGridError> {
+        if self.cursor.row >= self.scroll_region.top
+            && self.cursor.row == self.scroll_region.bottom
+        {
+            self.scroll_up(1U16)?;
+        } else if self.cursor.row < self.size().rows() - 1U16 {
+            self.cursor.row += 1U16;
+        }
+        Ok(())
+    }
+
+    /// Sets an inclusive scrolling region. The top must not exceed the bottom.
+    pub fn set_scroll_region(&mut self, top: u16, bottom: u16) -> Result<(), ScreenGridError> {
+        if top > bottom || bottom >= self.size().rows() {
+            return Err(ScreenGridError::InvalidScrollRegion);
+        }
+        self.scroll_region = ScrollRegion { top, bottom };
+        Ok(())
+    }
+
+    pub fn reset_scroll_region(&mut self) {
+        self.scroll_region = ScrollRegion::full(self.size());
+    }
+
+    pub fn scroll_up(&mut self, count: u16) -> Result<(), ScreenGridError> {
+        self.grid.scroll_rows(
+            self.scroll_region.top,
+            self.scroll_region.bottom,
+            count,
+            false,
+        )
+    }
+
+    pub fn scroll_down(&mut self, count: u16) -> Result<(), ScreenGridError> {
+        self.grid.scroll_rows(
+            self.scroll_region.top,
+            self.scroll_region.bottom,
+            count,
+            true,
+        )
+    }
+
+    /// Erases cells on the cursor row without moving the cursor.
+    pub fn erase_line(&mut self, mode: EraseMode) -> Result<(), ScreenGridError> {
+        let columns = self.size().columns();
+        let (start, end) = match mode {
+            EraseMode::ToEnd => (self.cursor.column, columns - 1U16),
+            EraseMode::ToBeginning => (0U16, self.cursor.column),
+            EraseMode::All => (0U16, columns - 1U16),
+        };
+
+        for column in start..=end {
+            self.grid.set_empty(self.cursor.row, column)?;
+        }
+        Ok(())
+    }
+
+    /// Erases the display range selected by mode without moving the cursor.
+    pub fn erase_display(&mut self, mode: EraseMode) -> Result<(), ScreenGridError> {
+        let size = self.size();
+        let start = match mode {
+            EraseMode::ToEnd => (self.cursor.row, self.cursor.column),
+            EraseMode::ToBeginning => (0U16, 0U16),
+            EraseMode::All => (0U16, 0U16),
+        };
+        let end = match mode {
+            EraseMode::ToEnd => (size.rows() - 1U16, size.columns() - 1U16),
+            EraseMode::ToBeginning => (self.cursor.row, self.cursor.column),
+            EraseMode::All => (size.rows() - 1U16, size.columns() - 1U16),
+        };
+
+        for row in start.0..=end.0 {
+            let first_column = if row == start.0 { start.1 } else { 0U16 };
+            let last_column = if row == end.0 {
+                end.1
+            } else {
+                size.columns() - 1U16
+            };
+            for column in first_column..=last_column {
+                self.grid.set_empty(row, column)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Resizes the grid, clamps the cursor, and preserves/clamps the scrolling region.
+    pub fn resize(&mut self, size: TerminalSize) -> Result<(), ScreenGridError> {
+        self.grid.resize(size)?;
+        self.cursor.row = self.cursor.row.min(size.rows() - 1U16);
+        self.cursor.column = self.cursor.column.min(size.columns() - 1U16);
+
+        let top = self.scroll_region.top.min(size.rows() - 1U16);
+        let bottom = self.scroll_region.bottom.min(size.rows() - 1U16);
+        self.scroll_region = if top > bottom {
+            ScrollRegion::full(size)
+        } else {
+            ScrollRegion { top, bottom }
+        };
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CellAttributes, CellContent, Color, Grapheme, GraphemeWidth, ScreenGrid, ScreenGridError,
-        StyleFlags, MAX_GRAPHEME_BYTES,
+        CellAttributes, CellContent, Color, CursorPosition, EraseMode, Grapheme, GraphemeWidth,
+        ScreenGrid, ScreenGridError, ScrollRegion, StyleFlags, TerminalScreen, MAX_GRAPHEME_BYTES,
     };
     use crate::TerminalSize;
 
     fn size(columns: u16, rows: u16) -> TerminalSize {
         TerminalSize::new(columns, rows).expect("non-zero terminal dimensions")
+    }
+
+
+    #[test]
+    fn cursor_movement_is_clamped_to_screen_bounds() {
+        let mut screen = TerminalScreen::new(size(5U16, 3U16), 15Usize).expect("screen");
+        screen.set_cursor(99U16, 99U16);
+        assert_eq!(screen.cursor(), CursorPosition { row: 2U16, column: 4U16 });
+
+        screen.move_cursor_down(u16::MAX);
+        screen.move_cursor_right(u16::MAX);
+        assert_eq!(screen.cursor(), CursorPosition { row: 2U16, column: 4U16 });
+
+        screen.move_cursor_up(u16::MAX);
+        screen.move_cursor_left(u16::MAX);
+        assert_eq!(screen.cursor(), CursorPosition::default());
+    }
+
+    #[test]
+    fn carriage_return_and_line_feed_update_cursor() {
+        let mut screen = TerminalScreen::new(size(5U16, 3U16), 15Usize).expect("screen");
+        screen.set_cursor(1U16, 4U16);
+        screen.carriage_return();
+        assert_eq!(screen.cursor(), CursorPosition { row: 1U16, column: 0U16 });
+        screen.line_feed().expect("line feed");
+        assert_eq!(screen.cursor(), CursorPosition { row: 2U16, column: 0U16 });
+        screen.line_feed().expect("line feed at bottom");
+        assert_eq!(screen.cursor().row(), 2U16);
+    }
+
+    #[test]
+    fn line_feed_scrolls_only_the_active_region() {
+        let mut screen = TerminalScreen::new(size(2U16, 4U16), 8Usize).expect("screen");
+        for (row, value) in [(0U16, "A"), (1U16, "B"), (2U16, "C"), (3U16, "D")] {
+            screen.grid_mut()
+                .set_grapheme(row, 0U16, value, GraphemeWidth::Single, CellAttributes::default())
+                .expect("write row marker");
+        }
+        screen.set_scroll_region(1U16, 2U16).expect("scroll region");
+        screen.set_cursor(2U16, 0U16);
+        screen.line_feed().expect("scroll at region bottom");
+
+        let row_text = |row| match screen.grid().get_cell(row, 0U16).expect("cell").content() {
+            CellContent::Grapheme { value, .. } => value.as_str().to_owned(),
+            CellContent::Empty => String::new(),
+            CellContent::Continuation => panic!("unexpected continuation"),
+        };
+        assert_eq!(row_text(0U16), "A");
+        assert_eq!(row_text(1U16), "C");
+        assert_eq!(row_text(2U16), "");
+        assert_eq!(row_text(3U16), "D");
+        assert_eq!(screen.cursor().row(), 2U16);
+    }
+
+    #[test]
+    fn scroll_down_moves_rows_and_clears_new_top_rows() {
+        let mut screen = TerminalScreen::new(size(2U16, 4U16), 8Usize).expect("screen");
+        for (row, value) in [(1U16, "B"), (2U16, "C")] {
+            screen.grid_mut()
+                .set_grapheme(row, 0U16, value, GraphemeWidth::Single, CellAttributes::default())
+                .expect("write row marker");
+        }
+        screen.set_scroll_region(1U16, 2U16).expect("scroll region");
+        screen.scroll_down(1U16).expect("scroll down");
+        assert!(screen.grid().get_cell(1U16, 0U16).expect("new top").is_empty());
+        match screen.grid().get_cell(2U16, 0U16).expect("moved row").content() {
+            CellContent::Grapheme { value, .. } => assert_eq!(value.as_str(), "B"),
+            other => panic!("unexpected cell after scroll: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn erase_line_and_display_modes_clear_exact_ranges() {
+        let mut screen = TerminalScreen::new(size(4U16, 3U16), 12Usize).expect("screen");
+        for row in 0U16..3U16 {
+            for column in 0U16..4U16 {
+                screen.grid_mut()
+                    .set_grapheme(row, column, "x", GraphemeWidth::Single, CellAttributes::default())
+                    .expect("write cell");
+            }
+        }
+        screen.set_cursor(1U16, 2U16);
+        screen.erase_line(EraseMode::ToBeginning).expect("erase line prefix");
+        assert!(screen.grid().get_cell(1U16, 0U16).expect("cell").is_empty());
+        assert!(screen.grid().get_cell(1U16, 2U16).expect("cell").is_empty());
+        assert!(!screen.grid().get_cell(1U16, 3U16).expect("cell").is_empty());
+
+        screen.erase_display(EraseMode::ToEnd).expect("erase display suffix");
+        assert!(!screen.grid().get_cell(0U16, 3U16).expect("above cursor").is_empty());
+        assert!(screen.grid().get_cell(1U16, 3U16).expect("cursor row suffix").is_empty());
+        assert!(screen.grid().get_cell(2U16, 0U16).expect("below cursor").is_empty());
+
+        screen.erase_display(EraseMode::All).expect("erase full display");
+        assert!(screen.grid().cells().iter().all(|cell| cell.is_empty()));
+    }
+
+    #[test]
+    fn invalid_scroll_region_is_rejected_without_changing_existing_region() {
+        let mut screen = TerminalScreen::new(size(4U16, 3U16), 12Usize).expect("screen");
+        let original = screen.scroll_region();
+        assert_eq!(
+            screen.set_scroll_region(2U16, 1U16),
+            Err(ScreenGridError::InvalidScrollRegion)
+        );
+        assert_eq!(
+            screen.set_scroll_region(0U16, 3U16),
+            Err(ScreenGridError::InvalidScrollRegion)
+        );
+        assert_eq!(screen.scroll_region(), original);
+    }
+
+    #[test]
+    fn resize_clamps_cursor_and_preserves_valid_scroll_region() {
+        let mut screen = TerminalScreen::new(size(5U16, 5U16), 25Usize).expect("screen");
+        screen.set_cursor(4U16, 4U16);
+        screen.set_scroll_region(1U16, 4U16).expect("scroll region");
+        screen.resize(size(3U16, 3U16)).expect("shrink screen");
+        assert_eq!(screen.cursor(), CursorPosition { row: 2U16, column: 2U16 });
+        assert_eq!(screen.scroll_region(), ScrollRegion { top: 1U16, bottom: 2U16 });
     }
 
     #[test]
