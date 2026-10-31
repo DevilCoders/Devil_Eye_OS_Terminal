@@ -20,6 +20,7 @@ The terminal emulator is independent of DE-Shell and must be able to host compat
 - [Pinned developer toolchain](docs/TOOLCHAIN.md)
 - [Engineering workflow](docs/engineering/WORKFLOW.md)
 - [Contributor build and development guide](CONTRIBUTING.md)
+- [Linux packaging and installation strategy](docs/packaging/linux-packaging.md)
 - [Task catalog](docs/engineering/TASK_CATALOG.md)
 - [Milestones](docs/engineering/MILESTONES.md)
 - [Dependency map](docs/engineering/DEPENDENCY_MAP.md)
