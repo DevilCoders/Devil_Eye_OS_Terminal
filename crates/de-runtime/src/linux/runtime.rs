@@ -508,6 +508,12 @@ fn signal_number(signal: Signal) -> libc::c_int {
 }
 
 fn map_spawn_error(error: io::Error) -> RuntimeError {
+    if let Some(program_error) = error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<ProgramSpecError>())
+    {
+        return RuntimeError::InvalidProgram(*program_error);
+    }
     if error.kind() == io::ErrorKind::InvalidInput {
         RuntimeError::InvalidArgument
     } else {
