@@ -301,9 +301,6 @@ mod tests {
         assert_eq!(unsafe { libc::fcntl(master_fd, libc::F_GETFD) }, -1);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
         assert_eq!(unsafe { libc::fcntl(slave_fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            io::Error::last_os_error().raw_os_error(),
-            Some(libc::EBADF)
-        );
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
     }
 }
