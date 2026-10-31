@@ -108,7 +108,7 @@ The session manager is the only authority allowed to transition lifecycle state.
 
 ### Spawn
 
-A spawn request contains a `ProgramSpec`, initial `TerminalSize`, and explicit session-scoped options. The runtime returns either:
+The Rust contract is defined in `de-runtime` by `ProcessSpawnRequest`, `IoAttachment`, `RuntimeService`, and `RuntimeProcess`. A request contains a validated `ProgramSpec`, explicit stdio or PTY attachment, and a kill-on-drop policy. The platform adapter returns either:
 
 - A runtime-owned child-session handle and a successful startup result; or
 - A typed error with no leaked file descriptors, child process, or partially registered session.
