@@ -132,12 +132,19 @@ fn wait_for_marker(
     let mut received = Vec::new();
     while !received.windows(marker.len()).any(|window| window == marker) {
         match session.read_output(buffer).expect("read PTY startup marker") {
-            ProcessRead::Data(count) => received.extend_from_slice(&buffer[..count.get()]),
+            ProcessRead::Data(count) => {
+                received.extend_from_slice(&buffer[..count.get()]);
+            }
             ProcessRead::WouldBlock => {
-                assert!(Instant::now() < deadline, "PTY child did not become ready");
+                assert!(
+                    Instant::now() < deadline,
+                    "PTY child did not become ready"
+                );
                 thread::yield_now();
             }
-            ProcessRead::Eof => panic!("PTY closed before readiness marker"),
+            ProcessRead::Eof => {
+                panic!("PTY closed before readiness marker");
+            }
         }
     }
     let marker_end = received
@@ -223,7 +230,7 @@ fn main() {
     let loopback_program = ProgramSpec::new("/bin/sh")
         .expect("shell executable")
         .with_arg("-c")
-         .with_arg("stty raw -echo; printf DE_READY_MARKER; exec /bin/cat");
+        .with_arg("stty raw -echo; printf DE_READY_MARKER; exec /bin/cat");
     let loopback_id = manager
         .create_session(session_spec(loopback_program))
         .expect("spawn PTY loopback process");
