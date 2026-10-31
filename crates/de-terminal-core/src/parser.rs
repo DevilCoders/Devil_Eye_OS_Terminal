@@ -163,7 +163,9 @@ impl Default for VtParser {
 
 impl VtParser {
     pub const fn new() -> Self {
-        Self { state: State::Ground }
+        Self {
+            state: State::Ground,
+        }
     }
 
     /// Returns true when no control sequence is currently incomplete.
@@ -542,9 +544,7 @@ mod tests {
     #[test]
     fn forwards_text_and_executes_c0_controls() {
         let mut parser = VtParser::new();
-        let events = parser
-            .process(b"hi\r\n\t!")
-            .expect("bounded input chunk");
+        let events = parser.process(b"hi\r\n\t!").expect("bounded input chunk");
         assert_eq!(
             events,
             vec![
@@ -576,9 +576,7 @@ mod tests {
     #[test]
     fn preserves_private_parameters_and_intermediates() {
         let mut parser = VtParser::new();
-        let events = parser
-            .process(b"\x1b[?25;1$y")
-            .expect("private CSI");
+        let events = parser.process(b"\x1b[?25;1$y").expect("private CSI");
         let [TerminalEvent::Csi(sequence)] = events.as_slice() else {
             panic!("expected CSI event: {events:?}");
         };
@@ -605,30 +603,38 @@ mod tests {
         let events = parser.process(b"\x1b([ ").expect("ESC intermediate");
         assert_eq!(
             events,
-            vec![TerminalEvent::Escape(super::EscapeSequence {
-                intermediates: [b'(', 0],
-                intermediate_len: 1,
-                final_byte: b'[',
-            }), TerminalEvent::PrintByte(b' ')]
+            vec![
+                TerminalEvent::Escape(super::EscapeSequence {
+                    intermediates: [b'(', 0],
+                    intermediate_len: 1,
+                    final_byte: b'[',
+                }),
+                TerminalEvent::PrintByte(b' ')
+            ]
         );
     }
 
     #[test]
     fn discards_osc_on_bel_and_dcs_on_split_st() {
         let mut parser = VtParser::new();
-        let osc = parser
-            .process(b"\x1b]0;title\x07")
-            .expect("OSC");
+        let osc = parser.process(b"\x1b]0;title\x07").expect("OSC");
         assert_eq!(
             osc,
-            vec![TerminalEvent::UnsupportedControlString(ControlStringKind::Osc)]
+            vec![TerminalEvent::UnsupportedControlString(
+                ControlStringKind::Osc
+            )]
         );
 
-        assert!(parser.process(b"\x1bPpayload\x1b").expect("DCS prefix").is_empty());
+        assert!(parser
+            .process(b"\x1bPpayload\x1b")
+            .expect("DCS prefix")
+            .is_empty());
         let dcs = parser.process(b"\\").expect("DCS terminator");
         assert_eq!(
             dcs,
-            vec![TerminalEvent::UnsupportedControlString(ControlStringKind::Dcs)]
+            vec![TerminalEvent::UnsupportedControlString(
+                ControlStringKind::Dcs
+            )]
         );
     }
 
@@ -686,7 +692,10 @@ mod tests {
         );
         assert!(parser.is_ground());
 
-        assert!(parser.process(b"\x1b]unfinished").expect("OSC prefix").is_empty());
+        assert!(parser
+            .process(b"\x1b]unfinished")
+            .expect("OSC prefix")
+            .is_empty());
         assert_eq!(
             parser.process(b"\x1a").expect("SUB"),
             vec![TerminalEvent::Cancelled]
@@ -734,7 +743,10 @@ mod tests {
         assert!(parser.is_ground());
         assert_eq!(
             parser.process(b"ok").expect("parser reset"),
-            vec![TerminalEvent::PrintByte(b'o'), TerminalEvent::PrintByte(b'k')]
+            vec![
+                TerminalEvent::PrintByte(b'o'),
+                TerminalEvent::PrintByte(b'k')
+            ]
         );
     }
 }
