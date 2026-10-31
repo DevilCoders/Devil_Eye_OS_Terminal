@@ -439,6 +439,32 @@ impl<R: RuntimeService> SessionManager<R> {
         self.limits
     }
 
+    /// Starts session shutdown on a dedicated worker and returns its join handle.
+    ///
+    /// This is the non-blocking entry point for GUI/event-loop callers. The
+    /// session is removed from the active registry immediately; the returned
+    /// handle can be polled with `is_finished` and joined only after completion.
+    /// Dropping the handle detaches the worker, but does not cancel cleanup.
+    pub fn close_session_async(
+        &mut self,
+        id: SessionId,
+    ) -> Result<thread::JoinHandle<Result<(), ServiceError>>, ServiceError>
+    where
+        R::Process: 'static,
+    {
+        let session = self
+            .sessions
+            .remove(&id)
+            .ok_or_else(|| ServiceError::new("terminal session does not exist"))?;
+        thread::Builder::new()
+            .name(format!("de-session-close-{}", id.get()))
+            .spawn(move || {
+                let mut session = session;
+                session.shutdown()
+            })
+            .map_err(|_| ServiceError::new("could not start session shutdown worker"))
+    }
+
     /// Borrows a managed session by identity.
     pub fn session(&self, id: SessionId) -> Result<&ManagedSession<R::Process>, ServiceError> {
         self.sessions
