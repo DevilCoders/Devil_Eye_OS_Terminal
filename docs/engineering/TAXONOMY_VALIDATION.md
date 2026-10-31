@@ -1,64 +1,69 @@
-# Engineering Taxonomy Validation
+# Engineering Taxonomy and Backlog Audit
 
-**Validation date:** 2026-10-31  
-**Scope:** GitHub issue labels, milestones, and automated issue classification for DE-001-05.
+**Audit date:** 2026-10-31  
+**Repository:** `DevilCoders/Devil_Eye_OS_Terminal`
 
-## Taxonomy catalog
+## Scope and inventory
 
-The committed taxonomy workflow defines 37 unique labels:
+The complete repository backlog contains:
 
-| Category | Count | Values |
-| --- | ---: | --- |
-| Type | 4 | epic, task, bug, spike |
-| Priority | 4 | P0, P1, P2, P3 |
-| Status | 6 | planned, todo, in-progress, blocked, review, done |
-| Component | 20 | build, architecture, rust, c-shell, terminal-engine, pty, runtime, ipc-ffi, renderer, gui, security, testing, docs, release, platform, session, config, plugins, productivity, performance |
-| Platform | 3 | linux, windows, macos |
+| Work item | Expected | Audited |
+| --- | ---: | ---: |
+| Epics | 24 | 24 |
+| Tasks | 62 | 62 |
+| Total Issues | 86 | 86 |
 
-The milestone catalog contains all eleven milestones, M0 through M10.
+The taxonomy catalog contains 37 unique labels: 4 type, 4 priority, 6 status, 20 component, and 3 platform labels. The milestone catalog contains M0 through M10 (11 milestones).
 
-GitHub label names are unique per repository. The revised workflow verifies a label by fetching it after a create conflict, reconciles its color/description to the source catalog, and fails if the label cannot actually be retrieved. This avoids silently treating every HTTP 422 response as proof that a label already exists.
+## Metadata audit results
 
-## Existing workflow evidence
+All 86 Issues were checked against the repository taxonomy:
 
-The previous committed workflow completed successfully in these runs:
+- Exactly one `type:*` label per Issue.
+- Exactly one `priority:*` label per Issue.
+- Exactly one `status:*` label per Issue.
+- Exactly one `component:*` label per Issue.
+- No conflicting component or status labels.
+- All 82 Issues that belong to a single milestone have the intended milestone.
+- Four intentional continuous-QA exceptions have no single milestone: #19, #38, #65, and #66.
 
-- [Run 41199534236](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41199534236) — success.
-- [Run 41199738624](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41199738624) — success.
-- [Run 41199905811](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41199905811) — success.
+**Result: 0 taxonomy cardinality anomalies and 0 milestone mismatches after applying the documented continuous-QA/release-gate rules.**
 
-Run 41199905811 reported that it provisioned the taxonomy and eleven milestones and classified 86 open issues. A separate metadata audit of the 86 Epic/Task issues found exactly one label in each of the required type, priority, status, and component categories.
+### Milestone exceptions and special cases
 
-## Classification rules
+- #19 (DE-019 Testing & QA) spans all milestones and therefore has no single milestone.
+- #38, #65, and #66 are continuous testing/QA work items and intentionally have no single milestone.
+- #16 and #22 specify `Continuous; release gate M9`; both are correctly assigned to M9 Release Candidate.
+- #86 was closed as `not_planned` because native GitHub Projects V2 board creation requires owner-side UI actions. It retains its M0 target for historical traceability and is classified as `status:done` because the decision is resolved; it is not a blocker.
 
-- Epic and Task type comes from the issue title prefix.
-- Priority comes from the explicit Priority field in the issue body.
-- Component is derived from the DE-XXX identifier.
-- Platform labels are derived from the explicit Platform field when it identifies Linux, Windows, or macOS.
-- Closed issues receive `status:done`.
-- Open Epics receive `status:planned`.
-- Open Tasks with an open dependency receive `status:blocked`.
-- Open Tasks without an open dependency receive `status:todo`, unless they are already actively in progress or awaiting review.
-- Existing non-taxonomy labels are preserved.
-- Stale taxonomy labels are removed before missing desired labels are added.
+The taxonomy workflow now extracts an explicit milestone code from descriptive targets such as `Continuous; release gate M9`, so those tasks remain correctly assigned even if their milestone field is ever missing.
 
-The revised workflow processes both open and closed issues, not only the open backlog. It also runs when the workflow definition changes on master, so changes to the taxonomy are automatically validated after merge.
+## Dependency readiness audit
 
-## Milestone exceptions
+The dependency workflow was run after upstream issues changed state:
 
-The Testing & QA epic (#19) and its continuous QA tasks (#38, #65, #66) intentionally have no single milestone. Their work spans the full delivery lifecycle rather than belonging to one release milestone. This is an explicit planning exception, not missing classification.
+- #39 closed as completed; #40 and #41 became `status:todo`.
+- #83 closed as completed; #84 became `status:todo`.
+- #84 closed as completed; #85 became `status:todo`.
 
-Issue #86 (manual GitHub Projects V2 setup) was closed with the `not_planned` state reason because project-board creation requires owner-side UI actions and is optional. Its issue body retains the M0 target for historical traceability; the revised workflow reconciles the milestone field while preserving the closed/not-planned resolution. It is not a blocker for the engineering workflow.
+The full open-task audit found zero mismatches between dependency references and status labels. Tasks in `status:in-progress`, `status:review`, or `status:done` retain those protected states.
 
-## Repeatability and failure behavior
+## Workflow evidence
 
-The revised workflow:
-- Uses one canonical list of unique taxonomy labels.
-- Verifies pre-existing labels and corrects their metadata.
-- Creates missing M0–M10 milestones without duplicating existing milestone titles.
-- Reconciles metadata across all repository Issues, including closed work.
-- Preserves active `status:in-progress` and `status:review` states when dependencies are satisfied.
-- Recomputes dependency-blocked status for other open Tasks.
-- Runs on manual dispatch, issue open/reopen/close events, and changes to the workflow on master.
+| Workflow | Run | Result |
+| --- | --- | --- |
+| Engineering taxonomy and issue automation | [#41220261282](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41220261282) | Success |
+| Dependency-aware issue status | [#41220261317](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41220261317) | Success |
+| Repository automation tests | [#41220257111](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41220257111) | Success |
+| Dependency rule unit tests | [#41219861796](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41219861796) | 9 passed, 0 failed |
 
-The updated workflow's first post-merge run is the final verification for this revision; the historical green runs above establish that the provisioning path already executed successfully before the stricter verification was added.
+The taxonomy and dependency workflows both completed successfully after DE-001-06 was merged. The repository automation test workflow also passed on the merged implementation.
+
+## Repeatability
+
+- Taxonomy provisioning runs on manual dispatch, issue open/reopen/close events, and changes to the taxonomy workflow on master.
+- Dependency reconciliation runs on manual dispatch and issue open/reopen/close/edit events.
+- Dependency parsing and status selection are covered by deterministic Node unit tests.
+- Both workflows are idempotent: repeated runs with no metadata or dependency changes perform no label mutations.
+
+The audit is reproducible by rerunning the taxonomy and dependency workflows and comparing their output with this report.
