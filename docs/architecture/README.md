@@ -35,6 +35,10 @@ This directory contains the system architecture baseline, component contracts, a
 - [Application Lifecycle](application-lifecycle.md) — service initialization, rollback, reverse-order shutdown, retry semantics, and integration-test coverage.
 - [Application Errors and Diagnostics](application-diagnostics.md) — stable error categories/codes, safe summaries, source-chain handling, secret redaction, bounded records, and log-injection protection.
 
+## Architecture decision records
+
+- [Architecture Decision Records](decisions/README.md) — ADR format and accepted decisions for Rust/C ownership, terminal/shell separation, PTY session ownership, renderer frame semantics, and Linux-first platform adapters.
+
 ## Required design boundaries
 
 - Rust owns the desktop application, lifecycle, orchestration, GUI, and renderer integration.
