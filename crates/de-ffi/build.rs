@@ -40,9 +40,8 @@ fn main() {
         panic!("DE-Shell FFI native build currently supports Linux x86_64 only");
     }
 
-    let manifest_dir = PathBuf::from(
-        env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"),
-    );
+    let manifest_dir =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"));
     let repository_root = manifest_dir.join("../..");
     let include_dir = repository_root.join("include");
     let c_dir = repository_root.join("c");
@@ -90,7 +89,10 @@ fn main() {
             .arg(&source_path)
             .arg("-o")
             .arg(&object_path);
-        run(&mut command, &format!("C compilation of {}", source_path.display()));
+        run(
+            &mut command,
+            &format!("C compilation of {}", source_path.display()),
+        );
 
         println!("cargo:rerun-if-changed={}", source_path.display());
         objects.push(object_path);
@@ -104,7 +106,11 @@ fn main() {
     let _ = fs::remove_file(&archive);
     let (archiver, archiver_args) = command_parts(env::var("AR").ok(), "ar");
     let mut command = Command::new(archiver);
-    command.args(archiver_args).arg("crus").arg(&archive).args(&objects);
+    command
+        .args(archiver_args)
+        .arg("crus")
+        .arg(&archive)
+        .args(&objects);
     run(&mut command, "DE-Shell static archive creation");
 
     println!("cargo:rustc-link-search=native={}", out_dir.display());
