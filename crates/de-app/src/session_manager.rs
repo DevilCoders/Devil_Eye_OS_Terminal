@@ -527,16 +527,35 @@ impl<R: RuntimeService> SessionManager<R> {
             *active += 1;
         }
 
+        let session = Arc::new(Mutex::new(Some(session)));
+        let worker_session = Arc::clone(&session);
         let worker_counter = Arc::clone(&counter);
         match thread::Builder::new()
             .name(format!("de-session-close-{}", id.get()))
             .spawn(move || {
                 let _guard = CloseWorkerGuard(worker_counter);
-                let mut session = session;
+                let mut session = worker_session
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_else(|| unreachable!("close worker owns the session once"));
                 session.shutdown()
             }) {
             Ok(handle) => Ok(handle),
             Err(_) => {
+                // A failed spawn drops the closure. Recover its shared owner
+                // before returning so ManagedSession::drop cannot synchronously
+                // terminate/reap the child on the GUI/event-loop thread.
+                let session = match Arc::try_unwrap(session) {
+                    Ok(session) => session,
+                    Err(_) => unreachable!("failed thread spawn must drop its closure"),
+                };
+                let session = session
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .unwrap_or_else(|| unreachable!("session remains available on spawn failure"));
+                self.sessions.insert(id, session);
+
                 let (lock, wake) = &*counter;
                 let mut active = lock
                     .lock()
@@ -704,6 +723,11 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
         ids
     }
 
+    /// Closes a session synchronously, including bounded child-process waits.
+    ///
+    /// This blocking method must never be called on a GUI/event-loop thread.
+    /// GUI callers must use the asynchronous close API and join only after
+    /// the returned worker handle reports completion.
     fn close_session(&mut self, id: SessionId) -> Result<(), ServiceError> {
         let session = self
             .sessions
