@@ -490,8 +490,7 @@ impl<R: RuntimeService> SessionManager<R> {
                 let _guard = CloseWorkerGuard(worker_counter);
                 let mut session = session;
                 session.shutdown()
-            })
-        {
+            }) {
             Ok(handle) => Ok(handle),
             Err(_) => {
                 let (lock, wake) = &*counter;
