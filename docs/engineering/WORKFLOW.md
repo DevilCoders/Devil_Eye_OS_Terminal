@@ -42,6 +42,8 @@ Every Task must have a stable ID, parent Epic, priority, status, component, plat
 - Protected `status:in-progress`, `status:review`, and `status:done` states are not overwritten by dependency reconciliation.
 - Avoid circular dependencies. The task owner must resolve cycles before work starts.
 
+The full 86-Issue taxonomy and milestone audit is recorded in [Taxonomy Validation](TAXONOMY_VALIDATION.md). Dependency readiness rules and automated tests are described in [Dependency Status Automation](DEPENDENCY_AUTOMATION.md).
+
 ## Definition of Done
 
 - Implementation meets all acceptance criteria.
