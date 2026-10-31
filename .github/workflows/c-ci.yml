@@ -30,14 +30,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        compiler:
+          - GCC
+          - Clang
+        build_type:
+          - Debug
+          - Release
         include:
           - compiler: GCC
             cc: gcc
           - compiler: Clang
             cc: clang
-        build_type:
-          - Debug
-          - Release
     env:
       CC: ${{ matrix.cc }}
     steps:
