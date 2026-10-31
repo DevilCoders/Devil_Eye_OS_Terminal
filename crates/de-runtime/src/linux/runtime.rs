@@ -598,7 +598,7 @@ mod tests {
         let program = ProgramSpec::new("/bin/sh")
             .expect("program")
             .with_arg("-c")
-            .with_arg("printf '%s:%s' "$PWD" "$DE_RUNTIME_TEST"; printf 'stderr-data' >&2")
+            .with_arg("printf '%s:%s' \"$PWD\" \"$DE_RUNTIME_TEST\"; printf 'stderr-data' >&2")
             .with_env("DE_RUNTIME_TEST", "runtime-ok")
             .with_working_directory("/tmp");
         let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(pipe_config()))
