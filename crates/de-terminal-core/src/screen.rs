@@ -658,6 +658,8 @@ impl TerminalScreen {
     }
 
     /// Resizes the grid, clamps the cursor, and preserves/clamps the scrolling region.
+    ///
+    /// If the old region collapses after shrinking, the active region resets to the full screen.
     pub fn resize(&mut self, size: TerminalSize) -> Result<(), ScreenGridError> {
         self.grid.resize(size)?;
         self.cursor.row = self.cursor.row.min(size.rows() - 1u16);
