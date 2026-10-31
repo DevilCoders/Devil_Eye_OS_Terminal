@@ -962,6 +962,12 @@ mod tests {
         let cursor_damage = DamageTracker::new(terminal_size, 4).unwrap();
         render_frame(&mut renderer, &cursor_screen, &cursor_damage, None, None).unwrap();
         assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(255, 255, 0)));
+
+        cursor_screen
+            .set_grapheme(0, 1, "x", GraphemeWidth::Single, CellAttributes::default())
+            .unwrap();
+        render_frame(&mut renderer, &cursor_screen, &cursor_damage, None, None).unwrap();
+        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(0, 0, 0)));
     }
 
     #[test]
