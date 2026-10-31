@@ -278,6 +278,17 @@ impl InputMapper {
         if let Some(action) = self.shortcuts.get(chord) {
             return InputResult::Shortcut(action);
         }
+        if event.modifiers.control() {
+            if let KeyCode::Character(character) = event.code {
+                let normalized = KeyChord::new(
+                    KeyCode::Character(character.to_ascii_lowercase()),
+                    event.modifiers,
+                );
+                if let Some(action) = self.shortcuts.get(normalized) {
+                    return InputResult::Shortcut(action);
+                }
+            }
+        }
 
         if event.modifiers.super_key() {
             return InputResult::Ignored;
@@ -318,7 +329,8 @@ impl InputMapper {
 fn map_control_character(character: char, alt: bool) -> InputResult {
     let upper = character.to_ascii_uppercase();
     let control_byte = match upper {
-        '@'..='_' => (upper as u8) & 0x1f,
+        ' ' | '@' => 0x00,
+        'A'..='_' => (upper as u8) & 0x1f,
         '?' => 0x7f,
         _ => return InputResult::Ignored,
     };
@@ -377,7 +389,21 @@ fn map_special_key(code: KeyCode, modifiers: Modifiers, modes: KeyboardModes) ->
     if bytes.is_empty() {
         InputResult::Ignored
     } else {
-        if modifiers.alt() && !matches!(code, KeyCode::Tab if modifiers.shift()) {
+        let modifier_encoded = matches!(
+            code,
+            KeyCode::ArrowUp
+                | KeyCode::ArrowDown
+                | KeyCode::ArrowLeft
+                | KeyCode::ArrowRight
+                | KeyCode::Home
+                | KeyCode::End
+                | KeyCode::Insert
+                | KeyCode::Delete
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Function(_)
+        ) || matches!(code, KeyCode::Tab if modifiers.shift());
+        if modifiers.alt() && !modifier_encoded {
             bytes.insert(0, 0x1b);
         }
         InputResult::Bytes(bytes)
