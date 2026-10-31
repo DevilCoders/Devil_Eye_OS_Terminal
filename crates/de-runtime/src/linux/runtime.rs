@@ -2,11 +2,10 @@
 
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::num::NonZerousize;
+use std::num::NonZeroUsize;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -457,7 +456,7 @@ fn read_nonblocking<R: Read>(
         match stream.read(output) {
             Ok(0) => return Ok(ReadOutcome::Eof),
             Ok(count) => {
-                let count = NonZerousize::new(count).ok_or(RuntimeError::IoFailed)?;
+                let count = NonZeroUsize::new(count).ok_or(RuntimeError::IoFailed)?;
                 return Ok(ReadOutcome::Data(count));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -477,7 +476,7 @@ fn write_nonblocking<W: Write>(stream: &mut W, input: &[u8]) -> Result<WriteOutc
         match stream.write(input) {
             Ok(0) => return Err(RuntimeError::IoFailed),
             Ok(count) => {
-                let count = NonZerousize::new(count).ok_or(RuntimeError::IoFailed)?;
+                let count = NonZeroUsize::new(count).ok_or(RuntimeError::IoFailed)?;
                 return Ok(WriteOutcome::Written(count));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -528,7 +527,7 @@ mod tests {
         RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
         StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
-    use std::num::NonZerousize;
+    use std::num::NonZeroUsize;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -613,8 +612,8 @@ mod tests {
             process.wait().expect("wait shell"),
             ProcessExitStatus::Exited(0)
         );
-        let stdout = read_to_eof(&mut process, false).expect("read stdout");
-        let stderr = read_to_eof(&mut process, true).expect("read stderr");
+        let stdout = read_to_eof(process.as_mut(), false).expect("read stdout");
+        let stderr = read_to_eof(process.as_mut(), true).expect("read stderr");
 
         assert_eq!(
             String::from_utf8(stdout).expect("UTF-8 stdout"),
@@ -643,7 +642,7 @@ mod tests {
             process.wait().expect("wait PTY child"),
             ProcessExitStatus::Exited(0)
         );
-        let output = read_to_eof(&mut process, false).expect("read PTY output");
+        let output = read_to_eof(process.as_mut(), false).expect("read PTY output");
         assert!(String::from_utf8(output)
             .expect("UTF-8 PTY output")
             .contains("pty-output"));
@@ -666,7 +665,7 @@ mod tests {
         assert_eq!(
             process.write_stdin(b"input-data"),
             Ok(WriteOutcome::Written(
-                NonZerousize::new(10usize).expect("nonzero")
+                NonZeroUsize::new(10usize).expect("nonzero")
             ))
         );
         process.close_stdin().expect("close stdin");
@@ -676,7 +675,7 @@ mod tests {
             ProcessExitStatus::Exited(0)
         );
         assert_eq!(
-            read_to_eof(&mut process, false).expect("read echoed input"),
+            read_to_eof(process.as_mut(), false).expect("read echoed input"),
             b"input-data"
         );
     }
