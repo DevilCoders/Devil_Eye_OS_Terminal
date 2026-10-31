@@ -249,11 +249,7 @@ impl Diagnostic {
     }
 
     /// Adds a context field. Values under sensitive keys are always redacted.
-    pub fn with_context(
-        mut self,
-        key: impl AsRef<str>,
-        value: impl AsRef<str>,
-    ) -> Self {
+    pub fn with_context(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
         let safe_key = sanitize_text(key.as_ref(), MAX_KEY_LENGTH);
         let safe_value = if is_sensitive_key(&safe_key) {
             REDACTED_VALUE.to_owned()
