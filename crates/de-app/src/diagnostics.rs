@@ -367,11 +367,7 @@ const MAX_MESSAGE_LENGTH: usize = 1024;
 const MAX_CONTEXT_VALUE_LENGTH: usize = 256;
 
 fn is_sensitive_key(key: &str) -> bool {
-    let normalized = key
-        .to_ascii_lowercase()
-        .replace('-', "_")
-        .replace('.', "_")
-        .replace(' ', "_");
+    let normalized = key.to_ascii_lowercase().replace(['-', '.', ' '], "_");
     [
         "password",
         "passwd",
