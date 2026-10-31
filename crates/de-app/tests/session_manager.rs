@@ -25,6 +25,7 @@ struct MockProcessState {
     write_blocked: bool,
     resize_fails: bool,
     graceful_terminates: bool,
+    close_input_exit_race: bool,
     wait_fails: bool,
     shutdown_thread: Option<thread::ThreadId>,
     wait_gate: Option<(Arc<Barrier>, Arc<Barrier>)>,
@@ -108,7 +109,13 @@ impl RuntimeProcess for MockProcess {
     }
 
     fn close_input(&mut self) -> Result<(), ServiceError> {
-        self.state.lock().unwrap().input_closed = true;
+        let mut state = self.state.lock().unwrap();
+        state.input_closed = true;
+        if state.close_input_exit_race {
+            state.close_input_exit_race = false;
+            state.exit = Some(ProcessExit::Exited { code: 0 });
+            return Err(ServiceError::new("process already exited"));
+        }
         Ok(())
     }
 
@@ -269,6 +276,67 @@ fn asynchronous_close_runs_blocking_shutdown_on_a_worker_thread() {
         "blocking process cleanup must run away from the caller thread"
     );
     assert!(process_state.lock().unwrap().dropped);
+}
+
+#[test]
+fn asynchronous_closing_sessions_count_against_the_session_limit() {
+    let state = Arc::new(Mutex::new(MockRuntimeState::default()));
+    let mut manager = initialized_manager(Arc::clone(&state), limits(1, 1024, 1024));
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create initial session");
+    let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    process_state.lock().unwrap().wait_gate = Some((Arc::clone(&entered), Arc::clone(&release)));
+
+    let close = manager
+        .close_session_async(id)
+        .expect("start asynchronous close");
+    entered.wait();
+
+    assert!(
+        manager
+            .create_session(spec(SessionKind::ExternalProgram))
+            .is_err(),
+        "an in-flight close still owns a process and must count against the session limit"
+    );
+    assert_eq!(state.lock().unwrap().spawn_count, 1);
+
+    release.wait();
+    close
+        .join()
+        .expect("close worker must not panic")
+        .expect("close worker must finish");
+
+    manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("a replacement is allowed after the close worker releases its process");
+    assert_eq!(state.lock().unwrap().spawn_count, 2);
+}
+
+#[test]
+fn close_session_treats_child_exit_during_input_close_as_success() {
+    let state = Arc::new(Mutex::new(MockRuntimeState::default()));
+    let mut manager = initialized_manager(Arc::clone(&state), limits(1, 1024, 1024));
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
+    let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
+    process_state.lock().unwrap().close_input_exit_race = true;
+
+    manager
+        .close_session(id)
+        .expect("an already-exited child is a successful cleanup race");
+
+    let process = process_state.lock().unwrap();
+    assert_eq!(process.exit, Some(ProcessExit::Exited { code: 0 }));
+    assert!(process.input_closed);
+    assert!(
+        process.termination_modes.is_empty(),
+        "no termination request is needed after the child has exited"
+    );
+    assert!(process.dropped);
 }
 
 #[test]
