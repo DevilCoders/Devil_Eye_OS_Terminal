@@ -24,6 +24,7 @@ struct MockProcessState {
     write_blocked: bool,
     resize_fails: bool,
     graceful_terminates: bool,
+    wait_fails: bool,
 }
 
 #[derive(Debug, Default)]
@@ -133,7 +134,11 @@ impl RuntimeProcess for MockProcess {
     }
 
     fn try_wait(&mut self) -> Result<Option<ProcessExit>, ServiceError> {
-        Ok(self.state.lock().unwrap().exit)
+        let state = self.state.lock().unwrap();
+        if state.wait_fails {
+            return Err(ServiceError::new("mock wait failure"));
+        }
+        Ok(state.exit)
     }
 }
 
@@ -249,6 +254,32 @@ fn observed_child_exit_transitions_session_and_rejects_new_input() {
 
     manager.close_session(id).expect("close exited session");
     assert!(process_state.lock().unwrap().dropped);
+}
+
+#[test]
+fn output_bytes_are_returned_even_if_child_status_polling_would_fail() {
+    let state = Arc::new(Mutex::new(MockRuntimeState::default()));
+    let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create session");
+    let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
+    {
+        let mut process = process_state.lock().unwrap();
+        process.output.extend(b"preserve-output");
+        process.wait_fails = true;
+    }
+
+    let mut buffer = [0u8; 32];
+    let result = manager
+        .session_mut(id)
+        .expect("session")
+        .read_output(&mut buffer)
+        .expect("read must not be coupled to wait polling");
+    let ProcessRead::Data(count) = result else {
+        panic!("expected output bytes, got {result:?}");
+    };
+    assert_eq!(&buffer[..count.get()], b"preserve-output");
 }
 
 #[test]
