@@ -539,7 +539,8 @@ pub trait RuntimeService: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{
-        IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
+        EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
+        ProcessSpawnRequest, ProgramSpec,
         ProgramSpecError, PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess,
         RuntimeService, Signal, StdioConfig, StreamAttachment, TerminalSize, TerminalSizeError,
         TerminationMode, WriteOutcome,
