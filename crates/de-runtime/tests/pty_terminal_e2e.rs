@@ -1,8 +1,8 @@
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
-    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig,
-    ReadOutcome, RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize,
-    TerminationMode, WriteOutcome,
+    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
+    RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize, TerminationMode,
+    WriteOutcome,
 };
 use de_terminal_core::parser::{TerminalEvent, VtParser};
 use de_terminal_core::screen::{
