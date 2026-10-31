@@ -488,11 +488,11 @@ impl InputEventMapper {
 
         let (base_code, is_motion, is_release) = match event.kind {
             MouseEventKind::Press(button) => (button_code(button), false, false),
-            MouseEventKind::Release(_button) => {
+            MouseEventKind::Release(button) => {
                 if tracking == MouseTrackingMode::X10 {
                     return Ok(InputResult::Ignored);
                 }
-                (3, false, true)
+                (button_code(button), false, true)
             }
             MouseEventKind::Move { held_button } => {
                 let button = match (tracking, held_button) {
@@ -532,7 +532,8 @@ impl InputEventMapper {
                     .try_reserve_exact(6)
                     .map_err(|_| MouseMappingError::AllocationFailed)?;
                 bytes.extend_from_slice(b"\x1b[M");
-                bytes.push(code + 32);
+                let legacy_code = if is_release { 3 + modifier_bits } else { code };
+                bytes.push(legacy_code + 32);
                 bytes.push(x as u8 + 32);
                 bytes.push(y as u8 + 32);
                 Ok(InputResult::Bytes(bytes))
