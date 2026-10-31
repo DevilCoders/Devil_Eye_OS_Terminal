@@ -257,10 +257,11 @@ impl Application {
     /// resources. The returned handle can be polled with is_finished; join it
     /// only after completion.
     ///
-    /// If the operating system cannot create the worker thread, the original
-    /// application is returned with the I/O error so the caller can retry or
-    /// arrange cleanup on another lifecycle worker. No service is dropped as
-    /// a side effect of a failed worker spawn.
+    /// If cleanup fails, joining the worker returns the still-owned application
+    /// together with the lifecycle error. Failed services remain available for
+    /// a later retry. If the operating system cannot create the worker thread,
+    /// the original application is returned with the I/O error and no service
+    /// is dropped as a side effect of the failed spawn.
     pub fn shutdown_async(
         self,
     ) -> Result<
