@@ -169,20 +169,17 @@ fn round_trip(
 ) {
     session.send_input(payload).expect("queue PTY input");
     let deadline = Instant::now() + Duration::from_secs(10);
-
-    while session.pending_input_bytes() > 0 {
-        let written = session.flush_input().expect("flush PTY input");
-        if written == 0 {
-            assert!(
-                Instant::now() < deadline,
-                "PTY input remained backpressured"
-            );
-            thread::yield_now();
-        }
-    }
-
     let mut received = 0usize;
-    while received < payload.len() {
+
+    // Drain PTY output while flushing input. Waiting for the entire input
+    // queue to empty before reading can deadlock when the child blocks on a
+    // full PTY output buffer and therefore stops consuming input.
+    while session.pending_input_bytes() > 0 || received < payload.len() {
+        let mut progressed = false;
+        if session.pending_input_bytes() > 0 {
+            progressed |= session.flush_input().expect("flush PTY input") > 0;
+        }
+
         match session.read_output(buffer).expect("read PTY echo") {
             ProcessRead::Data(count) => {
                 let count = count.get();
@@ -197,12 +194,15 @@ fn round_trip(
                     "PTY loopback changed payload bytes"
                 );
                 received = end;
+                progressed = true;
             }
-            ProcessRead::WouldBlock => {
-                assert!(Instant::now() < deadline, "PTY loopback timed out");
-                thread::yield_now();
-            }
+            ProcessRead::WouldBlock => {}
             ProcessRead::Eof => panic!("PTY reached EOF during loopback"),
+        }
+
+        if !progressed {
+            assert!(Instant::now() < deadline, "PTY loopback timed out");
+            thread::yield_now();
         }
     }
 }
