@@ -13,7 +13,7 @@ use std::fs;
 use std::hint::black_box;
 use std::mem::size_of_val;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,7 @@ use de_terminal_core::render::{
 use de_terminal_core::screen::{CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen};
 use de_terminal_core::TerminalSize;
 
+static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
 static ALLOCATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
 
@@ -37,7 +38,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // SAFETY: the requested layout is forwarded unchanged to System.
         let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
+        if !pointer.is_null() && COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
         }
@@ -52,7 +53,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         // SAFETY: pointer and its original layout came from this same System allocator.
         let resized = unsafe { System.realloc(pointer, layout, new_size) };
-        if !resized.is_null() {
+        if !resized.is_null() && COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOCATED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
         }
@@ -63,10 +64,21 @@ unsafe impl GlobalAlloc for CountingAllocator {
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
+struct AllocationCountingGuard;
+
+impl Drop for AllocationCountingGuard {
+    fn drop(&mut self) {
+        COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    }
+}
+
 fn report_allocations(name: &str, operation: impl FnOnce()) {
     let count_before = ALLOCATION_COUNT.load(Ordering::Relaxed);
     let bytes_before = ALLOCATED_BYTES.load(Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+    let guard = AllocationCountingGuard;
     operation();
+    drop(guard);
     let count = ALLOCATION_COUNT.load(Ordering::Relaxed) - count_before;
     let bytes = ALLOCATED_BYTES.load(Ordering::Relaxed) - bytes_before;
     println!("# allocations_{name}_count={count}");
