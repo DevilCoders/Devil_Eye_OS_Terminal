@@ -364,6 +364,20 @@ pub struct SoftwareRenderer {
     force_full_redraw: bool,
 }
 
+struct GlyphDraw<'a> {
+    bitmap: &'a GlyphBitmap,
+    cell_x: u32,
+    cell_y: u32,
+    available_width: u32,
+    cell_height: u32,
+    scale_factor: ScaleFactor,
+    clip_left: u32,
+    clip_right: u32,
+    foreground: Rgba,
+    bold: bool,
+    italic: bool,
+}
+
 impl SoftwareRenderer {
     pub fn new(
         size: TerminalSize,
@@ -506,17 +520,19 @@ impl SoftwareRenderer {
                 let bitmap = self.atlas.get(value.as_str());
                 Self::draw_glyph(
                     &mut self.surface,
-                    bitmap,
-                    x,
-                    y,
-                    available_width,
-                    self.cell_height,
-                    self.scale_factor,
-                    clip_left,
-                    clip_right,
-                    foreground,
-                    styles.contains(StyleFlags::BOLD),
-                    styles.contains(StyleFlags::ITALIC),
+                    GlyphDraw {
+                        bitmap,
+                        cell_x: x,
+                        cell_y: y,
+                        available_width,
+                        cell_height: self.cell_height,
+                        scale_factor: self.scale_factor,
+                        clip_left,
+                        clip_right,
+                        foreground,
+                        bold: styles.contains(StyleFlags::BOLD),
+                        italic: styles.contains(StyleFlags::ITALIC),
+                    },
                 );
 
                 let draw_left = x.max(clip_left);
@@ -596,73 +612,62 @@ impl SoftwareRenderer {
                     let bitmap = self.atlas.get(value.as_str());
                     Self::draw_glyph(
                         &mut self.surface,
-                        bitmap,
-                        x,
-                        y,
-                        self.cell_width.saturating_mul(span),
-                        self.cell_height,
-                        self.scale_factor,
-                        clip_left.max(x),
-                        clip_right,
-                        self.palette.cursor_foreground,
-                        styles.contains(StyleFlags::BOLD),
-                        styles.contains(StyleFlags::ITALIC),
+                        GlyphDraw {
+                            bitmap,
+                            cell_x: x,
+                            cell_y: y,
+                            available_width: self.cell_width.saturating_mul(span),
+                            cell_height: self.cell_height,
+                            scale_factor: self.scale_factor,
+                            clip_left: clip_left.max(x),
+                            clip_right,
+                            foreground: self.palette.cursor_foreground,
+                            bold: styles.contains(StyleFlags::BOLD),
+                            italic: styles.contains(StyleFlags::ITALIC),
+                        },
                     );
                 }
             }
         }
     }
 
-    fn draw_glyph(
-        surface: &mut PixelSurface,
-        bitmap: &GlyphBitmap,
-        cell_x: u32,
-        cell_y: u32,
-        available_width: u32,
-        cell_height: u32,
-        scale_factor: ScaleFactor,
-        clip_left: u32,
-        clip_right: u32,
-        foreground: Rgba,
-        bold: bool,
-        italic: bool,
-    ) {
-        let scale = scale_factor.get();
-        let glyph_width = (f32::from(bitmap.width) * scale).ceil() as u32;
-        let glyph_height = (f32::from(bitmap.height) * scale).ceil() as u32;
-        let x_offset = available_width.saturating_sub(glyph_width) / 2;
-        let y_offset = cell_height.saturating_sub(glyph_height) / 2;
-        let draw_width = glyph_width.min(available_width.saturating_sub(x_offset));
-        let draw_height = glyph_height.min(cell_height.saturating_sub(y_offset));
+    fn draw_glyph(surface: &mut PixelSurface, draw: GlyphDraw<'_>) {
+        let scale = draw.scale_factor.get();
+        let glyph_width = (f32::from(draw.bitmap.width) * scale).ceil() as u32;
+        let glyph_height = (f32::from(draw.bitmap.height) * scale).ceil() as u32;
+        let x_offset = draw.available_width.saturating_sub(glyph_width) / 2;
+        let y_offset = draw.cell_height.saturating_sub(glyph_height) / 2;
+        let draw_width = glyph_width.min(draw.available_width.saturating_sub(x_offset));
+        let draw_height = glyph_height.min(draw.cell_height.saturating_sub(y_offset));
 
         for destination_y in 0..draw_height {
             let source_y = ((destination_y as f32) / scale).floor() as u32;
-            if source_y >= u32::from(bitmap.height) {
+            if source_y >= u32::from(draw.bitmap.height) {
                 continue;
             }
-            let italic_offset = if italic {
+            let italic_offset = if draw.italic {
                 (glyph_height - destination_y) / 4
             } else {
                 0
             };
             for destination_x in 0..draw_width {
                 let source_x = ((destination_x as f32) / scale).floor() as u32;
-                if source_x >= u32::from(bitmap.width) {
+                if source_x >= u32::from(draw.bitmap.width) {
                     continue;
                 }
                 let alpha_index = (source_y * u32::from(bitmap.width) + source_x) as usize;
-                let coverage = bitmap.alpha[alpha_index];
-                let x = cell_x + x_offset + destination_x + italic_offset;
-                let y = cell_y + y_offset + destination_y;
-                if x < clip_left || x >= clip_right || x >= cell_x + available_width {
+                let coverage = draw.bitmap.alpha[alpha_index];
+                let x = draw.cell_x + x_offset + destination_x + italic_offset;
+                let y = draw.cell_y + y_offset + destination_y;
+                if x < draw.clip_left || x >= draw.clip_right || x >= draw.cell_x + draw.available_width {
                     continue;
                 }
-                surface.blend_pixel(x, y, foreground, coverage);
-                if bold
-                    && x.saturating_add(1) < clip_right
-                    && x.saturating_add(1) < cell_x + available_width
+                surface.blend_pixel(x, y, draw.foreground, coverage);
+                if draw.bold
+                    && x.saturating_add(1) < draw.clip_right
+                    && x.saturating_add(1) < draw.cell_x + draw.available_width
                 {
-                    surface.blend_pixel(x + 1, y, foreground, coverage);
+                    surface.blend_pixel(x + 1, y, draw.foreground, coverage);
                 }
             }
         }
