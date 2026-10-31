@@ -277,13 +277,15 @@ fn reap_detached_child(child: Child) {
                     while index < children.len() {
                         match children[index].try_wait() {
                             Ok(Some(_)) => {
-                                children.swap_remove(index);
+                                let mut child = children.swap_remove(index);
+                                let _ = child.wait();
                             }
                             Ok(None) => {
                                 index += 1usize;
                             }
                             Err(error) if error.raw_os_error() == Some(libc::ECHILD) => {
-                                children.swap_remove(index);
+                                let mut child = children.swap_remove(index);
+                                let _ = child.wait();
                             }
                             Err(_error) => {
                                 index += 1usize;
