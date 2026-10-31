@@ -655,7 +655,7 @@ impl SoftwareRenderer {
                 if source_x >= u32::from(draw.bitmap.width) {
                     continue;
                 }
-                let alpha_index = (source_y * u32::from(bitmap.width) + source_x) as usize;
+                let alpha_index = (source_y * u32::from(draw.bitmap.width) + source_x) as usize;
                 let coverage = draw.bitmap.alpha[alpha_index];
                 let x = draw.cell_x + x_offset + destination_x + italic_offset;
                 let y = draw.cell_y + y_offset + destination_y;
