@@ -1,4 +1,5 @@
 #include "de_shell/abi.h"
+#include "de_shell/shell.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -54,9 +55,34 @@ static int test_version_compatibility(void)
     return 0;
 }
 
+
+static int test_c_owned_handle_lifecycle(void)
+{
+    de_shell_t *shell = NULL;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK || shell == NULL) {
+        (void)fprintf(stderr, "C library did not create an owned shell handle\\n");
+        return 1;
+    }
+
+    if (de_shell_destroy(&shell) != DE_SHELL_STATUS_OK || shell != NULL) {
+        (void)fprintf(stderr, "C library did not clear the destroyed shell handle\\n");
+        return 1;
+    }
+
+    if (de_shell_destroy(&shell) != DE_SHELL_STATUS_OK) {
+        (void)fprintf(stderr, "NULL shell cleanup was not idempotent\\n");
+        return 1;
+    }
+
+    return 0;
+}
+
 int main(void)
 {
-    if (test_version_query() != 0 || test_version_compatibility() != 0) {
+    if (test_version_query() != 0
+        || test_version_compatibility() != 0
+        || test_c_owned_handle_lifecycle() != 0) {
         return 1;
     }
 
