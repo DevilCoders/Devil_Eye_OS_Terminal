@@ -264,10 +264,7 @@ impl Application {
     /// is dropped as a side effect of the failed spawn.
     pub fn shutdown_async(
         self,
-    ) -> Result<
-        thread::JoinHandle<Result<(), (Self, LifecycleError)>>,
-        (Self, io::Error),
-    > {
+    ) -> Result<thread::JoinHandle<Result<(), (Self, LifecycleError)>>, (Self, io::Error)> {
         let application = Arc::new(Mutex::new(Some(self)));
         let worker_application = Arc::clone(&application);
         let result = thread::Builder::new()
@@ -294,7 +291,9 @@ impl Application {
                 let application = application
                     .into_inner()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .unwrap_or_else(|| unreachable!("application remains available on spawn failure"));
+                    .unwrap_or_else(|| {
+                        unreachable!("application remains available on spawn failure")
+                    });
                 Err((application, error))
             }
         }
