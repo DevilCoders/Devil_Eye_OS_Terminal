@@ -192,3 +192,51 @@ unsafe fn parse_external_command<'a>(
         working_directory,
     })
 }
+
+
+pub(super) fn query_abi_version(out_version: &mut RawAbiVersion) -> c_int {
+    // SAFETY: the reference guarantees writable storage with the required layout.
+    unsafe { de_shell_get_abi_version(out_version) }
+}
+
+pub(super) fn check_abi_version(requested_version: &RawAbiVersion) -> c_int {
+    // SAFETY: the reference guarantees readable storage with the required layout.
+    unsafe { de_shell_check_abi_version(requested_version) }
+}
+
+pub(super) fn create_shell(out_shell: &mut *mut DeShellOpaque) -> c_int {
+    // SAFETY: the reference guarantees writable pointer storage.
+    unsafe { de_shell_create(out_shell) }
+}
+
+pub(super) fn destroy_shell(shell: &mut *mut DeShellOpaque) -> c_int {
+    // SAFETY: the pointer is the owned handle variable returned by create_shell.
+    unsafe { de_shell_destroy(shell) }
+}
+
+pub(super) fn execute_source(
+    shell: *mut DeShellOpaque,
+    source: &[u8],
+    context: &RawExecutionContext,
+    out_result: &mut RawExecutionResult,
+    out_diagnostic: &mut RawExecutionDiagnostic,
+) -> c_int {
+    // SAFETY: the safe wrapper keeps all source, context, callback, and output
+    // storage alive for this synchronous call and exclusively borrows shell.
+    unsafe {
+        de_shell_execute_source(
+            shell,
+            source.as_ptr(),
+            source.len(),
+            context,
+            out_result,
+            out_diagnostic,
+        )
+    }
+}
+
+#[cfg(test)]
+pub(super) fn create_shell_with_null_output() -> c_int {
+    // SAFETY: this intentionally exercises the C API's documented NULL path.
+    unsafe { de_shell_create(std::ptr::null_mut()) }
+}
