@@ -10,7 +10,6 @@ use std::num::NonZeroUsize;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use de_runtime::ProgramSpec;
 use de_terminal_core::TerminalSize;
 
 use crate::lifecycle::{ApplicationService, ServiceError};
