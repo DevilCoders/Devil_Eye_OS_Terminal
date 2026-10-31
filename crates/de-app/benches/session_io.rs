@@ -142,10 +142,7 @@ fn wait_for_marker(
                 received.extend_from_slice(&buffer[..count.get()]);
             }
             ProcessRead::WouldBlock => {
-                assert!(
-                    Instant::now() < deadline,
-                    "PTY child did not become ready"
-                );
+                assert!(Instant::now() < deadline, "PTY child did not become ready");
                 thread::yield_now();
             }
             ProcessRead::Eof => {
