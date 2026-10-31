@@ -1000,10 +1000,7 @@ mod tests {
         assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(0, 0, 0)));
 
         render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
-        assert_eq!(
-            renderer.surface().pixel(3, 0),
-            Some(Rgba::rgb(255, 255, 0))
-        );
+        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(255, 255, 0)));
     }
 
     #[test]
