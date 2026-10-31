@@ -154,7 +154,7 @@ impl PtyPair {
     }
 }
 
-fn duplicate_cloexec(fd: RawFd) -> io::Result<OwnedFd> {
+pub(super) fn duplicate_cloexec(fd: RawFd) -> io::Result<OwnedFd> {
     let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
     if duplicate == -1 {
         return Err(io::Error::last_os_error());
@@ -164,7 +164,7 @@ fn duplicate_cloexec(fd: RawFd) -> io::Result<OwnedFd> {
     Ok(unsafe { OwnedFd::from_raw_fd(duplicate) })
 }
 
-fn set_window_size(fd: RawFd, size: TerminalSize) -> io::Result<()> {
+pub(super) fn set_window_size(fd: RawFd, size: TerminalSize) -> io::Result<()> {
     let window_size = libc::winsize {
         ws_row: size.rows(),
         ws_col: size.columns(),
