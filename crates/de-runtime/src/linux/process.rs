@@ -286,7 +286,7 @@ fn reap_detached_child(child: Child) {
                                 children.swap_remove(index);
                             }
                             Err(_error) => {
-                                index += 1Usize;
+                                index += 1usize;
                             }
                         }
                     }
