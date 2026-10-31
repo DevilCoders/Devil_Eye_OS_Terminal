@@ -66,11 +66,12 @@ All task records below are GitHub Issues. Each task links to its parent Epic and
 | DE-001-05 | #83 | Provision and validate GitHub engineering taxonomy | #1 |
 | DE-001-06 | #84 | Implement dependency-aware task readiness automation | #1 |
 | DE-001-07 | #85 | Audit and normalize backlog metadata | #1 |
+| DE-001-08 | #86 | Create and configure GitHub Projects engineering board | #1 |
 
 ## Coverage
 
 - 24 Epics: #1–#24.
-- 61 implementation tasks: #25–#85.
+- 62 implementation tasks: #25–#86.
 - 10 delivery milestones: M0–M10 (11 milestones including M0).
 - Initial critical-path tasks are explicitly ordered in the Dependency Map.
 
