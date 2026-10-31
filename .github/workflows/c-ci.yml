@@ -1,0 +1,54 @@
+name: C CI
+
+on:
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "c/**"
+      - "include/**"
+      - ".github/workflows/c-ci.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "CMakeLists.txt"
+      - "c/**"
+      - "include/**"
+      - ".github/workflows/c-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: CMake / ${{ matrix.compiler }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: GCC
+            cc: gcc
+          - compiler: Clang
+            cc: clang
+        build_type:
+          - Debug
+          - Release
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
