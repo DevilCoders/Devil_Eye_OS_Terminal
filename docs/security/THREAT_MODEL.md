@@ -89,7 +89,7 @@ Assumption: the OS kernel and the current user's account boundary are trusted. A
 | T-12 | Path or symlink race redirects file/process operations | Tampering / Elevation | High | Validate path inputs; avoid privileged writes; use OS-safe open/exec APIs; define symlink policy for persistence | Runtime validation exists; persistence policy remains to be implemented |
 | T-13 | Future plugin obtains ambient core privileges | Elevation / Information Disclosure | Critical | Capability-based permissions; deny by default; separate process boundary where practical; resource quotas; revocation | Plugin model not implemented; must be designed before plugin execution |
 | T-14 | Dependency or build action compromise contaminates release | Tampering / Elevation | High | Pinned toolchain; lockfile review; minimal dependencies; pinned action revisions; artifact integrity checks and provenance | Rust toolchain pinned; dependency/release controls remain in release tasks |
-| T-15 | Renderer consumes malformed dimensions or glyph data | Tampering / DoS | High | Validate dimensions and bitmap lengths; checked pixel arithmetic; bounded surfaces; safe fallback glyph | Software renderer under review; screen bounds and renderer contracts exist |
+| T-15 | Renderer consumes malformed dimensions or glyph data | Tampering / DoS | High | Validate dimensions and bitmap lengths; checked pixel arithmetic; bounded surfaces; safe fallback glyph | Headless CPU software renderer is implemented in master; glyph validation, checked surface arithmetic, pixel limits, clipping, and redraw regression tests are present. GPU/window integration and font discovery remain separate work. |
 
 Severity is based on plausible impact to the user's account, terminal process execution, application integrity, and availability. It is not a claim that every listed threat is currently exploitable.
 
@@ -179,8 +179,8 @@ Fuzz targets should be deterministic, bounded, and runnable in CI. A fuzz failur
 
 The following distinction prevents design intent from being mistaken for shipped protection:
 
-- **Implemented in current master:** validated `ProgramSpec` values; separate executable/argument/environment fields; Rust/C ABI types and versioning foundation; terminal screen dimension limits; structured application diagnostics; Linux PTY/process runtime with kill-on-drop behavior; pinned Rust toolchain and CI.
-- **Under review in open PRs:** paste/mouse/focus input policy (#125); software renderer (#124); session lifecycle manager and per-session I/O limits (#127); strict configuration schema (#128).
+- **Implemented in current master:** validated `ProgramSpec` values; separate executable/argument/environment fields; Rust/C ABI types and versioning foundation; terminal screen dimension limits; structured application diagnostics; Linux PTY/process runtime with kill-on-drop behavior; headless CPU software renderer with bounded surface/glyph validation and clipped redraw; paste/mouse/focus input mapping; strict versioned configuration schema; Linux platform capability reporting; pinned Rust toolchain and CI.
+- **Under review in open PRs:** DE-Shell grammar/semantics specification (#126); session lifecycle manager and per-session I/O limits (#127); Linux process/environment hardening (#130, Draft); architecture decision records (#132).
 - **Not yet implemented:** complete side-effecting OSC policy, full parser fuzz coverage, persistent configuration atomic-write/backup flow, plugin capability isolation, complete cross-session adversarial integration suite, release artifact provenance/signing.
 
 An open PR is not a shipped mitigation. Release qualification must re-evaluate this table against the merged `master` branch.
