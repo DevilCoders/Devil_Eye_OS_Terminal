@@ -376,9 +376,7 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
                                     "wait after graceful termination",
                                     error,
                                 );
-                                if let Err(force_error) =
-                                    process.terminate(TerminationMode::Force)
-                                {
+                                if let Err(force_error) = process.terminate(TerminationMode::Force) {
                                     Self::push_failure(
                                         &mut failures,
                                         "force termination",
