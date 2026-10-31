@@ -124,7 +124,7 @@ fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpec
     let canonical = fs::canonicalize(candidate).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
             ProgramSpecError::ExecutableNotFound
-        },
+        }
         io::ErrorKind::PermissionDenied => ProgramSpecError::ExecutableNotExecutable,
         _ => ProgramSpecError::PathResolutionFailed,
     })?;
@@ -507,11 +507,8 @@ mod tests {
         fs::create_dir(&root).expect("create temporary directory");
         let not_directory = root.join("not-a-directory");
         fs::write(&not_directory, b"file, not directory").expect("create PATH file component");
-        let path = std::env::join_paths([
-            not_directory.as_os_str(),
-            std::ffi::OsStr::new("/bin"),
-        ])
-        .expect("join PATH components");
+        let path = std::env::join_paths([not_directory.as_os_str(), std::ffi::OsStr::new("/bin")])
+            .expect("join PATH components");
         let program = ProgramSpec::new("sh")
             .expect("bare executable")
             .clear_environment()
