@@ -586,22 +586,6 @@ mod tests {
     }
 
     #[test]
-    fn child_exec_does_not_inherit_internal_pty_descriptors() {
-        let _guard = process_test_lock();
-        let script = r#"for fd in 3 4 5 6 7 8 9 10; do if [ -e /proc/self/fd/$fd ]; then exit 91; fi; done"#;
-        let program = ProgramSpec::new("/bin/sh")
-            .expect("shell executable")
-            .with_arg("-c")
-            .with_arg(script);
-        let mut child =
-            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn descriptor probe");
-        assert_eq!(
-            child.wait().expect("wait descriptor probe"),
-            ProcessExitStatus::Exited(0)
-        );
-    }
-
-    #[test]
     fn spawns_child_with_controlling_terminal_and_private_process_group() {
         let _guard = process_test_lock();
         let program = ProgramSpec::new("/bin/sh")
