@@ -1,7 +1,5 @@
 //! Linux child-process lifecycle attached to an owned PTY.
 
-#![allow(unsafe_code)] // Unsafe operations are confined to this audited Linux process boundary.
-
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
