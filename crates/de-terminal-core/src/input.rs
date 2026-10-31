@@ -365,7 +365,7 @@ fn map_special_key(code: KeyCode, modifiers: Modifiers, modes: KeyboardModes) ->
             } else {
                 format!("\x1b[1;{modifier}Z")
             })
-        },
+        }
         KeyCode::Tab => {
             bytes.push(b'\t');
             None
@@ -431,7 +431,11 @@ fn cursor_sequence(final_byte: u8, modifiers: Modifiers, modes: KeyboardModes) -
             format!("\x1b[{}", char::from(final_byte))
         }
     } else {
-        format!("\x1b[1;{}{}", modifiers.xterm_parameter(), char::from(final_byte))
+        format!(
+            "\x1b[1;{}{}",
+            modifiers.xterm_parameter(),
+            char::from(final_byte)
+        )
     }
 }
 
