@@ -60,7 +60,6 @@ mod tests {
     }
 }
 
-
 pub mod lifecycle;
 
 pub use lifecycle::{
