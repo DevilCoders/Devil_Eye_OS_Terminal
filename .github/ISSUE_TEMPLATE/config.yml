@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Engineering roadmap
+    url: https://github.com/DevilCoders/Devil_Eye_OS_Terminal/blob/master/docs/engineering/ROADMAP.md
+    about: Review the epic map, milestones, and execution order before opening duplicate work.
