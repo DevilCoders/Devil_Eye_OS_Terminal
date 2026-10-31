@@ -38,7 +38,8 @@ Every Task must have a stable ID, parent Epic, priority, status, component, plat
 
 - Use explicit GitHub issue references in the Dependencies section: `Blocked by #N` and `Blocks #N`.
 - A blocked task must carry `status:blocked`; do not start it without documenting an approved exception.
-- When an upstream task closes, reassess directly dependent tasks.
+- When an upstream task closes or reopens, the dependency automation recomputes readiness across all open Tasks. See [Dependency Status Automation](DEPENDENCY_AUTOMATION.md).
+- Protected `status:in-progress`, `status:review`, and `status:done` states are not overwritten by dependency reconciliation.
 - Avoid circular dependencies. The task owner must resolve cycles before work starts.
 
 ## Definition of Done

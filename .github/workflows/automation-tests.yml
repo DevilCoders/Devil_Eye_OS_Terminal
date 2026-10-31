@@ -1,0 +1,40 @@
+name: Repository automation tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/dependency-status.yml"
+      - ".github/workflows/automation-tests.yml"
+      - "tests/automation/**"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/dependency-status.yml"
+      - ".github/workflows/automation-tests.yml"
+      - "tests/automation/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-status:
+    name: Dependency status rule tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run dependency status tests
+        run: node --test tests/automation/dependency-status.test.cjs
