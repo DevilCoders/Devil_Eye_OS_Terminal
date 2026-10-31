@@ -21,7 +21,7 @@ No host environment or process working directory is read or mutated by the C lib
 The C core does not call `system()`, `popen()`, `fork()`, `exec()`, or an implicit shell interpreter. The host supplies `de_shell_external_executor_t`, which receives:
 
 - `executable`: exactly `argv[0]`.
-- `argc` and `argv`: separately decoded arguments; no command-line concatenation.
+- `argc` and `argv`: separately decoded arguments; no command-line concatenation. The pointer array contains exactly `argc` arguments followed by a NULL sentinel.
 - Explicit environment key/value pairs.
 - Optional working directory.
 
