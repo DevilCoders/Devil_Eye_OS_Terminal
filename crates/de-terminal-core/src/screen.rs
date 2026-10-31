@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn column_resize_clears_scrollback_without_reflow_but_row_resize_preserves_it() {
-        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 8usize, 8usize)
+        let mut screen = TerminalScreen::new_with_scrollback(size(2u16, 2u16), 12usize, 8usize)
             .expect("screen with scrollback");
         screen
             .set_grapheme(
