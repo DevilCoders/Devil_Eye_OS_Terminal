@@ -97,7 +97,7 @@ The warmed render call allocated exactly once for both full-frame and dirty-row 
 
 The first optimization removes that temporary vector without changing damage semantics or pixel composition. Expected result: zero allocations in warmed render calls. Throughput must be measured separately; allocation reduction alone is not a claim of frame-time improvement.
 
-The benchmark does not measure retained scrollback because that component does not yet exist. CPU samples are per-sample means; p95 is across the 12 sample means, not individual-operation tail latency.
+The initial renderer profiling runs predate bounded scrollback and therefore contain no retained-history measurements. The dedicated scrollback append/eviction and traversal workloads are tracked separately in the DE-020-02 benchmark follow-up. CPU samples are per-sample means; p95 is across the 12 sample means, not individual-operation tail latency.
 
 ### After first optimization — 2026-10-31
 
