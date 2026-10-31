@@ -311,49 +311,89 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
                 // request; those operations may legitimately return ECHILD.
                 Ok(Some(status)) => self.exit_status = Some(status),
                 Ok(None) => {
-                    if let Err(error) = process.close_input() {
-                        Self::push_failure(&mut failures, "close session input", error);
-                    }
-                    if let Err(error) = process.terminate(TerminationMode::Graceful) {
-                        Self::push_failure(&mut failures, "request graceful termination", error);
-                    }
-                    match Self::wait_for_exit(process, self.graceful_shutdown_timeout) {
-                        Ok(Some(status)) => self.exit_status = Some(status),
-                        Ok(None) => {
-                            if let Err(error) = process.terminate(TerminationMode::Force) {
-                                Self::push_failure(&mut failures, "force termination", error);
+                    // A child can exit between the initial try_wait and closing
+                    // stdin. Linux PTY adapters may report ProcessAlreadyExited
+                    // for that benign race; recheck before recording a cleanup
+                    // failure or sending termination signals.
+                    let mut child_exited = false;
+                    if let Err(close_error) = process.close_input() {
+                        match process.try_wait() {
+                            Ok(Some(status)) => {
+                                self.exit_status = Some(status);
+                                child_exited = true;
                             }
-                            match Self::wait_for_exit(process, self.forced_shutdown_timeout) {
-                                Ok(Some(status)) => self.exit_status = Some(status),
-                                Ok(None) => failures.push(
-                                    "child did not report exit before the forced-shutdown deadline; \
-                                     dropping the kill-on-drop runtime handle"
-                                        .to_owned(),
-                                ),
-                                Err(error) => Self::push_failure(
-                                    &mut failures,
-                                    "wait after force termination",
-                                    error,
-                                ),
-                            }
-                        }
-                        Err(error) => {
-                            Self::push_failure(
+                            Ok(None) => Self::push_failure(
                                 &mut failures,
-                                "wait after graceful termination",
-                                error,
-                            );
-                            if let Err(force_error) = process.terminate(TerminationMode::Force) {
-                                Self::push_failure(&mut failures, "force termination", force_error);
-                            }
-                            if let Err(wait_error) =
-                                Self::wait_for_exit(process, self.forced_shutdown_timeout)
-                            {
+                                "close session input",
+                                close_error,
+                            ),
+                            Err(wait_error) => {
                                 Self::push_failure(
                                     &mut failures,
-                                    "wait after force termination",
+                                    "close session input",
+                                    close_error,
+                                );
+                                Self::push_failure(
+                                    &mut failures,
+                                    "recheck child after input-close failure",
                                     wait_error,
                                 );
+                            }
+                        }
+                    }
+
+                    if !child_exited {
+                        if let Err(error) = process.terminate(TerminationMode::Graceful) {
+                            Self::push_failure(
+                                &mut failures,
+                                "request graceful termination",
+                                error,
+                            );
+                        }
+                        match Self::wait_for_exit(process, self.graceful_shutdown_timeout) {
+                            Ok(Some(status)) => self.exit_status = Some(status),
+                            Ok(None) => {
+                                if let Err(error) = process.terminate(TerminationMode::Force) {
+                                    Self::push_failure(&mut failures, "force termination", error);
+                                }
+                                match Self::wait_for_exit(process, self.forced_shutdown_timeout) {
+                                    Ok(Some(status)) => self.exit_status = Some(status),
+                                    Ok(None) => failures.push(
+                                        "child did not report exit before the forced-shutdown deadline; \
+                                         dropping the kill-on-drop runtime handle"
+                                            .to_owned(),
+                                    ),
+                                    Err(error) => Self::push_failure(
+                                        &mut failures,
+                                        "wait after force termination",
+                                        error,
+                                    ),
+                                }
+                            }
+                            Err(error) => {
+                                Self::push_failure(
+                                    &mut failures,
+                                    "wait after graceful termination",
+                                    error,
+                                );
+                                if let Err(force_error) =
+                                    process.terminate(TerminationMode::Force)
+                                {
+                                    Self::push_failure(
+                                        &mut failures,
+                                        "force termination",
+                                        force_error,
+                                    );
+                                }
+                                if let Err(wait_error) =
+                                    Self::wait_for_exit(process, self.forced_shutdown_timeout)
+                                {
+                                    Self::push_failure(
+                                        &mut failures,
+                                        "wait after force termination",
+                                        wait_error,
+                                    );
+                                }
                             }
                         }
                     }
@@ -455,6 +495,14 @@ impl<R: RuntimeService> SessionManager<R> {
     /// Returns the immutable resource limits used by this manager.
     pub const fn limits(&self) -> SessionManagerLimits {
         self.limits
+    }
+
+    /// Number of sessions whose process handles are still owned by close workers.
+    fn active_closing_sessions(&self) -> usize {
+        let (lock, _) = &*self.closing_workers;
+        *lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Starts session shutdown on a dedicated worker and returns its join handle.
@@ -612,7 +660,14 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
                 "session manager is not accepting sessions",
             ));
         }
-        if self.sessions.len() >= self.limits.max_sessions() {
+        // Async close removes a session from the active registry before its
+        // process/PTY handle is released. Count those in-flight owners as live
+        // sessions so repeated close-and-replace cycles cannot exceed the cap.
+        let owned_sessions = self
+            .sessions
+            .len()
+            .saturating_add(self.active_closing_sessions());
+        if owned_sessions >= self.limits.max_sessions() {
             return Err(ServiceError::new("maximum terminal session count reached"));
         }
         if spec.kind() != SessionKind::ExternalProgram {
