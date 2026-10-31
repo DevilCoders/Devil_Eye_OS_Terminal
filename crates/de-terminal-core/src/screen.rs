@@ -314,7 +314,9 @@ impl ScreenGrid {
 
     /// Clears a cell and the other half of a wide-grapheme pair, if present.
     pub fn set_empty(&mut self, row: u16, column: u16) -> Result<(), ScreenGridError> {
-        let index = self.index(row, column).ok_or(ScreenGridError::OutOfBounds)?;
+        let index = self
+            .index(row, column)
+            .ok_or(ScreenGridError::OutOfBounds)?;
         self.clear_cell_pair(index);
         Ok(())
     }
