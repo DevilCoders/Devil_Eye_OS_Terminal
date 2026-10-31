@@ -568,6 +568,7 @@ de_shell_status_t de_shell_execute_source(
     de_shell_lex_status_t lex_status;
     de_shell_parse_status_t parse_status;
     de_shell_status_t status = DE_SHELL_STATUS_INTERNAL_ERROR;
+    const unsigned char *embedded_nul = NULL;
 
     if (out_result != NULL) {
         out_result->exit_code = 0;
@@ -612,13 +613,15 @@ de_shell_status_t de_shell_execute_source(
         return DE_SHELL_STATUS_RESOURCE_LIMIT;
     }
 
-    if (source_length != 0U
-        && memchr(source, '\0', source_length) != NULL) {
+    if (source_length != 0U) {
+        embedded_nul = memchr(source, '\0', source_length);
+    }
+    if (embedded_nul != NULL) {
         de_shell_set_diagnostic(
             out_diagnostic,
             DE_SHELL_EXECUTION_STAGE_INPUT,
             (int)DE_SHELL_LEX_STATUS_INVALID_BYTE,
-            SIZE_MAX);
+            (size_t)(embedded_nul - source));
         return DE_SHELL_STATUS_PARSE_ERROR;
     }
 
