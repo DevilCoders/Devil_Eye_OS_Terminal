@@ -219,13 +219,9 @@ mod tests {
     use crate::TerminalSize;
     use std::io;
     use std::os::fd::AsRawFd;
-    use std::sync::Mutex;
-
-    static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn allocates_tty_descriptors_with_cloexec_and_initial_dimensions() {
-        let _guard = PTY_TEST_LOCK.lock().expect("PTY test lock");
+        let _guard = super::super::test_resource_lock();
         let size = TerminalSize::new(100, 37).expect("valid dimensions");
         let pair = PtyPair::open(size).expect("allocate PTY pair");
 
@@ -243,7 +239,7 @@ mod tests {
 
     #[test]
     fn applies_canonical_echo_and_signal_termios_defaults() {
-        let _guard = PTY_TEST_LOCK.lock().expect("PTY test lock");
+        let _guard = super::super::test_resource_lock();
         let pair = PtyPair::open(TerminalSize::default()).expect("allocate PTY pair");
         let mut settings = std::mem::MaybeUninit::<libc::termios>::uninit();
 
@@ -265,7 +261,7 @@ mod tests {
 
     #[test]
     fn resize_updates_kernel_and_cached_dimensions_atomically() {
-        let _guard = PTY_TEST_LOCK.lock().expect("PTY test lock");
+        let _guard = super::super::test_resource_lock();
         let initial = TerminalSize::new(80, 24).expect("initial dimensions");
         let resized = TerminalSize::new(132, 43).expect("resized dimensions");
         let mut pair = PtyPair::open(initial).expect("allocate PTY pair");
@@ -277,7 +273,7 @@ mod tests {
 
     #[test]
     fn cloned_descriptors_have_independent_ownership() {
-        let _guard = PTY_TEST_LOCK.lock().expect("PTY test lock");
+        let _guard = super::super::test_resource_lock();
         let pair = PtyPair::open(TerminalSize::default()).expect("allocate PTY pair");
         let master = pair.try_clone_master().expect("clone master");
         let slave = pair.try_clone_slave().expect("clone slave");
@@ -290,7 +286,7 @@ mod tests {
 
     #[test]
     fn dropping_pair_closes_both_owned_descriptors() {
-        let _guard = PTY_TEST_LOCK.lock().expect("PTY test lock");
+        let _guard = super::super::test_resource_lock();
         let pair = PtyPair::open(TerminalSize::default()).expect("allocate PTY pair");
         let master_fd = pair.master().as_raw_fd();
         let slave_fd = pair.slave().as_raw_fd();
