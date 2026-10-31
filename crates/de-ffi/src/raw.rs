@@ -7,9 +7,7 @@ use std::ffi::{c_char, c_int, c_void, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::slice;
 
-use super::{
-    CallbackContext, DeStatus, EnvironmentEntry, ExternalCommand, ExternalExecutionError,
-};
+use super::{CallbackContext, DeStatus, EnvironmentEntry, ExternalCommand, ExternalExecutionError};
 
 pub(super) const MAX_ARGUMENTS: usize = 256;
 pub(super) const MAX_ENVIRONMENT_ENTRIES: usize = 256;
@@ -163,9 +161,8 @@ unsafe fn parse_external_command<'a>(
 
     let mut environment = Vec::with_capacity(command.environment_count);
     if command.environment_count != 0 {
-        let entries = unsafe {
-            slice::from_raw_parts(command.environment, command.environment_count)
-        };
+        let entries =
+            unsafe { slice::from_raw_parts(command.environment, command.environment_count) };
         for entry in entries {
             if entry.key.is_null() || entry.value.is_null() {
                 return Err(DeStatus::INVALID_ARGUMENT);
