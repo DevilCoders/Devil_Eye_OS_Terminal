@@ -4,6 +4,7 @@
 //! upstream input/parser layer supplies grapheme boundaries and display width;
 //! the grid enforces storage, cell-pair, indexing, and allocation invariants.
 
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 
@@ -501,20 +502,126 @@ pub enum EraseMode {
     All,
 }
 
-/// Screen grid plus cursor and scrolling-region state.
+/// Bounded chronological history of complete rows displaced by full-screen scrolling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ScrollbackBuffer {
+    rows: VecDeque<Vec<Cell>>,
+    max_cells: usize,
+    columns: u16,
+}
+
+impl ScrollbackBuffer {
+    fn new(columns: u16, max_cells: usize) -> Self {
+        Self {
+            rows: VecDeque::new(),
+            max_cells,
+            columns,
+        }
+    }
+
+    fn max_rows(&self) -> usize {
+        self.max_cells / usize::from(self.columns)
+    }
+
+    fn cell_count(&self) -> usize {
+        self.rows.len() * usize::from(self.columns)
+    }
+
+    fn clear(&mut self) {
+        self.rows.clear();
+    }
+
+    fn resize_columns(&mut self, columns: u16) {
+        if self.columns != columns {
+            self.rows.clear();
+            self.columns = columns;
+        }
+    }
+
+    fn append_from_grid(
+        &mut self,
+        grid: &ScreenGrid,
+        first_row: u16,
+        count: u16,
+    ) -> Result<(), ScreenGridError> {
+        let max_rows = self.max_rows();
+        let rows_to_capture = usize::from(count).min(max_rows);
+        if rows_to_capture == 0usize {
+            return Ok(());
+        }
+
+        // If more rows scroll out than history can retain, only the newest
+        // rows can survive the operation. Avoid allocating discarded rows.
+        let first_offset = usize::from(count) - rows_to_capture;
+        let mut captured = Vec::new();
+        captured
+            .try_reserve_exact(rows_to_capture)
+            .map_err(|_| ScreenGridError::AllocationFailed)?;
+        for offset in first_offset..usize::from(count) {
+            let row_index = first_row
+                .checked_add(u16::try_from(offset).map_err(|_| ScreenGridError::DimensionOverflow)?)
+                .ok_or(ScreenGridError::DimensionOverflow)?;
+            let source = grid
+                .row_cells(row_index)
+                .ok_or(ScreenGridError::OutOfBounds)?;
+            let mut row = Vec::new();
+            row.try_reserve_exact(source.len())
+                .map_err(|_| ScreenGridError::AllocationFailed)?;
+            row.extend_from_slice(source);
+            captured.push(row);
+        }
+
+        let current_rows = self.rows.len();
+        let evictions = current_rows
+            .saturating_add(rows_to_capture)
+            .saturating_sub(max_rows);
+        let final_rows = current_rows - evictions + rows_to_capture;
+        let additional = final_rows.saturating_sub(current_rows);
+        self.rows
+            .try_reserve(additional)
+            .map_err(|_| ScreenGridError::AllocationFailed)?;
+
+        for _ in 0..evictions {
+            self.rows.pop_front();
+        }
+        for row in captured {
+            self.rows.push_back(row);
+        }
+        Ok(())
+    }
+}
+
+/// Screen grid, cursor, scrolling-region state, and optional bounded scrollback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalScreen {
     grid: ScreenGrid,
     cursor: CursorPosition,
     scroll_region: ScrollRegion,
+    scrollback: ScrollbackBuffer,
 }
 
 impl TerminalScreen {
+    /// Creates a screen with scrollback disabled for compatibility and minimal memory use.
     pub fn new(size: TerminalSize, max_cells: usize) -> Result<Self, ScreenGridError> {
+        Self::new_with_scrollback(size, max_cells, 0usize)
+    }
+
+    /// Creates a screen with a hard scrollback payload limit expressed in cells.
+    ///
+    /// Rows are retained at their original column width. Changing the screen's
+    /// column count clears history rather than silently reflowing old rows.
+    /// The effective row capacity is `max_scrollback_cells / columns`; any
+    /// remainder is unused. Row metadata is also bounded by that row capacity.
+    pub fn new_with_scrollback(
+        size: TerminalSize,
+        max_cells: usize,
+        max_scrollback_cells: usize,
+    ) -> Result<Self, ScreenGridError> {
         Ok(Self {
             grid: ScreenGrid::new(size, max_cells)?,
             cursor: CursorPosition::default(),
             scroll_region: ScrollRegion::full(size),
+            scrollback: ScrollbackBuffer::new(size.columns(), max_scrollback_cells),
         })
     }
 
@@ -533,6 +640,32 @@ impl TerminalScreen {
     /// Returns a read-only grid view; dimension changes must go through TerminalScreen::resize.
     pub const fn grid(&self) -> &ScreenGrid {
         &self.grid
+    }
+
+    /// Returns retained rows from oldest to newest. Each row has the width
+    /// that was active when it entered history; no implicit reflow is applied.
+    pub fn scrollback_rows(&self) -> impl Iterator<Item = &[Cell]> {
+        self.scrollback.rows.iter().map(Vec::as_slice)
+    }
+
+    /// Returns the number of retained rows.
+    pub fn scrollback_row_count(&self) -> usize {
+        self.scrollback.rows.len()
+    }
+
+    /// Returns the number of retained cell slots.
+    pub fn scrollback_cell_count(&self) -> usize {
+        self.scrollback.cell_count()
+    }
+
+    /// Returns the configured maximum retained cell slots.
+    pub const fn max_scrollback_cells(&self) -> usize {
+        self.scrollback.max_cells
+    }
+
+    /// Drops all retained history without changing the visible screen.
+    pub fn clear_scrollback(&mut self) {
+        self.scrollback.clear();
     }
 
     /// Writes one grapheme without exposing mutable access to grid dimensions.
@@ -617,6 +750,13 @@ impl TerminalScreen {
     }
 
     pub fn scroll_up(&mut self, count: u16) -> Result<(), ScreenGridError> {
+        if count > 0u16
+            && self.scroll_region.top == 0u16
+            && self.scroll_region.bottom == self.size().rows() - 1u16
+        {
+            self.scrollback
+                .append_from_grid(&self.grid, 0u16, count.min(self.size().rows()))?;
+        }
         self.grid.scroll_rows(
             self.scroll_region.top,
             self.scroll_region.bottom,
@@ -682,6 +822,7 @@ impl TerminalScreen {
     /// If the old region collapses after shrinking, the active region resets to the full screen.
     pub fn resize(&mut self, size: TerminalSize) -> Result<(), ScreenGridError> {
         self.grid.resize(size)?;
+        self.scrollback.resize_columns(size.columns());
         self.cursor.row = self.cursor.row.min(size.rows() - 1u16);
         self.cursor.column = self.cursor.column.min(size.columns() - 1u16);
 
@@ -787,6 +928,220 @@ mod tests {
         assert_eq!(row_text(2u16), "");
         assert_eq!(row_text(3u16), "D");
         assert_eq!(screen.cursor().row(), 2u16);
+    }
+
+    #[test]
+    fn full_screen_scroll_retains_complete_rows_in_chronological_order() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
+                .expect("screen with scrollback");
+        for (row, value) in [(0u16, "A"), (1u16, "B")] {
+            screen
+                .set_grapheme(
+                    row,
+                    0u16,
+                    value,
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("write row marker");
+        }
+
+        screen.scroll_up(1u16).expect("scroll full screen");
+
+        let history: Vec<_> = screen
+            .scrollback_rows()
+            .map(|row| match row[0].content() {
+                CellContent::Grapheme { value, .. } => value.as_str().to_owned(),
+                other => panic!("unexpected retained cell: {other:?}"),
+            })
+            .collect();
+        assert_eq!(history, ["A"]);
+        assert_eq!(screen.scrollback_cell_count(), 3usize);
+        assert_eq!(
+            screen.grid().get_cell(0u16, 0u16).expect("visible top").content(),
+            CellContent::Grapheme {
+                value: Grapheme::new("B").expect("grapheme"),
+                width: GraphemeWidth::Single,
+            }
+        );
+    }
+
+    #[test]
+    fn scrollback_evicts_oldest_rows_and_never_exceeds_cell_limit() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+                .expect("screen with bounded scrollback");
+        for (row, value) in [(0u16, "A"), (1u16, "B")] {
+            screen
+                .set_grapheme(
+                    row,
+                    0u16,
+                    value,
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("write row marker");
+        }
+
+        screen.scroll_up(2u16).expect("scroll two rows");
+        assert_eq!(screen.scrollback_row_count(), 2usize);
+        assert_eq!(screen.scrollback_cell_count(), 4usize);
+
+        screen
+            .set_grapheme(
+                1u16,
+                0u16,
+                "C",
+                GraphemeWidth::Single,
+                CellAttributes::default(),
+            )
+            .expect("write next row");
+        screen.scroll_up(1u16).expect("scroll next row");
+
+        let history: Vec<_> = screen
+            .scrollback_rows()
+            .map(|row| match row[0].content() {
+                CellContent::Grapheme { value, .. } => value.as_str().to_owned(),
+                CellContent::Empty => String::new(),
+                CellContent::Continuation => panic!("unexpected continuation"),
+            })
+            .collect();
+        assert_eq!(history, ["B", ""]);
+        assert!(screen.scrollback_cell_count() <= screen.max_scrollback_cells());
+    }
+
+    #[test]
+    fn partial_region_and_downward_scroll_do_not_append_history() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(2u16, 4u16), 8usize, 8usize)
+                .expect("screen with scrollback");
+        for (row, value) in [(0u16, "A"), (1u16, "B"), (2u16, "C"), (3u16, "D")] {
+            screen
+                .set_grapheme(
+                    row,
+                    0u16,
+                    value,
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("write row marker");
+        }
+
+        screen.set_scroll_region(1u16, 2u16).expect("partial region");
+        screen.scroll_up(1u16).expect("partial scroll");
+        screen.scroll_down(1u16).expect("partial scroll down");
+        assert_eq!(screen.scrollback_row_count(), 0usize);
+
+        screen.reset_scroll_region();
+        screen.scroll_down(1u16).expect("full-screen scroll down");
+        assert_eq!(screen.scrollback_row_count(), 0usize);
+    }
+
+    #[test]
+    fn line_feed_at_full_screen_bottom_retains_top_row() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+                .expect("screen with scrollback");
+        screen
+            .set_grapheme(
+                0u16,
+                0u16,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::default(),
+            )
+            .expect("write first row");
+        screen.set_cursor(1u16, 0u16);
+        screen.line_feed().expect("line feed at bottom");
+        assert_eq!(screen.scrollback_row_count(), 1usize);
+        assert!(matches!(
+            screen.scrollback_rows().next().expect("history row")[0].content(),
+            CellContent::Grapheme { value, .. } if value.as_str() == "A"
+        ));
+    }
+
+    #[test]
+    fn wide_grapheme_pairs_are_preserved_in_scrollback_rows() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(3u16, 2u16), 6usize, 6usize)
+                .expect("screen with scrollback");
+        screen
+            .set_grapheme(
+                0u16,
+                0u16,
+                "界",
+                GraphemeWidth::Wide,
+                CellAttributes::default(),
+            )
+            .expect("write wide grapheme");
+        screen.scroll_up(1u16).expect("scroll full screen");
+        let row = screen.scrollback_rows().next().expect("retained row");
+        assert!(matches!(
+            row[0].content(),
+            CellContent::Grapheme { width: GraphemeWidth::Wide, .. }
+        ));
+        assert!(matches!(row[1].content(), CellContent::Continuation));
+    }
+
+    #[test]
+    fn scrollback_is_disabled_at_zero_capacity_and_clears_explicitly() {
+        let mut disabled =
+            TerminalScreen::new(size(2u16, 2u16), 4usize).expect("screen without scrollback");
+        disabled.scroll_up(1u16).expect("scroll without history");
+        assert_eq!(disabled.scrollback_row_count(), 0usize);
+        assert_eq!(disabled.max_scrollback_cells(), 0usize);
+
+        let mut enabled =
+            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 4usize, 4usize)
+                .expect("screen with history");
+        enabled
+            .set_grapheme(
+                0u16,
+                0u16,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::default(),
+            )
+            .expect("write row");
+        enabled.scroll_up(1u16).expect("scroll");
+        enabled.clear_scrollback();
+        assert_eq!(enabled.scrollback_row_count(), 0usize);
+        assert_eq!(enabled.scrollback_cell_count(), 0usize);
+    }
+
+    #[test]
+    fn column_resize_clears_scrollback_without_reflow_but_row_resize_preserves_it() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(2u16, 2u16), 8usize, 8usize)
+                .expect("screen with scrollback");
+        screen
+            .set_grapheme(
+                0u16,
+                0u16,
+                "A",
+                GraphemeWidth::Single,
+                CellAttributes::default(),
+            )
+            .expect("write row");
+        screen.scroll_up(1u16).expect("scroll");
+        assert_eq!(screen.scrollback_row_count(), 1usize);
+
+        screen.resize(size(2u16, 3u16)).expect("resize row count");
+        assert_eq!(screen.scrollback_row_count(), 1usize);
+
+        screen.resize(size(3u16, 3u16)).expect("resize columns");
+        assert_eq!(screen.scrollback_row_count(), 0usize);
+    }
+
+    #[test]
+    fn scrollback_capacity_smaller_than_one_row_retains_nothing() {
+        let mut screen =
+            TerminalScreen::new_with_scrollback(size(4u16, 2u16), 8usize, 3usize)
+                .expect("screen with sub-row history capacity");
+        screen.scroll_up(1u16).expect("scroll");
+        assert_eq!(screen.scrollback_row_count(), 0usize);
+        assert_eq!(screen.scrollback_cell_count(), 0usize);
     }
 
     #[test]
