@@ -13,3 +13,7 @@ workspace = true
 [[bench]]
 name = "terminal_core"
 harness = false
+
+[[bench]]
+name = "renderer_allocations"
+harness = false
