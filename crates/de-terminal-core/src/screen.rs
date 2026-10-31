@@ -534,8 +534,25 @@ impl TerminalScreen {
         &self.grid
     }
 
-    pub fn grid_mut(&mut self) -> &mut ScreenGrid {
-        &mut self.grid
+    /// Writes one grapheme without exposing mutable access to grid dimensions.
+    pub fn set_grapheme(
+        &mut self,
+        row: u16,
+        column: u16,
+        value: &str,
+        width: GraphemeWidth,
+        attributes: CellAttributes,
+    ) -> Result<(), ScreenGridError> {
+        self.grid.set_grapheme(row, column, value, width, attributes)
+    }
+
+    /// Clears one cell while preserving wide-grapheme pair invariants.
+    pub fn set_empty(&mut self, row: u16, column: u16) -> Result<(), ScreenGridError> {
+        self.grid.set_empty(row, column)
+    }
+
+    pub fn get_cell(&self, row: u16, column: u16) -> Option<&Cell> {
+        self.grid.get_cell(row, column)
     }
 
     /// Sets the cursor, clamping both coordinates to the current screen bounds.
@@ -744,7 +761,6 @@ mod tests {
         let mut screen = TerminalScreen::new(size(2u16, 4u16), 8usize).expect("screen");
         for (row, value) in [(0u16, "A"), (1u16, "B"), (2u16, "C"), (3u16, "D")] {
             screen
-                .grid_mut()
                 .set_grapheme(
                     row,
                     0u16,
@@ -775,7 +791,6 @@ mod tests {
         let mut screen = TerminalScreen::new(size(2u16, 4u16), 8usize).expect("screen");
         for (row, value) in [(1u16, "B"), (2u16, "C")] {
             screen
-                .grid_mut()
                 .set_grapheme(
                     row,
                     0u16,
@@ -809,7 +824,6 @@ mod tests {
         for row in 0u16..3u16 {
             for column in 0u16..4u16 {
                 screen
-                    .grid_mut()
                     .set_grapheme(
                         row,
                         column,
