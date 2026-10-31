@@ -380,6 +380,26 @@ static int test_context_validation_and_resource_limit(void)
         return 1;
     }
 
+
+    {
+        static const unsigned char embedded_nul[] = {'t', 'o', 'o', 'l', '\0', 'x'};
+        const de_shell_status_t embedded_status = de_shell_execute_source(
+            shell,
+            embedded_nul,
+            sizeof(embedded_nul),
+            &empty_context,
+            &result,
+            &diagnostic);
+
+        if (embedded_status != DE_SHELL_STATUS_PARSE_ERROR
+            || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_INPUT
+            || diagnostic.source_offset != 4U) {
+            (void)fprintf(stderr, "embedded NUL diagnostic offset was incorrect\\n");
+            (void)de_shell_destroy(&shell);
+            return 1;
+        }
+    }
+
     oversized = malloc(DE_SHELL_EXEC_MAX_SOURCE_BYTES + 1U);
     if (oversized == NULL) {
         (void)de_shell_destroy(&shell);
