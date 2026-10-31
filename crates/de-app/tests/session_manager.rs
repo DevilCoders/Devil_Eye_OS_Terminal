@@ -337,7 +337,9 @@ fn session_input_queue_is_bounded_and_preserves_bytes_under_backpressure() {
 fn resize_commits_cached_size_only_after_runtime_success() {
     let state = Arc::new(Mutex::new(MockRuntimeState::default()));
     let mut manager = initialized_manager(Arc::clone(&state), limits(2, 1024, 1024));
-    let id = manager.create_session(spec(SessionKind::ExternalProgram)).expect("create");
+    let id = manager
+        .create_session(spec(SessionKind::ExternalProgram))
+        .expect("create");
     let process_state = Arc::clone(&state.lock().unwrap().processes[0]);
     let original = size(100, 32);
     let resized = size(120, 40);
