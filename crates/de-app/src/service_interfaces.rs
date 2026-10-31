@@ -326,6 +326,11 @@ pub trait SessionManagerService: ApplicationService {
     /// Returns stable identities in ascending creation order.
     fn session_ids(&self) -> Vec<SessionId>;
 
-    /// Closes one session. Other sessions remain unaffected.
+    /// Closes one session synchronously. Other sessions remain unaffected.
+    ///
+    /// This operation may wait for graceful/forced child termination and must
+    /// run on a lifecycle worker, never on the GUI/event-loop thread. Concrete
+    /// SessionManager callers on the GUI thread should use
+    /// `SessionManager::close_session_async` instead.
     fn close_session(&mut self, id: SessionId) -> Result<(), ServiceError>;
 }
