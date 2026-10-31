@@ -66,3 +66,34 @@ If the host denies access to performance counters, record that limitation; do no
 ## Evidence
 
 The DE-020-01 benchmark protocol and initial whole-renderer baselines are in [performance-benchmarks.md](performance-benchmarks.md). This section will be updated with same-runner before/after evidence for DE-020-02; different CPU models must remain separate observations.
+
+## Baseline — 2026-10-31, before first optimization
+
+The first DE-020-02 workload capture completed successfully in [workflow run 41250795328](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41250795328), source commit `7ed572ea067e74471375766fae70ab381bfa7653`.
+
+**Environment:** GitHub-hosted `ubuntu-24.04`, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 7763 64-Core Processor, Rust/Cargo 1.99.1, release benchmark profile.
+
+| Workload | Median sample mean | p95 of sample means |
+| --- | ---: | ---: |
+| Full frame, 80×24 | 2.642 ms | 2.708 ms |
+| Dirty row, 80×24 | 109.87 µs | 110.26 µs |
+| Color/style churn, 80×24 | 2.591 ms | 2.593 ms |
+| Linear selection, 80×24 | 2.603 ms | 2.646 ms |
+| Cursor movement, 80×24 | 4.175 µs | 4.247 µs |
+| Resize 80×24 ↔ 160×48 | 1.250 ms | 1.283 ms |
+| Full frame, 160×48 | 10.556 ms | 10.578 ms |
+| Dirty row, 160×48 | 219.59 µs | 243.25 µs |
+| Color/style churn, 160×48 | 10.360 ms | 10.459 ms |
+| Linear selection, 160×48 | 10.391 ms | 10.450 ms |
+| Full frame, 240×80 | 26.418 ms | 26.685 ms |
+| Dirty row, 240×80 | 327.96 µs | 328.91 µs |
+| Color/style churn, 240×80 | 25.994 ms | 28.014 ms |
+| Linear selection, 240×80 | 26.054 ms | 26.460 ms |
+
+### Allocation finding
+
+The warmed render call allocated exactly once for both full-frame and dirty-row rendering at every tested size: **1 allocation / 8 requested bytes per call**. The renderer built an owned temporary `Vec<CellRect>` with either `vec![full_region]` or `damage.rectangles().to_vec()`, even though both paths can iterate one stack value or a borrowed slice. This is a measured hot-path allocation, not an inference from source inspection.
+
+The first optimization removes that temporary vector without changing damage semantics or pixel composition. Expected result: zero allocations in warmed render calls. Throughput must be measured separately; allocation reduction alone is not a claim of frame-time improvement.
+
+The benchmark does not measure retained scrollback because that component does not yet exist. CPU samples are per-sample means; p95 is across the 12 sample means, not individual-operation tail latency.
