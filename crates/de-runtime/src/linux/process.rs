@@ -122,7 +122,9 @@ fn resolve_executable(
 
 fn resolve_executable_candidate(candidate: &Path) -> Result<PathBuf, ProgramSpecError> {
     let canonical = fs::canonicalize(candidate).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound => ProgramSpecError::ExecutableNotFound,
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            ProgramSpecError::ExecutableNotFound
+        },
         io::ErrorKind::PermissionDenied => ProgramSpecError::ExecutableNotExecutable,
         _ => ProgramSpecError::PathResolutionFailed,
     })?;
@@ -490,6 +492,36 @@ mod tests {
         let resolved = resolve_program(&searched).expect("resolve from explicit PATH");
         assert!(resolved.executable.is_absolute());
         assert!(resolved.executable.is_file());
+    }
+
+    #[test]
+    fn path_search_continues_after_non_directory_entry() {
+        let root = std::env::temp_dir().join(format!(
+            "de-runtime-path-not-dir-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("create temporary directory");
+        let not_directory = root.join("not-a-directory");
+        fs::write(&not_directory, b"file, not directory").expect("create PATH file component");
+        let path = std::env::join_paths([
+            not_directory.as_os_str(),
+            std::ffi::OsStr::new("/bin"),
+        ])
+        .expect("join PATH components");
+        let program = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", path);
+
+        let resolved = resolve_program(&program).expect("continue to valid PATH directory");
+        assert!(resolved.executable.is_file());
+        assert!(resolved.executable.is_absolute());
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
     }
 
     #[test]
