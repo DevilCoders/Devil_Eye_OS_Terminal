@@ -379,6 +379,62 @@ fn render_cursor_and_resize_benchmarks(size: TerminalSize) {
     });
 }
 
+
+fn scrollback_benchmarks(size: TerminalSize, label: &str) {
+    const HISTORY_ROWS: usize = 256;
+    let columns = usize::from(size.columns());
+    let rows = usize::from(size.rows());
+    let visible_cells = columns * rows;
+    let history_cells = columns * HISTORY_ROWS;
+    let mut screen = TerminalScreen::new_with_scrollback(size, visible_cells, history_cells)
+        .expect("allocate bounded scrollback benchmark screen");
+
+    for row in 0..size.rows() {
+        for column in 0..size.columns() {
+            screen
+                .set_grapheme(
+                    row,
+                    column,
+                    "x",
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
+                .expect("populate scrollback benchmark screen");
+        }
+    }
+
+    // Fill the ring before timing so the measured path includes steady-state
+    // oldest-row eviction rather than one-time capacity growth.
+    for _ in 0..HISTORY_ROWS {
+        screen.scroll_up(1).expect("prime full scrollback ring");
+    }
+    assert_eq!(screen.scrollback_row_count(), HISTORY_ROWS);
+    assert_eq!(screen.scrollback_cell_count(), history_cells);
+    println!("# memory_scrollback_{label}_capacity_cells={history_cells}");
+    println!("# memory_scrollback_{label}_capacity_bytes={}", history_cells * size_of::<de_terminal_core::screen::Cell>());
+
+    benchmark(
+        &format!("scrollback_append_full_ring_{label}"),
+        u64::from(size.columns()),
+        || {
+            screen.scroll_up(1).expect("append and evict scrollback row");
+            black_box(screen.scrollback_row_count());
+        },
+    );
+
+    benchmark(
+        &format!("scrollback_iterate_{HISTORY_ROWS}_rows_{label}"),
+        (columns * HISTORY_ROWS) as u64,
+        || {
+            let retained_cells = screen
+                .scrollback_rows()
+                .map(<[de_terminal_core::screen::Cell]>::len)
+                .sum::<usize>();
+            black_box(retained_cells);
+        },
+    );
+}
+
 fn main() {
     if cfg!(debug_assertions) {
         eprintln!("benchmark target skipped in debug/test profile; use cargo bench");
@@ -464,6 +520,11 @@ fn main() {
         "240x80",
     );
     render_cursor_and_resize_benchmarks(size);
+    scrollback_benchmarks(size, "80x24");
+    scrollback_benchmarks(
+        TerminalSize::new(240, 80).expect("large scrollback benchmark size"),
+        "240x80",
+    );
 
     // Yield once so very short local runs do not monopolize a single core
     // while stdout is flushed by the harness.
