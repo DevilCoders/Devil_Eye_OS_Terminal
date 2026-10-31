@@ -81,6 +81,33 @@ The p95 values below are the 95th percentile of 12 per-sample mean timings, not 
 
 All measured workloads met the provisional budgets below in this run. This is one baseline on a shared hosted runner, not enough evidence to turn the budgets into hard regression gates. Collect at least three comparable runs before enforcing them. The raw artifact includes every sample, the aggregate rows, and runner/toolchain metadata.
 
+### Additional capture — 2026-10-31 (separate runner CPU)
+
+A second successful capture was produced from source commit `4745df5612bcfee97cb4eb7952390664ae5f7755` in [workflow run 41243677942](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41243677942). Its raw artifact records the PR head consistently in both benchmark CSVs.
+
+**Environment:** GitHub-hosted `ubuntu-24.04`, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 7763 64-Core Processor, Rust/Cargo 1.99.1 (release benchmark profile).
+
+This runner reported a different EPYC CPU model from the first capture. Treat it as a second environment-specific observation and evidence that the workflow and artifact pipeline are repeatable; do not interpret the differences as code regressions or combine the two runs into a single statistical baseline.
+
+| Workload | Median sample mean | p95 of sample means | Throughput |
+| --- | ---: | ---: | ---: |
+| VT parser mixed stream | 503.41 ns/op | 504.79 ns/op | 97.34 MB/s |
+| Input-parser proxy | 148.52 ns/op | 152.40 ns/op | 148.12 MB/s |
+| Screen update, 80×24 cells | 33.634 µs/op | 33.829 µs/op | 57.09 M cells/s |
+| Screen row scroll, 80×24 | 2.125 µs/op | 2.177 µs/op | 903.45 M cells/s |
+| Full render, 80×24 | 2.678 ms | 2.687 ms | — |
+| Dirty-row render, 80×24 | 111.48 µs | 111.74 µs | — |
+| Full render, 160×48 | 10.698 ms | 10.776 ms | — |
+| Dirty-row render, 160×48 | 222.89 µs | 224.61 µs | — |
+| Full render, 240×80 | 26.735 ms | 26.873 ms | — |
+| Dirty-row render, 240×80 | 332.79 µs | 335.42 µs | — |
+| Session-manager init + shutdown | 94.49 ns | 94.77 ns | — |
+| PTY session spawn + close | 10.533 ms | 10.547 ms | — |
+| One-byte PTY round trip | 38.904 µs | 39.902 µs | — |
+| 32 KiB PTY round trip | 279.44 µs | 281.65 µs | 117.49 MB/s |
+
+The screen and renderer backing-buffer sizes match the first capture: 145,920 bytes for 80×24 cells, and 983,040 / 3,932,160 / 9,830,400 bytes for the 80×24 / 160×48 / 240×80 RGBA surfaces. The raw artifact contains all 12 samples per workload plus the environment and commit metadata.
+
 ## 4. Initial engineering budgets
 
 These are provisional targets for the first Linux x86_64 release profile. They become enforceable regression gates only after at least three successful, comparable baseline runs establish normal runner variance.
