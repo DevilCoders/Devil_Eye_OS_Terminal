@@ -20,12 +20,36 @@ pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 pub mod linux;
 
 /// An owned process launch description, validated before it reaches a runtime backend.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Controls whether a child inherits the parent process environment.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EnvironmentInheritance {
+    /// Preserve the current environment, then apply explicit overrides.
+    #[default]
+    Inherit,
+    /// Start with an empty environment, then apply explicit overrides.
+    Clear,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct ProgramSpec {
     program: OsString,
     args: Vec<OsString>,
     environment: Vec<(OsString, OsString)>,
     working_directory: Option<PathBuf>,
+    environment_inheritance: EnvironmentInheritance,
+}
+
+impl fmt::Debug for ProgramSpec {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProgramSpec")
+            .field("program", &"<redacted>")
+            .field("argument_count", &self.args.len())
+            .field("environment_entry_count", &self.environment.len())
+            .field("working_directory_set", &self.working_directory.is_some())
+            .field("environment_inheritance", &self.environment_inheritance)
+            .finish()
+    }
 }
 
 /// Errors detected while validating a process specification.
@@ -39,6 +63,12 @@ pub enum ProgramSpecError {
     EnvironmentKeyContainsEquals,
     EnvironmentValueContainsNul,
     WorkingDirectoryContainsNul,
+    ExecutableNotFound,
+    ExecutableNotRegularFile,
+    ExecutableNotExecutable,
+    WorkingDirectoryNotFound,
+    WorkingDirectoryNotDirectory,
+    PathResolutionFailed,
 }
 
 impl fmt::Display for ProgramSpecError {
@@ -52,6 +82,12 @@ impl fmt::Display for ProgramSpecError {
             Self::EnvironmentKeyContainsEquals => "environment key contains '='",
             Self::EnvironmentValueContainsNul => "environment value contains a NUL byte",
             Self::WorkingDirectoryContainsNul => "working directory contains a NUL byte",
+            Self::ExecutableNotFound => "executable could not be resolved",
+            Self::ExecutableNotRegularFile => "resolved executable is not a regular file",
+            Self::ExecutableNotExecutable => "resolved executable is not executable",
+            Self::WorkingDirectoryNotFound => "working directory does not exist",
+            Self::WorkingDirectoryNotDirectory => "working directory is not a directory",
+            Self::PathResolutionFailed => "process path resolution failed",
         };
 
         formatter.write_str(message)
@@ -76,6 +112,7 @@ impl ProgramSpec {
             args: Vec::new(),
             environment: Vec::new(),
             working_directory: None,
+            environment_inheritance: EnvironmentInheritance::Inherit,
         })
     }
 
@@ -113,6 +150,25 @@ impl ProgramSpec {
     pub fn with_working_directory(mut self, path: impl Into<PathBuf>) -> Self {
         self.working_directory = Some(path.into());
         self
+    }
+
+    /// Sets how the child environment is constructed.
+    pub fn with_environment_inheritance(
+        mut self,
+        inheritance: EnvironmentInheritance,
+    ) -> Self {
+        self.environment_inheritance = inheritance;
+        self
+    }
+
+    /// Starts the child with an empty environment before explicit overrides.
+    pub fn clear_environment(self) -> Self {
+        self.with_environment_inheritance(EnvironmentInheritance::Clear)
+    }
+
+    /// Preserves the parent environment before explicit overrides.
+    pub fn inherit_environment(self) -> Self {
+        self.with_environment_inheritance(EnvironmentInheritance::Inherit)
     }
 
     /// Validates all executable, argument, environment, and path values.
@@ -171,6 +227,11 @@ impl ProgramSpec {
     /// Optional working directory.
     pub fn working_directory(&self) -> Option<&Path> {
         self.working_directory.as_deref()
+    }
+
+    /// Environment inheritance behavior selected for the child process.
+    pub const fn environment_inheritance(&self) -> EnvironmentInheritance {
+        self.environment_inheritance
     }
 }
 
