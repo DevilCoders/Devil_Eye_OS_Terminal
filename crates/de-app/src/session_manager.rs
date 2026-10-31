@@ -504,6 +504,7 @@ impl<R: RuntimeService> SessionManager<R> {
         }
     }
 
+    /// Waits on the lifecycle worker until detached close tasks release their process handles.
     fn wait_for_closing_workers(&self) {
         let (lock, wake) = &*self.closing_workers;
         let mut active = lock
