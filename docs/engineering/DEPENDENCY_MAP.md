@@ -53,3 +53,7 @@ DE-001-01 #25
 ```
 
 The dependency-status workflow derives blocked/ready labels from the task's Dependencies section and the open/closed state of referenced issues. When a dependency closes, downstream eligible tasks are moved to Todo; when it reopens, they return to Blocked. In-progress, review, and done labels are protected.
+
+## Subtask hierarchy note
+
+The 62 implementation Tasks each contain a Markdown subtask checklist. These checklist items clarify execution order but do not create dependency edges or native GitHub parent-child issue relationships. Only dependencies explicitly listed in each Task's `Dependencies` section are consumed by the dependency-status automation. If a checklist item becomes independently schedulable, promote it to a new Issue and update the catalog and dependency graph.
