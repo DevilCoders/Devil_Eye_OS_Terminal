@@ -100,7 +100,10 @@ impl fmt::Display for LifecycleError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidState { operation, state } => {
-                write!(formatter, "cannot {operation} application in {state:?} state")
+                write!(
+                    formatter,
+                    "cannot {operation} application in {state:?} state"
+                )
             }
             Self::StartupFailed {
                 service,
@@ -118,7 +121,11 @@ impl fmt::Display for LifecycleError {
                 Ok(())
             }
             Self::ShutdownFailed { failures } => {
-                write!(formatter, "{} service(s) failed to shut down", failures.len())
+                write!(
+                    formatter,
+                    "{} service(s) failed to shut down",
+                    failures.len()
+                )
             }
         }
     }
@@ -215,9 +222,7 @@ impl Application {
     pub fn shutdown(&mut self) -> Result<(), LifecycleError> {
         match self.state {
             ApplicationState::Stopped => return Ok(()),
-            ApplicationState::Created
-            | ApplicationState::Running
-            | ApplicationState::Failed => {}
+            ApplicationState::Created | ApplicationState::Running | ApplicationState::Failed => {}
             state => {
                 return Err(LifecycleError::InvalidState {
                     operation: "shut down",
