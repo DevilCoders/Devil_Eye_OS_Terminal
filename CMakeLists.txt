@@ -12,6 +12,8 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+option(DE_ENABLE_COVERAGE "Enable GCC/Clang source coverage instrumentation" OFF)
+
 function(de_enable_strict_warnings target)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${target} PRIVATE
@@ -47,6 +49,17 @@ target_compile_definitions(de_shell
 
 de_enable_strict_warnings(de_shell)
 
+if(DE_ENABLE_COVERAGE)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "DE_ENABLE_COVERAGE requires GCC or Clang")
+    endif()
+
+    target_compile_options(de_shell PRIVATE --coverage -O0 -g)
+    # Propagate the coverage runtime link flag to executables consuming the
+    # static library; static archives themselves do not perform a link step.
+    target_link_options(de_shell INTERFACE --coverage)
+endif()
+
 if(BUILD_TESTING)
     add_executable(de_shell_build_info_test
         c/tests/test_build_info.c
@@ -54,6 +67,11 @@ if(BUILD_TESTING)
 
     target_link_libraries(de_shell_build_info_test PRIVATE de_shell)
     de_enable_strict_warnings(de_shell_build_info_test)
+
+    if(DE_ENABLE_COVERAGE)
+        target_compile_options(de_shell_build_info_test PRIVATE --coverage -O0 -g)
+        target_link_options(de_shell_build_info_test PRIVATE --coverage)
+    endif()
 
     add_test(
         NAME de_shell_build_info
