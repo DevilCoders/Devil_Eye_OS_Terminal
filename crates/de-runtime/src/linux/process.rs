@@ -315,16 +315,13 @@ mod tests {
     use super::LinuxPtyChild;
     use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
     use std::io;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
     use std::thread;
     use std::time::{Duration, Instant};
 
-    static PROCESS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn process_test_lock() -> MutexGuard<'static, ()> {
-        PROCESS_TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        super::super::test_resource_lock()
     }
 
     fn test_size() -> TerminalSize {
