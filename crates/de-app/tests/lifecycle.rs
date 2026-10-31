@@ -250,7 +250,9 @@ fn asynchronous_shutdown_runs_service_cleanup_on_a_worker_thread() {
     app.start().expect("application starts");
 
     let caller_thread = thread::current().id();
-    let shutdown = app.shutdown_async().expect("spawn shutdown worker");
+    let shutdown = app.shutdown_async().unwrap_or_else(|(_app, error)| {
+        panic!("spawn shutdown worker: {error}");
+    });
     entered.wait();
 
     assert_ne!(
