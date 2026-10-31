@@ -589,16 +589,16 @@ impl SoftwareRenderer {
                     };
                     let bitmap = self.atlas.get(value.as_str());
                     Self::draw_glyph(
-                    &mut self.surface,
-                    bitmap,
-                    x,
-                    y,
-                    self.cell_width.saturating_mul(span),
-                    self.cell_height,
-                    self.scale_factor,
-                    clip_left.max(x),
-                    clip_right,
-                    self.palette.cursor_foreground,
+                        &mut self.surface,
+                        bitmap,
+                        x,
+                        y,
+                        self.cell_width.saturating_mul(span),
+                        self.cell_height,
+                        self.scale_factor,
+                        clip_left.max(x),
+                        clip_right,
+                        self.palette.cursor_foreground,
                         styles.contains(StyleFlags::BOLD),
                         styles.contains(StyleFlags::ITALIC),
                     );
