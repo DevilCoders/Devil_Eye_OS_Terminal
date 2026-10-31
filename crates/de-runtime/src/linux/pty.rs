@@ -1,4 +1,6 @@
 //! Linux PTY master/slave allocation and initial terminal configuration.
+
+#![allow(unsafe_code)] // Unsafe operations are confined to this audited libc boundary.
 //!
 //! The pair owns both descriptors. It never transfers or closes a descriptor
 //! implicitly; callers may borrow descriptors or request independent CLOEXEC
