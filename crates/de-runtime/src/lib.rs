@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 /// Shared terminal dimensions and validation error used by the terminal core and PTY adapter.
 pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 
+/// Bounded worker for PTY input/output, resize, and process lifecycle events.
+pub mod io_pump;
+
 /// Linux-specific runtime resources and adapters.
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)] // Linux libc calls are isolated behind the platform adapter boundary.
