@@ -398,6 +398,11 @@ fn format_neutral_schema_has_explicit_root_fields() {
     };
     assert_eq!(
         root.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["active_workspace_id", "schema_version", "sessions", "workspaces"]
+        [
+            "active_workspace_id",
+            "schema_version",
+            "sessions",
+            "workspaces"
+        ]
     );
 }
