@@ -57,7 +57,7 @@ fn metadata() {
         })
         .unwrap_or_else(|| "unavailable".to_owned());
     println!("# cpu={cpu}");
-    println!("name,sample,iterations,median_ns_per_op,p95_ns_per_op,throughput_units_per_second");
+    println!("name,record,sample,iterations,ns_per_op,p95_ns_per_op,throughput_units_per_second");
 }
 
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
@@ -91,7 +91,7 @@ fn benchmark(name: &str, units_per_op: u64, mut operation: impl FnMut()) {
         total_iterations = total_iterations.saturating_add(iterations);
         total_elapsed += elapsed;
         println!(
-            "{name},{sample},{iterations},{ns_per_op:.2},0,{:.2}",
+            "{name},sample,{sample},{iterations},{ns_per_op:.2},,{:.2}",
             units_per_op as f64 * iterations as f64 / elapsed.as_secs_f64()
         );
     }
