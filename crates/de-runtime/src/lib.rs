@@ -11,7 +11,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
-pub use de_terminal_core::TerminalSize;
+pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 
 /// An owned process launch description, validated before it reaches a runtime backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -470,8 +470,8 @@ pub trait RuntimeService: Send + Sync {
 mod tests {
     use super::{
         IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
-        ProgramSpecError, PtyConfig, ReadOutcome, RuntimeCapability,
-        RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment, TerminalSize,
+        ProgramSpecError, PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess,
+        RuntimeService, Signal, StdioConfig, StreamAttachment, TerminalSize, TerminalSizeError,
         TerminationMode, WriteOutcome,
     };
     use std::ffi::{OsStr, OsString};
@@ -558,8 +558,8 @@ mod tests {
 
     #[test]
     fn validates_pty_dimensions_and_explicit_stdio_modes() {
-        assert_eq!(TerminalSize::new(0u16, 24u16), Err(de_terminal_core::TerminalSizeError::ZeroColumns));
-        assert_eq!(TerminalSize::new(80u16, 0u16), Err(de_terminal_core::TerminalSizeError::ZeroRows));
+        assert_eq!(TerminalSize::new(0u16, 24u16), Err(TerminalSizeError::ZeroColumns));
+        assert_eq!(TerminalSize::new(80u16, 0u16), Err(TerminalSizeError::ZeroRows));
 
         let size = TerminalSize::new(120u16, 40u16).expect("valid PTY dimensions");
         let request = ProcessSpawnRequest::new(
