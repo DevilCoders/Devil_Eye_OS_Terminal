@@ -143,3 +143,13 @@ The expanded workload was captured in [workflow run 41251407496](https://github.
 | Full frame, 240×80 | 22.393 ms | 22.570 ms |
 
 Within this same run and CPU, background composition/fill accounts for roughly 11% of full-frame time; the remaining ~89% is attributable to the glyph/style pass and its pixel blending. This isolates the next optimization target to `draw_glyph` / `blend_pixel`, rather than `PixelSurface::fill_rect`. The conclusion is workload-specific to the deterministic fallback atlas and must be revalidated with real font atlases when integrated.
+
+## Second optimization — glyph raster and blending
+
+The same-run background-only comparison isolates the dominant cost to the glyph/style pass rather than cell background fill. The next change targets `draw_glyph` and `blend_pixel`:
+
+- Use integer coordinate mapping for the common scale factor of exactly 1.0; preserve the existing floating-point mapping for all other scales.
+- Skip zero-coverage glyph pixels before entering the blend routine.
+- Replace the per-channel tuple loop with explicit red/green/blue blend arithmetic while preserving the existing integer rounding formula.
+
+This optimization must preserve the golden RGBA tests, including non-unit scale, italic/bold glyphs, alpha coverage, selection/cursor overrides, clipping, and wide-cell continuation behavior. Its before/after timing evidence is pending the next successful benchmark artifact.
