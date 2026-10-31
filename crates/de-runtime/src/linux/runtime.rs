@@ -114,6 +114,7 @@ impl StdioRuntimeProcess {
     ) -> Result<Self, RuntimeError> {
         let resolved = resolve_program(program).map_err(RuntimeError::InvalidProgram)?;
         let mut command = Command::new(&resolved.executable);
+        command.arg0(program.program());
         command.args(program.args());
         if program.environment_inheritance() == EnvironmentInheritance::Clear {
             command.env_clear();
@@ -648,6 +649,28 @@ mod tests {
                 ReadOutcome::Eof => return Ok(collected),
             }
         }
+    }
+
+    #[test]
+    fn preserves_requested_argv0_for_stdio_spawn() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("sh")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin")
+            .with_arg("-c")
+            .with_arg("printf '%s' \"$0\"");
+        let request = ProcessSpawnRequest::new(
+            program,
+            IoAttachment::Stdio(pipe_config()),
+        )
+        .expect("spawn request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn PATH alias");
+
+        let (output, status) =
+            drain_until_exit(&mut *process, Duration::from_secs(3)).expect("drain child output");
+        assert_eq!(status, ProcessExitStatus::Exited(0));
+        assert_eq!(output, b"sh");
     }
 
     #[test]
