@@ -80,8 +80,7 @@ impl ApplicationService for BlockingShutdown {
     }
 
     fn shutdown(&mut self) -> Result<(), ServiceError> {
-        *self.shutdown_thread.lock().expect("shutdown thread lock") =
-            Some(thread::current().id());
+        *self.shutdown_thread.lock().expect("shutdown thread lock") = Some(thread::current().id());
         self.entered.wait();
         self.release.wait();
         Ok(())
