@@ -7,6 +7,7 @@ This directory contains the system architecture baseline, component contracts, a
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
 - [Cross-Component API Contracts](api-contracts.md)
 - [Terminal Session Manager](session-manager.md) — session identity, PTY/process ownership, bounded I/O, exit polling, resize, worker-thread close, shutdown, and orphan prevention.
+- [Workspace and Session Restoration Metadata](workspace-restoration.md) — versioned workspace/tab/pane layout, safe session metadata, strict validation, and the no-implicit-process-restoration boundary.
 - [Renderer Contract](renderer-contract.md) — immutable frames, cell/pixel coordinate spaces, glyph metrics, clipping, bounded damage tracking, and resize semantics.
 - [Performance Benchmarks and Initial Budgets](performance-benchmarks.md) — reproducible Linux x86_64 benchmarks, sampling protocol, resource budgets, and measurement boundaries.
 - [Keyboard Input Mapping](input-mapping.md) — key/text event separation, xterm key sequences, modifiers, IME handling, and configurable shortcuts.

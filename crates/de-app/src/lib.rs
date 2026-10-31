@@ -35,6 +35,14 @@ pub mod session_manager;
 
 pub use session_manager::{ManagedSession, SessionManager, SessionManagerLimits};
 
+pub mod workspace;
+
+pub use workspace::{
+    PaneLayout, SavedSessionId, SavedSessionMetadata, SplitOrientation, TabId, TabMetadata,
+    WorkspaceError, WorkspaceId, WorkspaceMetadata, WorkspaceSnapshot,
+    WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+};
+
 #[cfg(target_os = "linux")]
 pub mod linux_runtime;
 
