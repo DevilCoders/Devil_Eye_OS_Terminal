@@ -1,0 +1,157 @@
+name: Engineering taxonomy and issue automation
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: engineering-taxonomy
+  cancel-in-progress: false
+
+jobs:
+  provision-and-classify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create labels and milestones, classify issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const labels = [
+              ["type:epic", "1D4ED8", "Major engineering outcome"],
+              ["type:task", "2563EB", "Implementation task"],
+              ["type:bug", "B91C1C", "Defect"],
+              ["type:spike", "7C3AED", "Time-boxed research"],
+              ["priority:P0", "991B1B", "Critical path / release blocker"],
+              ["priority:P1", "C2410C", "High priority"],
+              ["priority:P2", "A16207", "Normal priority"],
+              ["priority:P3", "64748B", "Low priority"],
+              ["status:planned", "64748B", "Not yet ready to start"],
+              ["status:todo", "64748B", "Ready for implementation"],
+              ["status:in-progress", "2563EB", "Actively being implemented"],
+              ["status:blocked", "B91C1C", "Blocked by dependency or decision"],
+              ["status:review", "7C3AED", "Awaiting review or validation"],
+              ["status:done", "15803D", "Completed and verified"],
+              ["component:rust", "0F766E", "Rust application and crates"],
+              ["component:c-shell", "0F766E", "DE-Shell C implementation"],
+              ["component:terminal-engine", "0F766E", "VT/ANSI and screen model"],
+              ["component:pty", "0F766E", "PTY and process I/O"],
+              ["component:runtime", "0F766E", "DE-Runtime and OS adapters"],
+              ["component:ipc-ffi", "0F766E", "Rust-C ABI and IPC"],
+              ["component:renderer", "0F766E", "Terminal rendering"],
+              ["component:gui", "0F766E", "Desktop GUI and interaction"],
+              ["component:security", "0F766E", "Security engineering"],
+              ["component:testing", "0F766E", "Testing and QA"],
+              ["component:docs", "0F766E", "Documentation and governance"],
+              ["component:release", "0F766E", "Packaging and release"],
+              ["component:platform", "0F766E", "Cross-platform support"],
+              ["platform:linux", "0369A1", "Linux x86_64 target"],
+              ["platform:windows", "0369A1", "Windows target"],
+              ["platform:macos", "0369A1", "macOS target"]
+            ];
+
+            for (const [name, color, description] of labels) {
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+              }
+            }
+
+            const milestones = [
+              ["M0 Engineering Foundation", "Repository, toolchain, architecture, build and CI foundations."],
+              ["M1 Shell Alpha", "Initial C shell core and command registry."],
+              ["M2 Runtime Alpha", "Runtime contract and first platform implementation."],
+              ["M3 Terminal Engine Alpha", "Screen model and terminal state engine."],
+              ["M4 PTY Alpha", "Interactive process I/O and lifecycle."],
+              ["M5 Communication Alpha", "Rust-C IPC/FFI integration."],
+              ["M6 Terminal GUI Alpha", "Renderer, input, and initial GUI."],
+              ["M7 Integrated Beta", "Shell language, sessions, configuration, and end-to-end integration."],
+              ["M8 Feature Complete", "Productivity, plugin architecture, performance, and platform expansion."],
+              ["M9 Release Candidate", "Security, documentation, packaging, and release qualification."],
+              ["M10 Production 1.0", "Production release and maintenance handoff."]
+            ];
+
+            const existingMilestones = await github.paginate(github.rest.issues.listMilestones, {
+              owner, repo, state: "all", per_page: 100
+            });
+            const milestoneByTitle = new Map(existingMilestones.map(m => [m.title, m.number]));
+            for (const [title, description] of milestones) {
+              if (!milestoneByTitle.has(title)) {
+                const created = await github.rest.issues.createMilestone({
+                  owner, repo, title, description, state: "open"
+                });
+                milestoneByTitle.set(title, created.data.number);
+              }
+            }
+
+            const allIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "open", per_page: 100
+            });
+            const componentRules = [
+              [/DE-00[123]/, "component:rust"],
+              [/DE-004|DE-012|DE-013/, "component:c-shell"],
+              [/DE-005/, "component:terminal-engine"],
+              [/DE-006/, "component:pty"],
+              [/DE-007/, "component:runtime"],
+              [/DE-008/, "component:ipc-ffi"],
+              [/DE-009/, "component:renderer"],
+              [/DE-010/, "component:gui"],
+              [/DE-011/, "component:gui"],
+              [/DE-016/, "component:security"],
+              [/DE-019/, "component:testing"],
+              [/DE-022/, "component:docs"],
+              [/DE-023|DE-024/, "component:release"],
+              [/DE-021/, "component:platform"]
+            ];
+
+            for (const issue of allIssues) {
+              if (issue.pull_request) continue;
+              const text = (issue.title || "") + "\n" + (issue.body || "");
+              const wanted = new Set();
+              if (/^\[EPIC\]/i.test(issue.title)) wanted.add("type:epic");
+              else if (/^\[TASK\]/i.test(issue.title)) wanted.add("type:task");
+              else if (/^\[BUG\]/i.test(issue.title)) wanted.add("type:bug");
+
+              const priority = text.match(/Priority:\*\*\s*(P[0-3])/i);
+              if (priority) wanted.add("priority:" + priority[1].toUpperCase());
+
+              if (/^\[EPIC\]/i.test(issue.title)) wanted.add("status:planned");
+              else if (/^\[TASK\]/i.test(issue.title)) wanted.add("status:todo");
+
+              if (/Blocked by:\s*(?!\s*(?:None|—|-)?\s*(?:\n|$))[^\n#]*#\d+/i.test(text)) {
+                wanted.delete("status:todo");
+                wanted.add("status:blocked");
+              }
+
+              const epicId = issue.title.match(/DE-\d{3}/);
+              if (epicId) {
+                for (const [pattern, label] of componentRules) {
+                  if (pattern.test(epicId[0])) { wanted.add(label); break; }
+                }
+              }
+
+              const target = text.match(/Target milestone:\*\*\s*([^\n]+)/i);
+              if (target) {
+                const title = target[1].trim();
+                const number = milestoneByTitle.get(title);
+                if (number) {
+                  await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
+                }
+              }
+
+              const current = new Set((issue.labels || []).map(l => typeof l === "string" ? l : l.name));
+              const add = [...wanted].filter(label => !current.has(label));
+              if (add.length) {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: add });
+              }
+            }
+
+            core.info(`Provisioned ${labels.length} taxonomy labels and ${milestones.length} milestones; classified ${allIssues.length} open issues.`);
