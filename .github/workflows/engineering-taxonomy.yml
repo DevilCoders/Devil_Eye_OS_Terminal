@@ -147,11 +147,13 @@ jobs:
               if (/^\[EPIC\]/i.test(issue.title)) wanted.add("status:planned");
               else if (/^\[TASK\]/i.test(issue.title)) wanted.add("status:todo");
 
-              if (/Blocked by:\s*(?!\s*(?:None|—|-)?\s*(?:\n|$))[^\n#]*#\d+/i.test(text)) {
+              const dependencySection = (issue.body || "").match(/### Dependencies\s*([\s\S]*?)(?:\n###|$)/i);
+              const dependencyNumbers = dependencySection ? [...dependencySection[1].matchAll(/#(\d+)/g)].map(match => Number(match[1])) : [];
+              const openIssueNumbers = new Set(allIssues.map(item => item.number));
+              if (dependencyNumbers.some(number => openIssueNumbers.has(number))) {
                 wanted.delete("status:todo");
                 wanted.add("status:blocked");
               }
-
               const epicId = issue.title.match(/DE-\d{3}/);
               if (epicId) {
                 for (const [pattern, label] of componentRules) {
@@ -177,10 +179,14 @@ jobs:
               }
 
               const current = new Set((issue.labels || []).map(l => typeof l === "string" ? l : l.name));
+              const staleStatus = [...current].filter(label => ["status:todo", "status:blocked"].includes(label) && !wanted.has(label));
+              for (const label of staleStatus) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: label });
+              }
               const add = [...wanted].filter(label => !current.has(label));
               if (add.length) {
                 await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: add });
               }
-            }
+            }            }
 
             core.info(`Provisioned ${labels.length} taxonomy labels and ${milestones.length} milestones; classified ${allIssues.length} open issues.`);
