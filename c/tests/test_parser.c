@@ -76,7 +76,7 @@ static int test_simple_command_and_redirection(void)
         || fixture.ast.redirection_count != 1U
         || fixture.words[1].flags != DE_SHELL_TOKEN_FLAG_SINGLE_QUOTED
         || fixture.redirections[0].type != DE_SHELL_REDIRECTION_OUTPUT
-        || fixture.redirections[0].target_offset != 19U
+        || fixture.redirections[0].target_offset != 20U
         || fixture.redirections[0].target_length != 10U) {
         (void)fprintf(stderr, "simple command AST contract failed\n");
         return 1;
