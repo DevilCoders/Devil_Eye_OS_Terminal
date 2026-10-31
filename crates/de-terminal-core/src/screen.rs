@@ -473,7 +473,7 @@ mod tests {
         {
             assert_eq!(stored.as_str(), value);
         } else {
-            return Err("expected grapheme cell");
+            panic!("expected grapheme cell");
         }
     }
 
