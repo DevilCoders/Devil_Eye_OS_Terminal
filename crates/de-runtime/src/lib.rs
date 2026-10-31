@@ -167,7 +167,7 @@ impl ProgramSpec {
 }
 
 fn contains_nul(value: &OsStr) -> bool {
-    value.as_encoded_bytes().contains(&0U8)
+    value.as_encoded_bytes().contains(&0u8)
 }
 
 /// How one standard process stream is attached to the parent application.
@@ -241,10 +241,10 @@ impl Error for PtySizeError {}
 
 impl PtySize {
     pub fn new(columns: u16, rows: u16) -> Result<Self, PtySizeError> {
-        if columns == 0U16 {
+        if columns == 0u16 {
             return Err(PtySizeError::ZeroColumns);
         }
-        if rows == 0U16 {
+        if rows == 0u16 {
             return Err(PtySizeError::ZeroRows);
         }
 
@@ -589,7 +589,7 @@ mod tests {
                 OsStr::new("--literal").to_owned()
             ]
         );
-        assert_eq!(spec.environment().len(), 1Usize);
+        assert_eq!(spec.environment().len(), 1usize);
         assert_eq!(
             spec.environment()[0],
             (
@@ -601,10 +601,10 @@ mod tests {
 
     #[test]
     fn validates_pty_dimensions_and_explicit_stdio_modes() {
-        assert_eq!(PtySize::new(0U16, 24U16), Err(PtySizeError::ZeroColumns));
-        assert_eq!(PtySize::new(80U16, 0U16), Err(PtySizeError::ZeroRows));
+        assert_eq!(PtySize::new(0u16, 24u16), Err(PtySizeError::ZeroColumns));
+        assert_eq!(PtySize::new(80u16, 0u16), Err(PtySizeError::ZeroRows));
 
-        let size = PtySize::new(120U16, 40U16).expect("valid PTY dimensions");
+        let size = PtySize::new(120u16, 40u16).expect("valid PTY dimensions");
         let request = ProcessSpawnRequest::new(
             ProgramSpec::new("sh").expect("program"),
             IoAttachment::Pty(PtyConfig::new(size)),
@@ -653,7 +653,7 @@ mod tests {
         assert!(capabilities.supports(RuntimeCapability::PseudoTerminal));
         assert!(capabilities.supports(RuntimeCapability::Signals));
         assert!(!capabilities.supports(RuntimeCapability::ProcessGroups));
-        assert_eq!(capabilities.supported().len(), 2Usize);
+        assert_eq!(capabilities.supported().len(), 2usize);
     }
 
     struct FakeRuntime;
@@ -687,7 +687,7 @@ mod tests {
 
     impl RuntimeProcess for FakeProcess {
         fn process_id(&self) -> Option<u32> {
-            Some(42U32)
+            Some(42u32)
         }
 
         fn write_stdin(&mut self, input: &[u8]) -> Result<WriteOutcome, RuntimeError> {
@@ -702,7 +702,7 @@ mod tests {
             }
             output[0] = b'o';
             Ok(ReadOutcome::Data(
-                NonZeroUsize::new(1Usize).expect("non-zero"),
+                NonZeroUsize::new(1usize).expect("non-zero"),
             ))
         }
 
@@ -748,7 +748,7 @@ mod tests {
         let capabilities = runtime.capabilities();
         assert!(capabilities.supports(RuntimeCapability::PseudoTerminal));
 
-        let size = PtySize::new(80U16, 24U16).expect("valid PTY dimensions");
+        let size = PtySize::new(80u16, 24u16).expect("valid PTY dimensions");
         let request = ProcessSpawnRequest::new(
             ProgramSpec::new("sh").expect("program"),
             IoAttachment::Pty(PtyConfig::new(size)),
@@ -756,18 +756,18 @@ mod tests {
         .expect("valid spawn request");
 
         let mut process = runtime.spawn(request).expect("fake spawn");
-        assert_eq!(process.process_id(), Some(42U32));
+        assert_eq!(process.process_id(), Some(42u32));
 
         let written = process.write_stdin(b"hello").expect("stdin write");
         assert_eq!(
             written,
-            WriteOutcome::Written(NonZeroUsize::new(5Usize).expect("non-zero"))
+            WriteOutcome::Written(NonZeroUsize::new(5usize).expect("non-zero"))
         );
 
-        let mut output = [0U8; 4Usize];
+        let mut output = [0u8; 4usize];
         assert_eq!(
             process.read_stdout(&mut output).expect("stdout read"),
-            ReadOutcome::Data(NonZeroUsize::new(1Usize).expect("non-zero"))
+            ReadOutcome::Data(NonZeroUsize::new(1usize).expect("non-zero"))
         );
         assert_eq!(output[0], b'o');
         assert_eq!(
