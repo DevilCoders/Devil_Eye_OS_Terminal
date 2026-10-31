@@ -507,6 +507,90 @@ mod tests {
     }
 
     #[test]
+    fn execution_abi_structs_have_expected_linux_x86_64_layout() {
+        use super::raw::{
+            RawEnvironmentEntry, RawExecutionContext, RawExecutionDiagnostic,
+            RawExecutionResult, RawExternalCommand,
+        };
+
+        assert_eq!(size_of::<RawEnvironmentEntry>(), 16);
+        assert_eq!(align_of::<RawEnvironmentEntry>(), 8);
+        assert_eq!(offset_of!(RawEnvironmentEntry, key), 0);
+        assert_eq!(offset_of!(RawEnvironmentEntry, value), 8);
+
+        assert_eq!(size_of::<RawExternalCommand>(), 48);
+        assert_eq!(align_of::<RawExternalCommand>(), 8);
+        assert_eq!(offset_of!(RawExternalCommand, executable), 0);
+        assert_eq!(offset_of!(RawExternalCommand, argc), 8);
+        assert_eq!(offset_of!(RawExternalCommand, argv), 16);
+        assert_eq!(offset_of!(RawExternalCommand, environment), 24);
+        assert_eq!(offset_of!(RawExternalCommand, environment_count), 32);
+        assert_eq!(offset_of!(RawExternalCommand, working_directory), 40);
+
+        assert_eq!(size_of::<RawExecutionContext>(), 40);
+        assert_eq!(align_of::<RawExecutionContext>(), 8);
+        assert_eq!(offset_of!(RawExecutionContext, environment), 0);
+        assert_eq!(offset_of!(RawExecutionContext, environment_count), 8);
+        assert_eq!(offset_of!(RawExecutionContext, working_directory), 16);
+        assert_eq!(offset_of!(RawExecutionContext, external_executor), 24);
+        assert_eq!(offset_of!(RawExecutionContext, user_data), 32);
+
+        assert_eq!(size_of::<RawExecutionResult>(), 16);
+        assert_eq!(align_of::<RawExecutionResult>(), 8);
+        assert_eq!(offset_of!(RawExecutionResult, exit_code), 0);
+        assert_eq!(offset_of!(RawExecutionResult, exit_requested), 4);
+        assert_eq!(offset_of!(RawExecutionResult, commands_executed), 8);
+
+        assert_eq!(size_of::<RawExecutionDiagnostic>(), 16);
+        assert_eq!(align_of::<RawExecutionDiagnostic>(), 8);
+        assert_eq!(offset_of!(RawExecutionDiagnostic, stage), 0);
+        assert_eq!(offset_of!(RawExecutionDiagnostic, code), 4);
+        assert_eq!(offset_of!(RawExecutionDiagnostic, source_offset), 8);
+    }
+
+    #[test]
+    fn c_library_rejects_incompatible_abi_version() {
+        let incompatible = super::raw::RawAbiVersion {
+            major: 99,
+            minor: 0,
+            patch: 0,
+        };
+        assert_eq!(
+            super::raw::check_abi_version(&incompatible),
+            DeStatus::ABI_MISMATCH.as_raw()
+        );
+    }
+
+    #[test]
+    fn executes_builtin_exit_and_reports_exit_request() {
+        let mut shell = Shell::new().expect("create shell");
+        let result = shell
+            .execute(b"exit", &ExecutionContext::new(), None)
+            .expect("execute built-in");
+        assert!(result.exit_requested);
+        assert_eq!(result.commands_executed, 1);
+    }
+
+    #[test]
+    fn rejects_empty_environment_keys_before_crossing_abi() {
+        let mut shell = Shell::new().expect("create shell");
+        let key = CString::new("").expect("empty key");
+        let value = CString::new("value").expect("value");
+        let environment = [EnvironmentEntry {
+            key: key.as_c_str(),
+            value: value.as_c_str(),
+        }];
+        let context = ExecutionContext {
+            environment: &environment,
+            working_directory: None,
+        };
+        assert_eq!(
+            shell.execute(b"exit", &context, None),
+            Err(ShellError::EmptyEnvironmentKey)
+        );
+    }
+
+    #[test]
     fn c_api_rejects_null_create_output() {
         let status = super::raw::create_shell_with_null_output();
         assert_eq!(status, DeStatus::INVALID_ARGUMENT.as_raw());
