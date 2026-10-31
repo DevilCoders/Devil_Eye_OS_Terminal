@@ -48,7 +48,7 @@ CI validates the CMake project with GCC and Clang in both Debug and Release conf
 
 The public C header `include/de_shell/shell.h` exposes an opaque `de_shell_t` handle, stable status values, and create/destroy entry points. A caller owns a successfully created handle and releases it through `de_shell_destroy()`; the destroy function clears the caller's handle and supports repeated cleanup through that same handle variable.
 
-The private representation lives under `c/internal/` and is not part of the public API. The lifecycle tests cover invalid arguments, independent instances, successful cleanup, and idempotent destruction. The internal bounded input-buffer suite covers line submission, maximum capacity, overflow atomicity, EOF, and invalid states. The lexer suite covers source spans, quoting, escapes, operators, malformed input, and capacity diagnostics. Shell grammar, expansion, command execution, and terminal behavior remain separate tasks. See [DE-Shell Library Lifecycle](architecture/de-shell-lifecycle.md).
+The private representation lives under `c/internal/` and is not part of the public API. The lifecycle tests cover invalid arguments, independent instances, successful cleanup, and idempotent destruction. The internal bounded input-buffer suite covers line submission, maximum capacity, overflow atomicity, EOF, and invalid states. The lexer suite covers source spans, quoting, escapes, operators, malformed input, and capacity diagnostics. The parser suite covers AST structure, precedence, groups, redirections, malformed syntax, and storage limits. Expansion and command execution remain separate tasks. See [DE-Shell Library Lifecycle](architecture/de-shell-lifecycle.md).
 
 ## Rust/C integration strategy
 
