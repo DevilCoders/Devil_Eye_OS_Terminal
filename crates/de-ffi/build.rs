@@ -77,7 +77,7 @@ fn main() {
             .arg("-Wshadow")
             .arg("-Wstrict-prototypes")
             .arg("-Werror")
-            .arg(format!("-DDE_SHELL_VERSION=\\\"{package_version}\\\""))
+            .arg(format!(r#"-DDE_SHELL_VERSION="{package_version}""#))
             .arg(format!("-O{optimization}"))
             .arg(format!("-I{}", include_dir.display()))
             .arg(format!("-I{}", c_dir.display()));
