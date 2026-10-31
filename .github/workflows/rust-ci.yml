@@ -16,6 +16,10 @@ on:
   push:
     branches:
       - master
+      - "feat/**"
+      - "test/**"
+      - "build/**"
+      - "docs/**"
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
