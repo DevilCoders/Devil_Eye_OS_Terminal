@@ -85,3 +85,51 @@ Unit tests cover:
 - UTF-8 text commits, Alt prefixing, and ignored IME preedit.
 - Default shortcut resolution, uppercase key normalization, replacement, and unbinding.
 - Key releases, unsupported function keys, and unhandled Super combinations.
+
+## Paste, mouse, and focus event mapping (DE-010-02)
+
+The session-scoped `input_events::InputEventMapper` handles paste, pointer, and focus events independently from the keyboard mapper. The application keeps one instance per terminal session and routes its returned bytes only to that session's bounded input queue.
+
+### DEC private modes
+
+The mapper consumes completed CSI events from the VT parser and applies supported DECSET/DECRST modes atomically:
+
+| Mode | Behavior |
+| --- | --- |
+| `?9h/l` | X10 mouse press reporting |
+| `?1000h/l` | Normal mouse press/release reporting |
+| `?1002h/l` | Button-motion reporting |
+| `?1003h/l` | Any-motion reporting |
+| `?1004h/l` | Focus-in/focus-out reporting |
+| `?1006h/l` | SGR mouse encoding |
+| `?2004h/l` | Bracketed paste |
+
+When multiple mouse tracking modes are active, the effective precedence is any-motion, button-motion, normal, then X10. Mode parameters are validated as a complete list before any state is changed. Unsupported DEC modes are ignored.
+
+### Paste safety
+
+- The default paste limit is 1 MiB; callers can supply a stricter per-application limit.
+- Multi-line paste returns an explicit confirmation-required error by default. The UI must obtain confirmation before retrying with the allow policy.
+- NUL, ESC, DEL, and other Unicode control characters are rejected. CR, LF, and TAB are preserved without normalization.
+- When bracketed-paste mode is enabled, the mapper wraps the unchanged payload in `ESC [ 200 ~` and `ESC [ 201 ~`.
+- The mapper uses fallible reservation and returns typed errors for oversized input, unsafe controls, and allocation failure.
+
+The mapper does not display confirmation UI or access the clipboard. Those responsibilities remain in the GUI/application layer.
+
+### Mouse reporting
+
+- Mouse coordinates are supplied as zero-based terminal cells and validated against the current terminal dimensions.
+- The mapper implements X10, normal, button-motion, and any-motion filtering.
+- Legacy X10 encoding uses the standard three-byte coordinate payload and rejects coordinates that cannot be represented (1-based maximum 223).
+- SGR encoding uses 1-based decimal coordinates and the correct press/release final byte.
+- Left, middle, right, wheel up/down/left/right, and Shift/Alt/Control modifiers are encoded. Unsupported Super-modified pointer events are ignored.
+- Mouse events outside the active tracking mode are ignored; invalid coordinates are reported as typed errors.
+
+### Focus reporting and session isolation
+
+When DECSET 1004 is active, focus gain emits `ESC [ I` and focus loss emits `ESC [ O`; otherwise focus events are ignored. Each terminal session owns an independent event mapper, so modes enabled by one child process cannot leak into another tab.
+
+### Verification
+
+Tests cover DECSET/DECRST parsing, atomic rejection of malformed mode lists, mouse-mode precedence, paste size/control/multiline policy, bracketed paste preservation, legacy and SGR mouse encodings, wheel/modifier handling, coordinate bounds, focus opt-in, and independent per-session mode state.
+

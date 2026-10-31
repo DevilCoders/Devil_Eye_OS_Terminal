@@ -4,6 +4,7 @@
 //! parsing, rendering, and GUI integration belong to separate components.
 
 pub mod input;
+pub mod input_events;
 pub mod parser;
 pub mod render;
 pub mod screen;
