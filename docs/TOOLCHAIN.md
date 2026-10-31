@@ -8,7 +8,7 @@ This document records the reproducible Linux x86_64 development baseline. The Ru
 | --- | --- | --- |
 | OS | Ubuntu 24.04, Linux x86_64 | Initial supported development and CI platform |
 | Rust | 1.99.1 | Exact version in `rust-toolchain.toml` and Rust CI |
-| Rust components | rustfmt, Clippy | Installed with the pinned toolchain |
+| Rust components | rustfmt, Clippy, llvm-tools-preview | Installed with the pinned toolchain; LLVM tools support source coverage |
 | C language | ISO C17 | Required by the CMake project |
 | C compiler | GCC 13 or Clang 18 | Both compiler families are exercised in CI |
 | CMake | 3.25 or newer | Minimum required by the C build |
@@ -21,7 +21,7 @@ The C compiler major versions describe the CI baseline. The CMake version is a m
 Install rustup using the official installer, then from the repository root run:
 
 ```sh
-rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
 rustup override set 1.99.1
 rustc --version
 cargo --version
@@ -35,6 +35,8 @@ The checked-in `rust-toolchain.toml` selects the same toolchain automatically wh
 cargo fmt --all -- --check
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
+cargo install cargo-llvm-cov --version 0.9.1 --locked
+cargo llvm-cov --workspace --lcov --output-path target/coverage/rust.lcov
 ```
 
 ## Native C prerequisites and validation

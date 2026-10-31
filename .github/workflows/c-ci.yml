@@ -55,3 +55,36 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  coverage:
+    name: C coverage (GCC)
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install gcovr
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcovr
+
+      - name: Configure coverage build
+        run: cmake -S . -B build-coverage -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DDE_ENABLE_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build-coverage --parallel
+
+      - name: Run C tests
+        run: ctest --test-dir build-coverage --output-on-failure
+
+      - name: Generate C coverage report
+        run: gcovr --root . --object-directory build-coverage --xml-pretty --output build-coverage/coverage.xml --print-summary
+
+      - name: Upload C coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-coverage
+          path: build-coverage/coverage.xml
+          if-no-files-found: error
