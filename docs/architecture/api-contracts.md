@@ -130,7 +130,7 @@ A resize request carries non-zero columns and rows. The runtime applies the plat
 
 ### Signals and termination
 
-Signal/termination operations target only the process group owned by the supplied session handle; they must never affect another session. The runtime reports unsupported operations explicitly. Graceful termination uses a bounded timeout; escalation policy is owned by the session manager.
+Signal/termination operations target only the child owned by the supplied session handle. The runtime reports unsupported operations explicitly. Graceful termination uses a bounded timeout; escalation policy is owned by the session manager.
 
 ### Resource ownership
 
@@ -233,9 +233,10 @@ Diagnostics must include subsystem, operation, stable error category, and safe c
 ## 11. Compatibility and versioning
 
 - The Rust crate API follows normal semver rules before 1.0, but public cross-crate contracts still require explicit review.
-- The C ABI uses `DeAbiVersion { major, minor, patch }`.
-- A major mismatch is incompatible and prevents session creation.
-- A minor increase may add optional functions or enum values only when old callers remain safe; callers must handle unknown values.
+- The C ABI uses `de_shell_abi_version_t` / `DeAbiVersion { major, minor, patch }` with fixed 16-bit fields (size 6, alignment 2).
+- Status values use C `int32_t` and Rust `#[repr(transparent)] DeStatus(i32)`, not a Rust enum; unknown status values remain representable.
+- A major mismatch or a requested future minor is incompatible and prevents handle creation; older minor and patch versions are compatible.
+- A minor increase may add optional functions and append status values only when old callers remain safe; existing numeric assignments are immutable.
 - A patch increase contains compatible fixes and does not change layout or existing numeric values.
 - Struct layout changes, ownership changes, threading changes, or semantic changes that can invalidate callers require a major ABI version.
 - Version checks occur before any session handle is created.
