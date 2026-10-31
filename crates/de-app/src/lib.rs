@@ -45,6 +45,7 @@ mod tests {
     use de_ffi::ABI_VERSION;
     use de_runtime::ProgramSpec;
     use de_terminal_core::TerminalSize;
+    use std::ffi::OsStr;
 
     #[test]
     fn composes_validated_subsystem_configuration() {
@@ -53,7 +54,7 @@ mod tests {
         let config = AppConfig::new(size, program);
 
         assert_eq!(config.initial_terminal_size(), size);
-        assert_eq!(config.initial_program().program(), "/bin/sh");
+        assert_eq!(config.initial_program().program(), OsStr::new("/bin/sh"));
         assert_eq!(config.abi_version(), ABI_VERSION);
     }
 }
