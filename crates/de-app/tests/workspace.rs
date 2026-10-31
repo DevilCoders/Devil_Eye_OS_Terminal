@@ -169,6 +169,7 @@ fn rejects_dangling_session_references_and_invalid_split_ratios() {
     let Some(ConfigValue::Table(tab)) = tabs.get_mut(0) else {
         panic!("tab entry must be a table");
     };
+    tab.insert("active_session_id".to_owned(), ConfigValue::Integer(999));
     let Some(ConfigValue::Table(layout)) = tab.get_mut("layout") else {
         panic!("layout must be a table");
     };
