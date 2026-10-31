@@ -455,12 +455,16 @@ pub(super) fn reap_detached_child(child: Child) {
 
 #[cfg(test)]
 mod tests {
-    use super::LinuxPtyChild;
-    use crate::{ProcessExitStatus, ProgramSpec, Signal, TerminalSize, TerminationMode};
+    use super::{resolve_program, LinuxPtyChild};
+    use crate::{
+        ProcessExitStatus, ProgramSpec, ProgramSpecError, Signal, TerminalSize, TerminationMode,
+    };
+    use std::fs;
     use std::io;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::MutexGuard;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     fn process_test_lock() -> MutexGuard<'static, ()> {
         super::super::test_resource_lock()
@@ -474,6 +478,132 @@ mod tests {
         ProgramSpec::new("/bin/sleep")
             .expect("program")
             .with_arg("30")
+    }
+
+    #[test]
+    fn resolves_absolute_executable_and_explicit_path_search() {
+        let absolute = ProgramSpec::new("/bin/sh").expect("absolute executable");
+        let resolved = resolve_program(&absolute).expect("resolve absolute executable");
+        assert!(resolved.executable.is_absolute());
+        assert!(resolved.executable.is_file());
+
+        let searched = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin");
+        let resolved = resolve_program(&searched).expect("resolve from explicit PATH");
+        assert!(resolved.executable.is_absolute());
+        assert!(resolved.executable.is_file());
+    }
+
+    #[test]
+    fn ignores_relative_path_entries_and_requires_path_when_environment_is_cleared() {
+        let relative_path = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment()
+            .with_env("PATH", ".");
+        assert!(matches!(
+            resolve_program(&relative_path),
+            Err(ProgramSpecError::ExecutableNotFound)
+        ));
+
+        let no_path = ProgramSpec::new("sh")
+            .expect("bare executable")
+            .clear_environment();
+        assert!(matches!(
+            resolve_program(&no_path),
+            Err(ProgramSpecError::ExecutableNotFound)
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_non_directory_and_non_executable_paths() {
+        let missing_cwd = std::env::temp_dir().join(format!(
+            "de-runtime-missing-cwd-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let missing_directory = ProgramSpec::new("/bin/sh")
+            .expect("executable")
+            .with_working_directory(missing_cwd);
+        assert!(matches!(
+            resolve_program(&missing_directory),
+            Err(ProgramSpecError::WorkingDirectoryNotFound)
+        ));
+
+        let file_as_directory = ProgramSpec::new("/bin/sh")
+            .expect("executable")
+            .with_working_directory("/etc/passwd");
+        assert!(matches!(
+            resolve_program(&file_as_directory),
+            Err(ProgramSpecError::WorkingDirectoryNotDirectory)
+        ));
+
+        let directory_as_executable =
+            ProgramSpec::new("/bin").expect("directory path is structurally valid");
+        assert!(matches!(
+            resolve_program(&directory_as_executable),
+            Err(ProgramSpecError::ExecutableNotRegularFile)
+        ));
+
+        let non_executable = ProgramSpec::new("/etc/passwd").expect("file path");
+        assert!(matches!(
+            resolve_program(&non_executable),
+            Err(ProgramSpecError::ExecutableNotExecutable)
+        ));
+    }
+
+    #[test]
+    fn resolves_relative_executable_against_configured_working_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "de-runtime-relative-exec-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("create temporary directory");
+        let executable = root.join("test-child");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").expect("write executable");
+        let mut permissions = fs::metadata(&executable)
+            .expect("executable metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).expect("set executable permissions");
+
+        let program = ProgramSpec::new("./test-child")
+            .expect("relative executable")
+            .with_working_directory(root.clone());
+        let resolved = resolve_program(&program).expect("resolve relative executable");
+        assert_eq!(
+            resolved.executable,
+            fs::canonicalize(&executable).expect("canonical executable")
+        );
+        assert_eq!(
+            resolved.working_directory,
+            Some(fs::canonicalize(&root).expect("canonical working directory"))
+        );
+
+        fs::remove_dir_all(root).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn child_exec_does_not_inherit_internal_pty_descriptors() {
+        let _guard = process_test_lock();
+        let script = r#"for fd in /proc/self/fd/*; do case "$fd" in /proc/self/fd/0|/proc/self/fd/1|/proc/self/fd/2) ;; *) exit 91;; esac; done"#;
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("shell executable")
+            .with_arg("-c")
+            .with_arg(script);
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn descriptor probe");
+        assert_eq!(
+            child.wait().expect("wait descriptor probe"),
+            ProcessExitStatus::Exited(0)
+        );
     }
 
     #[test]
