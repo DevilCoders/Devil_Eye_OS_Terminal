@@ -195,7 +195,9 @@ impl ShortcutMap {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (KeyChord, ShortcutAction)> + '_ {
-        self.bindings.iter().map(|(chord, action)| (*chord, *action))
+        self.bindings
+            .iter()
+            .map(|(chord, action)| (*chord, *action))
     }
 }
 
@@ -369,7 +371,11 @@ fn map_special_key(code: KeyCode, modifiers: Modifiers, modes: KeyboardModes) ->
             None
         }
         KeyCode::Backspace => {
-            bytes.push(if modes.backspace_sends_bs() { 0x08 } else { 0x7f });
+            bytes.push(if modes.backspace_sends_bs() {
+                0x08
+            } else {
+                0x7f
+            });
             None
         }
         KeyCode::Escape => {
@@ -482,10 +488,7 @@ mod tests {
             InputResult::Bytes(b"\x1b[H".to_vec())
         );
 
-        let application = InputMapper::new(
-            KeyboardModes::new(true, false),
-            ShortcutMap::default(),
-        );
+        let application = InputMapper::new(KeyboardModes::new(true, false), ShortcutMap::default());
         assert_eq!(
             application.map_key(KeyEvent::pressed(KeyCode::ArrowUp, Modifiers::NONE)),
             InputResult::Bytes(b"\x1bOA".to_vec())
@@ -623,10 +626,7 @@ mod tests {
             mapper.map_key(KeyEvent::pressed(chord.code, chord.modifiers)),
             InputResult::Shortcut(ShortcutAction::SplitVertical)
         );
-        assert_eq!(
-            shortcuts.unbind(chord),
-            Some(ShortcutAction::SplitVertical)
-        );
+        assert_eq!(shortcuts.unbind(chord), Some(ShortcutAction::SplitVertical));
     }
 
     #[test]
@@ -647,10 +647,7 @@ mod tests {
 
     #[test]
     fn backspace_mode_changes_the_terminal_byte() {
-        let mapper = InputMapper::new(
-            KeyboardModes::new(false, true),
-            ShortcutMap::default(),
-        );
+        let mapper = InputMapper::new(KeyboardModes::new(false, true), ShortcutMap::default());
         assert_eq!(
             mapper.map_key(KeyEvent::pressed(KeyCode::Backspace, Modifiers::NONE)),
             InputResult::Bytes(vec![0x08])
