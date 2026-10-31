@@ -16,6 +16,7 @@ pub use de_terminal_core::{TerminalSize, TerminalSizeError};
 
 /// Linux-specific runtime resources and adapters.
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)] // Linux libc calls are isolated behind the platform adapter boundary.
 pub mod linux;
 
 /// An owned process launch description, validated before it reaches a runtime backend.
