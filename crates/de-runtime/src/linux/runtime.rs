@@ -660,11 +660,8 @@ mod tests {
             .with_env("PATH", "/bin:/usr/bin")
             .with_arg("-c")
             .with_arg("printf '%s' \"$0\"");
-        let request = ProcessSpawnRequest::new(
-            program,
-            IoAttachment::Stdio(pipe_config()),
-        )
-        .expect("spawn request");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(pipe_config()))
+            .expect("spawn request");
         let mut process = LinuxRuntime.spawn(request).expect("spawn PATH alias");
 
         let (output, status) =
