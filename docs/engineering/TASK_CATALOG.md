@@ -24,6 +24,7 @@ All task records below are GitHub Issues. Each task links to its parent Epic and
 | DE-005-01 | #42 | Define terminal cell and screen-grid model | #5 |
 | DE-005-02 | #43 | Implement cursor, scrolling, and resize semantics | #5 |
 | DE-005-03 | #44 | Implement VT/ANSI parser state machine | #5 |
+| DE-005-04 | #140 | Implement bounded terminal scrollback history | #5 |
 | DE-006-01 | #45 | Implement Linux PTY allocation and setup | #6 |
 | DE-006-02 | #46 | Implement child process spawn and lifecycle | #6 |
 | DE-006-03 | #47 | Implement PTY bidirectional I/O and resize propagation | #6 |
@@ -71,7 +72,7 @@ All task records below are GitHub Issues. Each task links to its parent Epic and
 ## Coverage
 
 - 24 Epics: #1–#24.
-- 62 implementation tasks: #25–#86.
+- 63 implementation tasks: #25–#86 plus #140.
 - 10 delivery milestones: M0–M10 (11 milestones including M0).
 - Initial critical-path tasks are explicitly ordered in the Dependency Map.
 
@@ -81,4 +82,4 @@ This catalog is an index, not a replacement for the GitHub Issues. Use the Issue
 
 ## Subtask decomposition status
 
-All 62 Task Issues (#25–#86) now contain a checked, task-scoped `Subtasks (implementation checklist)` section. The checklist decomposes design/review, implementation, acceptance verification, testing, integration, documentation, and evidence into actionable work. These are Markdown checklist items within each Task Issue, not separate GitHub child Issues and not native Projects sub-issue relationships. Promote a checklist item to a separate Issue only when it needs independent ownership, dependencies, review, or milestone tracking.
+All 63 Task Issues contain a task-scoped `Subtasks (implementation checklist)` section. The checklist decomposes design/review, implementation, acceptance verification, testing, integration, documentation, and evidence into actionable work. These are Markdown checklist items within each Task Issue, not separate GitHub child Issues and not native Projects sub-issue relationships. Promote a checklist item to a separate Issue only when it needs independent ownership, dependencies, review, or milestone tracking.
