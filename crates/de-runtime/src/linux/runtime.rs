@@ -8,12 +8,13 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::{
-    IoAttachment, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
-    ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal,
-    StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
+    EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
+    ProcessSpawnRequest, ProgramSpec, ProgramSpecError, ReadOutcome, RuntimeCapability,
+    RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
+    TerminalSize, TerminationMode, WriteOutcome,
 };
 
-use super::process::{map_exit_status, reap_detached_child, LinuxPtyChild};
+use super::process::{map_exit_status, reap_detached_child, resolve_program, LinuxPtyChild};
 
 /// Linux process runtime supporting PTY sessions and explicit stdio attachments.
 #[derive(Debug, Default, Clone, Copy)]
@@ -111,8 +112,13 @@ impl StdioRuntimeProcess {
         config: StdioConfig,
         kill_on_drop: bool,
     ) -> Result<Self, RuntimeError> {
-        let mut command = Command::new(program.program());
+        let resolved = resolve_program(program).map_err(RuntimeError::InvalidProgram)?;
+        let mut command = Command::new(&resolved.executable);
+        command.arg0(program.program());
         command.args(program.args());
+        if program.environment_inheritance() == EnvironmentInheritance::Clear {
+            command.env_clear();
+        }
         command.envs(
             program
                 .environment()
@@ -120,7 +126,7 @@ impl StdioRuntimeProcess {
                 .map(|(key, value)| (key, value)),
         );
 
-        if let Some(directory) = program.working_directory() {
+        if let Some(directory) = resolved.working_directory.as_deref() {
             command.current_dir(directory);
         }
 
@@ -503,6 +509,12 @@ fn signal_number(signal: Signal) -> libc::c_int {
 }
 
 fn map_spawn_error(error: io::Error) -> RuntimeError {
+    if let Some(program_error) = error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<ProgramSpecError>())
+    {
+        return RuntimeError::InvalidProgram(*program_error);
+    }
     if error.kind() == io::ErrorKind::InvalidInput {
         RuntimeError::InvalidArgument
     } else {
@@ -522,9 +534,9 @@ fn map_io_error(error: io::Error) -> RuntimeError {
 mod tests {
     use super::LinuxRuntime;
     use crate::{
-        IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
-        RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
-        StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
+        IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, ProgramSpecError,
+        PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
+        Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
     use std::num::NonZeroUsize;
     use std::thread;
@@ -640,6 +652,28 @@ mod tests {
     }
 
     #[test]
+    fn preserves_requested_argv0_for_stdio_spawn() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("sh")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin")
+            .with_arg("-c")
+            .with_arg("printf '%s' \"$0\"");
+        let request = ProcessSpawnRequest::new(
+            program,
+            IoAttachment::Stdio(pipe_config()),
+        )
+        .expect("spawn request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn PATH alias");
+
+        let (output, status) =
+            drain_until_exit(&mut *process, Duration::from_secs(3)).expect("drain child output");
+        assert_eq!(status, ProcessExitStatus::Exited(0));
+        assert_eq!(output, b"sh");
+    }
+
+    #[test]
     fn reports_linux_runtime_capabilities() {
         let _guard = runtime_test_lock();
         let capabilities = LinuxRuntime.capabilities();
@@ -655,6 +689,56 @@ mod tests {
         ] {
             assert!(capabilities.supports(capability));
         }
+    }
+
+    #[test]
+    fn rejects_unresolved_executable_and_invalid_working_directory_before_spawn() {
+        let runtime = LinuxRuntime;
+        let missing = ProgramSpec::new("de-runtime-no-such-executable")
+            .expect("program")
+            .clear_environment();
+        let request = ProcessSpawnRequest::new(missing, IoAttachment::Pty(PtyConfig::new(size())))
+            .expect("valid request structure");
+        match runtime.spawn(request) {
+            Err(error) => assert_eq!(
+                error,
+                RuntimeError::InvalidProgram(ProgramSpecError::ExecutableNotFound)
+            ),
+            Ok(_) => panic!("missing executable unexpectedly spawned"),
+        }
+
+        let invalid_directory = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_working_directory("/etc/passwd");
+        let request =
+            ProcessSpawnRequest::new(invalid_directory, IoAttachment::Pty(PtyConfig::new(size())))
+                .expect("valid request structure");
+        match runtime.spawn(request) {
+            Err(error) => assert_eq!(
+                error,
+                RuntimeError::InvalidProgram(ProgramSpecError::WorkingDirectoryNotDirectory)
+            ),
+            Ok(_) => panic!("non-directory working directory unexpectedly spawned"),
+        }
+    }
+
+    #[test]
+    fn stdio_spawn_can_clear_environment_and_apply_only_explicit_overrides() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("env")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/usr/bin")
+            .with_env("ONLY_EXPLICIT", "visible");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(pipe_config()))
+            .expect("spawn request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn env");
+
+        let output = read_to_eof(process.as_mut(), false).expect("read environment");
+        let output = String::from_utf8(output).expect("UTF-8 environment output");
+        assert!(output.contains("PATH=/usr/bin"));
+        assert!(output.contains("ONLY_EXPLICIT=visible"));
+        assert_eq!(output.lines().count(), 2);
     }
 
     #[test]
@@ -975,7 +1059,9 @@ mod tests {
 
         assert!(matches!(
             LinuxRuntime.spawn(request),
-            Err(RuntimeError::SpawnFailed)
+            Err(RuntimeError::InvalidProgram(
+                ProgramSpecError::ExecutableNotFound
+            ))
         ));
     }
 
