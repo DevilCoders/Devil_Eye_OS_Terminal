@@ -17,6 +17,7 @@ This directory contains the system architecture baseline, component contracts, a
 ## Terminal model and parser
 
 - [Terminal Screen State](terminal-screen-state.md) — cursor bounds, inclusive scroll margins, CR/LF, erase ranges, wide-cell invariants, and resize reconciliation.
+- [Bounded Terminal Scrollback](terminal-scrollback.md) — retained full-screen scroll history, cell-budget limits, oldest-row eviction, resize/no-reflow behavior, and failure semantics.
 - [VT/ANSI Parser](terminal-vt-parser.md) — incremental ESC/CSI/control-string framing, bounded sequence storage, cancellation, malformed-input recovery, and byte-preserving events.
 
 ## Rust/C ABI and DE-Shell
