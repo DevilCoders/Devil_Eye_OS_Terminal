@@ -2,35 +2,57 @@
 
 ## Scope
 
-DE-004-01 introduces the independent C library boundary and its minimal lifecycle API. It does not implement shell input buffering, lexical analysis, parsing, command dispatch, process execution, or terminal emulation.
+DE-004-01 introduces the independent C library boundary, versioned ABI metadata, opaque handles, and a minimal per-instance lifecycle. It does not implement shell input buffering, lexical analysis, parsing, command dispatch, process execution, or terminal emulation.
 
 ## Public API
 
 The public header is `include/de_shell/shell.h`.
 
-- `de_shell_t` is an opaque, caller-owned handle.
-- `de_shell_create()` allocates one independent instance and returns it through an output parameter.
-- `de_shell_destroy()` releases the instance and clears the caller's handle.
-- `de_shell_status_t` uses the stable initial status values also defined by Rust's `DeStatus`: OK = 0, INVALID_ARGUMENT = 1, INTERNAL_ERROR = 2.
+- `DeShell` is an opaque, caller-owned handle.
+- `de_shell_abi_version()` returns ABI version 0.1.0, matching `de_ffi::ABI_VERSION`.
+- `de_shell_create(DeShell **out_shell)` allocates one independent instance and returns it through an output parameter.
+- `de_shell_start(DeShell *shell)` transitions Created to Running.
+- `de_shell_shutdown(DeShell *shell)` transitions Created or Running to Stopped; repeated shutdown is idempotent.
+- `de_shell_get_state()` reads the lifecycle state through a caller-provided output pointer.
+- `de_shell_destroy(DeShell *shell)` shuts down and releases the instance.
 
-A create call validates its output pointer and initializes the output to NULL before allocation. A successful create transfers ownership of the new handle to the caller. Destroy accepts the address of that handle, clears it before releasing the allocation, and treats an already-cleared handle as a successful no-op. A NULL pointer-to-handle is invalid.
+The C ABI uses fixed-width integer types. `DeAbiVersion` is three `uint16_t` fields and has a six-byte layout. `DeStatus` is `int32_t` and matches the stable Rust values: OK = 0, INVALID_ARGUMENT = 1, INTERNAL_ERROR = 2. Shell state values are `uint32_t` constants: INVALID = 0, CREATED = 1, RUNNING = 2, STOPPED = 3.
 
-The caller must not inspect the opaque representation, free it directly, use a copied alias after destruction, or call the handle concurrently. These constraints are consistent with the ownership and single-thread-affinity baseline in the cross-component API contract.
+## Ownership and threading
 
-## Private representation
+A successful create transfers ownership of the handle to the caller. The caller must release it exactly once with `de_shell_destroy`. The handle must not be inspected, freed directly, copied and used after destruction, or called concurrently. One handle represents one shell session.
 
-The implementation-only structure is declared in `c/internal/shell_internal.h`. It is not installed as a public header and must not leak into Rust or other consumers.
+`de_shell_destroy` accepts a live handle, performs shutdown, invalidates its internal marker, and frees the allocation. Passing NULL is invalid. The pointer becomes unusable after destroy returns.
+
+## State transitions
+
+- Created -> Running
+- Created -> Stopped
+- Running -> Stopped
+- Stopped -> Stopped (idempotent shutdown)
+
+Starting an instance outside Created is rejected. A stopped instance cannot restart. Destroy releases either a Created or Stopped instance and also shuts down a Running instance before freeing it.
 
 ## Error and allocation behavior
 
-- Invalid pointer arguments return `DE_SHELL_STATUS_INVALID_ARGUMENT`.
-- Allocation failure returns `DE_SHELL_STATUS_INTERNAL_ERROR` with the output handle left NULL.
-- Cleanup through a valid pointer-to-handle is idempotent, including when the stored handle is already NULL.
-- No error path writes to caller memory unless the output pointer was validated.
+- Invalid pointers or invalid state operations return `DE_STATUS_INVALID_ARGUMENT`.
+- Allocation failure returns `DE_STATUS_INTERNAL_ERROR` and leaves the output handle NULL.
+- `de_shell_get_state` initializes its output to `DE_SHELL_STATE_INVALID` before validating the handle.
+- No global mutable shell state is used; each handle owns its own lifecycle state.
+- The library does not retain caller-owned buffers or pointers.
 
 ## Tests
 
-The CTest lifecycle suite covers successful creation/destruction, invalid arguments, idempotent cleanup, and independent instances. Allocation failure is not fault-injected because no allocator injection mechanism is part of this task; it remains a direct, checked failure path.
+The CTest lifecycle suite covers:
+- ABI version values and structure layout.
+- Successful create/start/state-query/shutdown/destroy.
+- Invalid output pointers and NULL handles.
+- Rejected repeated start and restart after shutdown.
+- Idempotent shutdown.
+- Cleanup of a Created instance.
+- Independence of two concurrently allocated shell handles.
+
+Allocation failure is checked in the implementation but is not fault-injected because allocator injection is outside this task.
 
 ## Deliberate non-goals
 
