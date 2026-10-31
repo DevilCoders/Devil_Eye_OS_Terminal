@@ -3,7 +3,7 @@ name: Engineering taxonomy and issue automation
 on:
   workflow_dispatch:
   issues:
-    types: [opened, edited, reopened]
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -173,7 +173,7 @@ jobs:
               const milestoneTitle = target ? target[1].trim() : (epicMatch ? epicMilestones[epicMatch[0]] : null);
               if (milestoneTitle) {
                 const number = milestoneByTitle.get(milestoneTitle);
-                if (number) await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
+                if (number && (!issue.milestone || issue.milestone.number !== number)) await github.rest.issues.update({ owner, repo, issue_number: issue.number, milestone: number });
               }
 
               const current = new Set((issue.labels || []).map(l => typeof l === "string" ? l : l.name));
