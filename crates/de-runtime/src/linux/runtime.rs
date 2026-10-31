@@ -560,7 +560,8 @@ mod tests {
                     collected.extend_from_slice(&buffer[..count.get()]);
                     if collected
                         .windows(marker.len())
-                        .any(|window| window == marker) {
+                        .any(|window| window == marker)
+                    {
                         return Ok(collected);
                     }
                 }
