@@ -5,6 +5,7 @@ This directory contains the system architecture baseline and architecture decisi
 ## System architecture
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
+- [Cross-Component API Contracts](api-contracts.md) — lifecycle state machine, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
 
 ## Required design boundaries
 
