@@ -53,7 +53,10 @@ macro_rules! persistent_id {
 
 persistent_id!(WorkspaceId, "Stable identifier for one saved workspace.");
 persistent_id!(TabId, "Stable identifier for one saved terminal tab.");
-persistent_id!(SavedSessionId, "Stable identifier for saved session metadata.");
+persistent_id!(
+    SavedSessionId,
+    "Stable identifier for saved session metadata."
+);
 
 /// Orientation of a persisted pane split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,7 +283,10 @@ impl WorkspaceSnapshot {
 
         for session in &self.sessions {
             if !session_ids.insert(session.id) {
-                return Err(invalid("sessions.id", "persistent session IDs must be unique"));
+                return Err(invalid(
+                    "sessions.id",
+                    "persistent session IDs must be unique",
+                ));
             }
             validate_title(&session.title, "sessions.title")?;
             let columns = session.terminal_size.columns();
@@ -323,14 +329,12 @@ impl WorkspaceSnapshot {
 
                 let mut layout_sessions = Vec::new();
                 let mut node_count = 0usize;
-                collect_layout_sessions(
-                    &tab.layout,
-                    1,
-                    &mut node_count,
-                    &mut layout_sessions,
-                )?;
+                collect_layout_sessions(&tab.layout, 1, &mut node_count, &mut layout_sessions)?;
                 if layout_sessions.is_empty() {
-                    return Err(invalid("workspaces.tabs.layout", "must contain a session pane"));
+                    return Err(invalid(
+                        "workspaces.tabs.layout",
+                        "must contain a session pane",
+                    ));
                 }
                 if !layout_sessions.contains(&tab.active_session_id) {
                     return Err(invalid(
@@ -397,14 +401,14 @@ impl WorkspaceSnapshot {
         let mut root = BTreeMap::new();
         root.insert(
             "schema_version".to_owned(),
-            ConfigValue::Integer(to_i64(
-                WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
-                "schema_version",
-            )?),
+            ConfigValue::Integer(to_i64(WORKSPACE_SNAPSHOT_SCHEMA_VERSION, "schema_version")?),
         );
         root.insert(
             "active_workspace_id".to_owned(),
-            ConfigValue::Integer(to_i64(self.active_workspace_id.get(), "active_workspace_id")?),
+            ConfigValue::Integer(to_i64(
+                self.active_workspace_id.get(),
+                "active_workspace_id",
+            )?),
         );
         root.insert("workspaces".to_owned(), ConfigValue::Array(workspaces));
         root.insert("sessions".to_owned(), ConfigValue::Array(sessions));
@@ -429,12 +433,9 @@ impl WorkspaceSnapshot {
             });
         }
 
-        let active_workspace_id = WorkspaceId::new(take_u64(
-            &mut root,
-            "active_workspace_id",
-            "root",
-        )?)
-        .ok_or_else(|| invalid("active_workspace_id", "must be non-zero"))?;
+        let active_workspace_id =
+            WorkspaceId::new(take_u64(&mut root, "active_workspace_id", "root")?)
+                .ok_or_else(|| invalid("active_workspace_id", "must be non-zero"))?;
 
         let workspace_values = take_array(&mut root, "workspaces", "root")?;
         if workspace_values.len() > MAX_WORKSPACES {
@@ -501,7 +502,10 @@ impl fmt::Display for WorkspaceError {
                 section,
                 key,
                 expected,
-            } => write!(formatter, "workspace field {section}.{key} must be {expected}"),
+            } => write!(
+                formatter,
+                "workspace field {section}.{key} must be {expected}"
+            ),
             Self::UnsupportedVersion { found, expected } => write!(
                 formatter,
                 "workspace snapshot schema version {found} is unsupported; expected {expected}"
@@ -554,9 +558,7 @@ fn collect_layout_sessions(
             second,
             ..
         } => {
-            if !(MIN_SPLIT_RATIO_PER_MILLE..=MAX_SPLIT_RATIO_PER_MILLE)
-                .contains(ratio_per_mille)
-            {
+            if !(MIN_SPLIT_RATIO_PER_MILLE..=MAX_SPLIT_RATIO_PER_MILLE).contains(ratio_per_mille) {
                 return Err(invalid(
                     "workspaces.tabs.layout.ratio_per_mille",
                     "must be between 100 and 900",
@@ -571,8 +573,14 @@ fn collect_layout_sessions(
 
 fn encode_workspace(workspace: &WorkspaceMetadata) -> Result<ConfigValue, WorkspaceError> {
     let mut table = BTreeMap::new();
-    table.insert("id".to_owned(), id_value(workspace.id.get(), "workspaces.id")?);
-    table.insert("name".to_owned(), ConfigValue::String(workspace.name.clone()));
+    table.insert(
+        "id".to_owned(),
+        id_value(workspace.id.get(), "workspaces.id")?,
+    );
+    table.insert(
+        "name".to_owned(),
+        ConfigValue::String(workspace.name.clone()),
+    );
     table.insert(
         "active_tab_id".to_owned(),
         id_value(workspace.active_tab_id.get(), "workspaces.active_tab_id")?,
@@ -592,11 +600,17 @@ fn encode_workspace(workspace: &WorkspaceMetadata) -> Result<ConfigValue, Worksp
 
 fn encode_tab(tab: &TabMetadata) -> Result<ConfigValue, WorkspaceError> {
     let mut table = BTreeMap::new();
-    table.insert("id".to_owned(), id_value(tab.id.get(), "workspaces.tabs.id")?);
+    table.insert(
+        "id".to_owned(),
+        id_value(tab.id.get(), "workspaces.tabs.id")?,
+    );
     table.insert("title".to_owned(), ConfigValue::String(tab.title.clone()));
     table.insert(
         "active_session_id".to_owned(),
-        id_value(tab.active_session_id.get(), "workspaces.tabs.active_session_id")?,
+        id_value(
+            tab.active_session_id.get(),
+            "workspaces.tabs.active_session_id",
+        )?,
     );
     table.insert("layout".to_owned(), encode_layout(&tab.layout)?);
     Ok(ConfigValue::Table(table))
@@ -621,11 +635,13 @@ fn encode_layout(layout: &PaneLayout) -> Result<ConfigValue, WorkspaceError> {
             table.insert("kind".to_owned(), ConfigValue::String("split".to_owned()));
             table.insert(
                 "orientation".to_owned(),
-                ConfigValue::String(match orientation {
-                    SplitOrientation::Horizontal => "horizontal",
-                    SplitOrientation::Vertical => "vertical",
-                }
-                .to_owned()),
+                ConfigValue::String(
+                    match orientation {
+                        SplitOrientation::Horizontal => "horizontal",
+                        SplitOrientation::Vertical => "vertical",
+                    }
+                    .to_owned(),
+                ),
             );
             table.insert(
                 "ratio_per_mille".to_owned(),
@@ -641,14 +657,19 @@ fn encode_layout(layout: &PaneLayout) -> Result<ConfigValue, WorkspaceError> {
 fn encode_session(session: &SavedSessionMetadata) -> Result<ConfigValue, WorkspaceError> {
     let mut table = BTreeMap::new();
     table.insert("id".to_owned(), id_value(session.id.get(), "sessions.id")?);
-    table.insert("title".to_owned(), ConfigValue::String(session.title.clone()));
+    table.insert(
+        "title".to_owned(),
+        ConfigValue::String(session.title.clone()),
+    );
     table.insert(
         "kind".to_owned(),
-        ConfigValue::String(match session.kind {
-            SessionKind::ExternalProgram => "external_program",
-            SessionKind::DeShell => "de_shell",
-        }
-        .to_owned()),
+        ConfigValue::String(
+            match session.kind {
+                SessionKind::ExternalProgram => "external_program",
+                SessionKind::DeShell => "de_shell",
+            }
+            .to_owned(),
+        ),
     );
     table.insert(
         "columns".to_owned(),
@@ -695,13 +716,14 @@ fn decode_tab(
     let id = TabId::new(take_u64(&mut table, "id", &section)?)
         .ok_or_else(|| invalid("workspaces.tabs.id", "must be non-zero"))?;
     let title = take_string(&mut table, "title", &section)?;
-    let active_session_id = SavedSessionId::new(take_u64(
-        &mut table,
-        "active_session_id",
-        &section,
-    )?)
-    .ok_or_else(|| invalid("workspaces.tabs.active_session_id", "must be non-zero"))?;
-    let layout = decode_layout(take_required(&mut table, "layout", &section)?, &format!("{section}.layout"), 1)?;
+    let active_session_id =
+        SavedSessionId::new(take_u64(&mut table, "active_session_id", &section)?)
+            .ok_or_else(|| invalid("workspaces.tabs.active_session_id", "must be non-zero"))?;
+    let layout = decode_layout(
+        take_required(&mut table, "layout", &section)?,
+        &format!("{section}.layout"),
+        1,
+    )?;
     ensure_no_unknown(table, &section)?;
     Ok(TabMetadata::new(id, title, active_session_id, layout))
 }
@@ -767,7 +789,10 @@ fn decode_layout(
     Ok(layout)
 }
 
-fn decode_session(value: ConfigValue, index: usize) -> Result<SavedSessionMetadata, WorkspaceError> {
+fn decode_session(
+    value: ConfigValue,
+    index: usize,
+) -> Result<SavedSessionMetadata, WorkspaceError> {
     let section = format!("sessions[{index}]");
     let mut table = into_table(value, &section)?;
     let id = SavedSessionId::new(take_u64(&mut table, "id", &section)?)
@@ -801,10 +826,12 @@ fn take_required(
     key: &str,
     section: &str,
 ) -> Result<ConfigValue, WorkspaceError> {
-    table.remove(key).ok_or_else(|| WorkspaceError::MissingField {
-        section: section.to_owned(),
-        key: key.to_owned(),
-    })
+    table
+        .remove(key)
+        .ok_or_else(|| WorkspaceError::MissingField {
+            section: section.to_owned(),
+            key: key.to_owned(),
+        })
 }
 
 fn take_u64(
