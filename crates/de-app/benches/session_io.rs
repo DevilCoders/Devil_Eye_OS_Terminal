@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 
 use de_app::lifecycle::ApplicationService;
 use de_app::service_interfaces::{
-    ProcessRead, RuntimeService, SessionKind, SessionManagerService, SessionSpec, TerminalSession,
+    ProcessRead, SessionKind, SessionManagerService, SessionSpec, TerminalSession,
 };
-use de_app::{LinuxRuntimeService, SessionManager};
+use de_app::{LinuxRuntimeProcess, LinuxRuntimeService, ManagedSession, SessionManager};
 use de_runtime::ProgramSpec;
 use de_terminal_core::TerminalSize;
 
@@ -122,17 +122,14 @@ fn session_spec(program: ProgramSpec) -> SessionSpec {
 }
 
 fn round_trip(
-    session: &mut impl TerminalSession,
+    session: &mut ManagedSession<LinuxRuntimeProcess>,
     payload: &[u8],
     buffer: &mut [u8],
 ) {
     session.send_input(payload).expect("queue PTY input");
     let deadline = Instant::now() + Duration::from_secs(10);
 
-    while session
-        .pending_input_bytes()
-        .expect("managed session exposes queue length") > 0
-    {
+    while session.pending_input_bytes() > 0 {
         let written = session.flush_input().expect("flush PTY input");
         if written == 0 {
             assert!(Instant::now() < deadline, "PTY input remained backpressured");
