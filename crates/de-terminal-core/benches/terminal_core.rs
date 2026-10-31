@@ -8,12 +8,10 @@
 //!   DE_BENCH_SAMPLE_MS (default 200)
 //!   DE_BENCH_SAMPLES (default 12)
 
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::fs;
 use std::hint::black_box;
 use std::mem::size_of_val;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -24,66 +22,6 @@ use de_terminal_core::render::{
 };
 use de_terminal_core::screen::{CellAttributes, Color, GraphemeWidth, StyleFlags, TerminalScreen};
 use de_terminal_core::TerminalSize;
-
-static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
-static ALLOCATION_COUNT: AtomicU64 = AtomicU64::new(0);
-static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
-
-struct CountingAllocator;
-
-// SAFETY: this benchmark-only wrapper forwards each pointer/layout unchanged
-// to System and only observes successful allocation sizes with atomics.
-#[allow(unsafe_code)]
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: the requested layout is forwarded unchanged to System.
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() && COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
-            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
-            ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        // SAFETY: pointer and its original layout came from this same System allocator.
-        unsafe { System.dealloc(pointer, layout) };
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        // SAFETY: pointer and its original layout came from this same System allocator.
-        let resized = unsafe { System.realloc(pointer, layout, new_size) };
-        if !resized.is_null() && COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
-            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
-            ALLOCATED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
-        }
-        resized
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-struct AllocationCountingGuard;
-
-impl Drop for AllocationCountingGuard {
-    fn drop(&mut self) {
-        COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
-    }
-}
-
-fn report_allocations(name: &str, operation: impl FnOnce()) {
-    let count_before = ALLOCATION_COUNT.load(Ordering::Relaxed);
-    let bytes_before = ALLOCATED_BYTES.load(Ordering::Relaxed);
-    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
-    let guard = AllocationCountingGuard;
-    operation();
-    drop(guard);
-    let count = ALLOCATION_COUNT.load(Ordering::Relaxed) - count_before;
-    let bytes = ALLOCATED_BYTES.load(Ordering::Relaxed) - bytes_before;
-    println!("# allocations_{name}_count={count}");
-    println!("# allocations_{name}_bytes={bytes}");
-}
 
 fn setting(name: &str, default: u64, minimum: u64, maximum: u64) -> u64 {
     std::env::var(name)
@@ -322,26 +260,6 @@ fn render_benchmarks(size: TerminalSize, label: &str) {
     );
 
     let dirty = CellRect::new(size.rows() / 2, 0, 1, size.columns()).expect("dirty row");
-
-    damage.mark_all();
-    let full_probe_frame = Frame::new(&screen, &damage, 10).expect("full allocation probe frame");
-    report_allocations(&format!("render_full_{label}"), || {
-        renderer
-            .render(full_probe_frame, None)
-            .expect("full allocation probe render");
-    });
-    damage.clear();
-
-    damage
-        .mark_rect(dirty)
-        .expect("prepare dirty allocation probe");
-    let dirty_probe_frame = Frame::new(&screen, &damage, 11).expect("dirty allocation probe frame");
-    report_allocations(&format!("render_dirty_row_{label}"), || {
-        renderer
-            .render(dirty_probe_frame, None)
-            .expect("dirty allocation probe render");
-    });
-    damage.clear();
 
     benchmark(
         &format!("render_dirty_row_{label}"),
