@@ -17,6 +17,7 @@ The dependency-free `terminal_core` benchmark harness records:
 | Workload | What it stresses |
 | --- | --- |
 | Full frame, 80×24 / 160×48 / 240×80 | Background fill, glyph lookup/raster loop, styles, and pixel writes |
+| Background-only frame at each size | Isolates per-cell background composition and pixel-surface fill from glyph rasterization |
 | One dirty row at each size | Incremental redraw and region handling |
 | Color/style churn at each size | Indexed and RGB colors; bold, dim, italic, inverse, underline, blink, hidden, and strikethrough |
 | Linear selection at each size | Per-cell selection membership and color override |
