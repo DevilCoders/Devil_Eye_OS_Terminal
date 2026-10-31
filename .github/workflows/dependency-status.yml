@@ -27,7 +27,7 @@ jobs:
             const {
               chooseTaskStatus,
               reconcileStatusLabels,
-            } = require("./.github/scripts/dependency-status.cjs");
+            } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/dependency-status.cjs`);
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
