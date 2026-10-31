@@ -190,7 +190,6 @@ unsafe fn parse_external_command<'a>(
     })
 }
 
-
 pub(super) fn query_abi_version(out_version: &mut RawAbiVersion) -> c_int {
     // SAFETY: the reference guarantees writable storage with the required layout.
     unsafe { de_shell_get_abi_version(out_version) }
