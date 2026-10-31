@@ -38,6 +38,7 @@ add_library(de_shell STATIC
     c/shell.c
     c/internal/input_buffer.c
     c/internal/lexer.c
+    c/internal/command_registry.c
 )
 
 target_include_directories(de_shell
@@ -140,5 +141,26 @@ if(BUILD_TESTING)
     add_test(
         NAME de_shell_lexer
         COMMAND de_shell_lexer_test
+    )
+
+    add_executable(de_shell_command_registry_test
+        c/tests/test_command_registry.c
+    )
+
+    target_include_directories(de_shell_command_registry_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/c
+    )
+    target_link_libraries(de_shell_command_registry_test PRIVATE de_shell)
+    de_enable_strict_warnings(de_shell_command_registry_test)
+
+    if(DE_ENABLE_COVERAGE)
+        target_compile_options(de_shell_command_registry_test PRIVATE --coverage -O0 -g)
+        target_link_options(de_shell_command_registry_test PRIVATE --coverage)
+    endif()
+
+    add_test(
+        NAME de_shell_command_registry
+        COMMAND de_shell_command_registry_test
     )
 endif()
