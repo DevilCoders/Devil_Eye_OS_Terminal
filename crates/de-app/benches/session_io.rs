@@ -130,8 +130,14 @@ fn wait_for_marker(
 ) {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut received = Vec::new();
-    while !received.windows(marker.len()).any(|window| window == marker) {
-        match session.read_output(buffer).expect("read PTY startup marker") {
+    while !received
+        .windows(marker.len())
+        .any(|window| window == marker)
+    {
+        match session
+            .read_output(buffer)
+            .expect("read PTY startup marker")
+        {
             ProcessRead::Data(count) => {
                 received.extend_from_slice(&buffer[..count.get()]);
             }
