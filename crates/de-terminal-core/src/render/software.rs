@@ -727,7 +727,13 @@ impl Renderer for SoftwareRenderer {
             }
         }
 
-        self.force_full_redraw = false;
+        let clip_covers_full_frame = clip_bounds.top() == 0
+            && clip_bounds.left() == 0
+            && clip_bounds.bottom_exclusive() == u32::from(self.size.rows())
+            && clip_bounds.right_exclusive() == u32::from(self.size.columns());
+        if clip_covers_full_frame {
+            self.force_full_redraw = false;
+        }
         Ok(())
     }
 }
@@ -971,6 +977,33 @@ mod tests {
             .unwrap();
         render_frame(&mut renderer, &cursor_screen, &cursor_damage, None, None).unwrap();
         assert_eq!(renderer.surface().pixel(1, 0), Some(Rgba::rgb(0, 0, 0)));
+    }
+
+    #[test]
+    fn clipped_forced_redraw_remains_pending_until_full_viewport_is_painted() {
+        let terminal_size = size(2, 1);
+        let mut screen = TerminalScreen::new(terminal_size, 2).unwrap();
+        screen.set_cursor(0, 1);
+        let mut renderer =
+            SoftwareRenderer::new(terminal_size, metrics(), palette(), atlas(), 128).unwrap();
+        renderer.set_cursor_visible(false);
+        let mut damage = DamageTracker::new(terminal_size, 4).unwrap();
+
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        damage.clear();
+        renderer.set_cursor_visible(true);
+
+        let left_cell = CellRect::new(0, 0, 1, 1).unwrap();
+        render_frame(&mut renderer, &screen, &damage, None, Some(left_cell)).unwrap();
+        damage.clear();
+
+        assert_eq!(renderer.surface().pixel(3, 0), Some(Rgba::rgb(0, 0, 0)));
+
+        render_frame(&mut renderer, &screen, &damage, None, None).unwrap();
+        assert_eq!(
+            renderer.surface().pixel(3, 0),
+            Some(Rgba::rgb(255, 255, 0))
+        );
     }
 
     #[test]
