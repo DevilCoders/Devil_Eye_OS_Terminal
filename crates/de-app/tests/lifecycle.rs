@@ -1,6 +1,4 @@
-use de_app::{
-    Application, ApplicationService, ApplicationState, LifecycleError, ServiceError,
-};
+use de_app::{Application, ApplicationService, ApplicationState, LifecycleError, ServiceError};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -115,10 +113,8 @@ fn failed_initialization_cleans_failing_service_and_prior_services() {
         .expect("register config");
     app.register_service(Recorder::new("runtime", Arc::clone(&log)))
         .expect("register runtime");
-    app.register_service(
-        Recorder::new("terminal", Arc::clone(&log)).failing_initialize(),
-    )
-    .expect("register terminal");
+    app.register_service(Recorder::new("terminal", Arc::clone(&log)).failing_initialize())
+        .expect("register terminal");
 
     let error = app.start().expect_err("startup must fail");
     assert!(matches!(
@@ -155,10 +151,8 @@ fn cleanup_continues_after_failure_and_failed_service_can_be_retried() {
 
     app.register_service(Recorder::new("config", Arc::clone(&log)))
         .expect("register config");
-    app.register_service(
-        Recorder::new("runtime", Arc::clone(&log)).fail_shutdown_times(1),
-    )
-    .expect("register runtime");
+    app.register_service(Recorder::new("runtime", Arc::clone(&log)).fail_shutdown_times(1))
+        .expect("register runtime");
     app.register_service(Recorder::new("terminal", Arc::clone(&log)))
         .expect("register terminal");
 
