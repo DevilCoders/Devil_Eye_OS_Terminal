@@ -180,7 +180,7 @@ impl ProcessExit {
 ///
 /// The runtime implementation owns native process/PTY resources. A session
 /// owns the returned handle and must release it through its lifecycle contract.
-pub trait RuntimeProcess: Send {
+pub trait RuntimeProcess: Send + 'static {
     /// Writes input bytes without blocking. A partial count is valid; zero
     /// means the transport currently applies backpressure and no bytes were
     /// accepted. The caller retains all unwritten bytes.
