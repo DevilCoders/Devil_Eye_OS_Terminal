@@ -13,7 +13,7 @@ use crate::screen::{CellContent, Color, GraphemeWidth, StyleFlags};
 use crate::TerminalSize;
 
 use super::{
-    CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor, Selection,
+    CellRect, Frame, GlyphMetrics, RenderContractError, Renderer, ScaleFactor ,
 };
 
 /// One RGBA pixel with an opaque default alpha.
@@ -420,30 +420,19 @@ impl SoftwareRenderer {
         }
     }
 
-    fn render_region(
-        &mut self,
-        frame: Frame<'_>,
-        region: CellRect,
-    ) {
-        for row in region.top()..region.bottom_exclusive() as u16 {
-            let cells = frame.row_cells(row).expect("validated frame row");
-            for column in region.left()..region.right_exclusive() as u16 {
-                self.render_cell(frame, row, column, cells[usize::from(column)]);
-            }
-        }
-    }
-
-    fn render_cell(
-        &mut self,
+    fn cell_colors(
+        &self,
         frame: Frame<'_>,
         row: u16,
         column: u16,
         cell: crate::screen::Cell,
-    ) {
+    ) -> (Rgba, Rgba) {
         let attributes = cell.attributes();
         let styles = attributes.styles();
-        let mut foreground = resolve_color(attributes.foreground(), self.palette.default_foreground);
-        let mut background = resolve_color(attributes.background(), self.palette.default_background);
+        let mut foreground =
+            resolve_color(attributes.foreground(), self.palette.default_foreground);
+        let mut background =
+            resolve_color(attributes.background(), self.palette.default_background);
 
         if styles.contains(StyleFlags::INVERSE) {
             std::mem::swap(&mut foreground, &mut background);
@@ -457,74 +446,165 @@ impl SoftwareRenderer {
             background = self.palette.selection_background;
         }
 
-        let is_cursor = self.cursor_visible
-            && frame.cursor().row() == row
-            && frame.cursor().column() == column;
-        if is_cursor {
-            foreground = self.palette.cursor_foreground;
-            background = self.palette.cursor_background;
+        (foreground, background)
+    }
+
+    fn render_region(
+        &mut self,
+        frame: Frame<'_>,
+        region: CellRect,
+        clip: CellRect,
+    ) {
+        // Paint all cell backgrounds first. A wide glyph is drawn in a second
+        // pass so its trailing half is not erased by the continuation cell.
+        for row in region.top()..region.bottom_exclusive() as u16 {
+            let cells = frame.row_cells(row).expect("validated frame row");
+            for column in region.left()..region.right_exclusive() as u16 {
+                let (_, background) = self.cell_colors(frame, row, column, cells[usize::from(column)]);
+                let x = u32::from(column) * self.cell_width;
+                let y = u32::from(row) * self.cell_height;
+                self.surface
+                    .fill_rect(x, y, self.cell_width, self.cell_height, background);
+            }
         }
 
-        let x = u32::from(column) * self.cell_width;
-        let y = u32::from(row) * self.cell_height;
-        self.surface
-            .fill_rect(x, y, self.cell_width, self.cell_height, background);
+        // A dirty continuation cell may depend on the leading cell immediately
+        // to its left. Revisit that one column and clip drawing to the viewport.
+        let glyph_left = region.left().saturating_sub(1);
+        let clip_left = u32::from(clip.left()) * self.cell_width;
+        let clip_right = clip.right_exclusive() * self.cell_width;
+        for row in region.top()..region.bottom_exclusive() as u16 {
+            let cells = frame.row_cells(row).expect("validated frame row");
+            for column in glyph_left..region.right_exclusive() as u16 {
+                let cell = cells[usize::from(column)];
+                let CellContent::Grapheme { value, width } = cell.content() else {
+                    continue;
+                };
+                let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
+                if u32::from(column) + span <= u32::from(region.left()) {
+                    continue;
+                }
+                let (mut foreground, _) = self.cell_colors(frame, row, column, cell);
+                let styles = cell.attributes().styles();
+                if styles.contains(StyleFlags::HIDDEN)
+                    || (styles.contains(StyleFlags::BLINK) && !self.blink_visible)
+                {
+                    continue;
+                }
+                if styles.contains(StyleFlags::DIM) {
+                    foreground = foreground.dimmed();
+                }
 
-        let CellContent::Grapheme { value, width } = cell.content() else {
-            return;
-        };
-        if styles.contains(StyleFlags::HIDDEN)
-            || (styles.contains(StyleFlags::BLINK) && !self.blink_visible)
+                let x = u32::from(column) * self.cell_width;
+                let y = u32::from(row) * self.cell_height;
+                let available_width = self.cell_width.saturating_mul(span);
+                let bitmap = self.atlas.get(value.as_str());
+                Self::draw_glyph(
+                    &mut self.surface,
+                    bitmap,
+                    x,
+                    y,
+                    available_width,
+                    self.cell_height,
+                    self.scale_factor,
+                    clip_left,
+                    clip_right,
+                    foreground,
+                    styles.contains(StyleFlags::BOLD),
+                    styles.contains(StyleFlags::ITALIC),
+                );
+
+                let draw_left = x.max(clip_left);
+                let draw_right = x.saturating_add(available_width).min(clip_right);
+                if draw_right > draw_left && styles.contains(StyleFlags::UNDERLINE) {
+                    let line_y = y + self.cell_height.saturating_sub(1);
+                    self.surface.fill_rect(
+                        draw_left,
+                        line_y,
+                        draw_right - draw_left,
+                        1,
+                        foreground,
+                    );
+                }
+                if draw_right > draw_left && styles.contains(StyleFlags::STRIKETHROUGH) {
+                    let line_y = y + self.cell_height / 2;
+                    self.surface.fill_rect(
+                        draw_left,
+                        line_y,
+                        draw_right - draw_left,
+                        1,
+                        foreground,
+                    );
+                }
+            }
+        }
+
+        // Draw the block cursor last so it remains visible over glyphs and
+        // wide-cell continuations.
+        let cursor = frame.cursor();
+        if self.cursor_visible
+            && cursor.row() >= region.top()
+            && u32::from(cursor.row()) < region.bottom_exclusive()
+            && cursor.column() >= region.left()
+            && u32::from(cursor.column()) < region.right_exclusive()
         {
-            return;
-        }
+            let row = cursor.row();
+            let column = cursor.column();
+            let cell = frame.row_cells(row).expect("cursor row in frame")[usize::from(column)];
+            let x = u32::from(column) * self.cell_width;
+            let y = u32::from(row) * self.cell_height;
+            self.surface.fill_rect(
+                x,
+                y,
+                self.cell_width,
+                self.cell_height,
+                self.palette.cursor_background,
+            );
 
-        if styles.contains(StyleFlags::DIM) {
-            foreground = foreground.dimmed();
-        }
-
-        let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
-        let available_width = self.cell_width.saturating_mul(span);
-        let bitmap = self.atlas.get(value.as_str()).clone();
-        self.draw_glyph(
-            &bitmap,
-            x,
-            y,
-            available_width,
-            foreground,
-            styles.contains(StyleFlags::BOLD),
-            styles.contains(StyleFlags::ITALIC),
-        );
-
-        if styles.contains(StyleFlags::UNDERLINE) {
-            let line_y = y + self.cell_height.saturating_sub(1);
-            self.surface
-                .fill_rect(x, line_y, available_width, 1, foreground);
-        }
-        if styles.contains(StyleFlags::STRIKETHROUGH) {
-            let line_y = y + self.cell_height / 2;
-            self.surface
-                .fill_rect(x, line_y, available_width, 1, foreground);
+            if let CellContent::Grapheme { value, width } = cell.content() {
+                let span = if width == GraphemeWidth::Wide { 2u32 } else { 1u32 };
+                let bitmap = self.atlas.get(value.as_str());
+                Self::draw_glyph(
+                    &mut self.surface,
+                    bitmap,
+                    x,
+                    y,
+                    self.cell_width.saturating_mul(span),
+                    self.cell_height,
+                    self.scale_factor,
+                    clip_left.max(x),
+                    clip_right,
+                    self.palette.cursor_foreground,
+                    cell.attributes().styles().contains(StyleFlags::BOLD),
+                    cell.attributes().styles().contains(StyleFlags::ITALIC),
+                );
+            }
         }
     }
 
     fn draw_glyph(
-        &mut self,
+        surface: &mut PixelSurface,
         bitmap: &GlyphBitmap,
         cell_x: u32,
         cell_y: u32,
         available_width: u32,
+        cell_height: u32,
+        scale_factor: ScaleFactor,
+        clip_left: u32,
+        clip_right: u32,
         foreground: Rgba,
         bold: bool,
         italic: bool,
     ) {
-        let scale = self.scale_factor.get();
+        let scale = scale_factor.get();
         let glyph_width = (f32::from(bitmap.width) * scale).ceil() as u32;
         let glyph_height = (f32::from(bitmap.height) * scale).ceil() as u32;
         let x_offset = available_width.saturating_sub(glyph_width) / 2;
-        let y_offset = self.cell_height.saturating_sub(glyph_height) / 2;
+        let y_offset = cell_height.saturating_sub(glyph_height) / 2;
+        let draw_width = glyph_width.min(available_width.saturating_sub(x_offset));
+        let draw_height = glyph_height.min(cell_height.saturating_sub(y_offset));
 
-        for destination_y in 0..glyph_height.min(self.cell_height) {
+        for destination_y in 0..draw_height {
             let source_y = ((destination_y as f32) / scale).floor() as u32;
             if source_y >= u32::from(bitmap.height) {
                 continue;
@@ -534,20 +614,24 @@ impl SoftwareRenderer {
             } else {
                 0
             };
-            for destination_x in 0..glyph_width {
+            for destination_x in 0..draw_width {
                 let source_x = ((destination_x as f32) / scale).floor() as u32;
                 if source_x >= u32::from(bitmap.width) {
                     continue;
                 }
-                let alpha_index =
-                    (source_y * u32::from(bitmap.width) + source_x) as usize;
+                let alpha_index = (source_y * u32::from(bitmap.width) + source_x) as usize;
                 let coverage = bitmap.alpha[alpha_index];
                 let x = cell_x + x_offset + destination_x + italic_offset;
                 let y = cell_y + y_offset + destination_y;
-                self.surface.blend_pixel(x, y, foreground, coverage);
-                if bold {
-                    self.surface
-                        .blend_pixel(x.saturating_add(1), y, foreground, coverage);
+                if x < clip_left || x >= clip_right || x >= cell_x + available_width {
+                    continue;
+                }
+                surface.blend_pixel(x, y, foreground, coverage);
+                if bold
+                    && x.saturating_add(1) < clip_right
+                    && x.saturating_add(1) < cell_x + available_width
+                {
+                    surface.blend_pixel(x + 1, y, foreground, coverage);
                 }
             }
         }
