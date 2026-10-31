@@ -49,11 +49,7 @@ pub struct SessionSpec {
 
 impl SessionSpec {
     /// Creates a session specification from validated subsystem values.
-    pub fn new(
-        kind: SessionKind,
-        program: ProgramSpec,
-        terminal_size: TerminalSize,
-    ) -> Self {
+    pub fn new(kind: SessionKind, program: ProgramSpec, terminal_size: TerminalSize) -> Self {
         Self {
             kind,
             program,
@@ -130,10 +126,7 @@ impl SessionLifecycle {
     }
 
     /// Applies a legal transition or returns a safe lifecycle error.
-    pub fn transition(
-        &mut self,
-        next: SessionLifecycleState,
-    ) -> Result<(), ServiceError> {
+    pub fn transition(&mut self, next: SessionLifecycleState) -> Result<(), ServiceError> {
         if !self.state.can_transition_to(next) {
             return Err(ServiceError::new(
                 "terminal session lifecycle transition is invalid",
