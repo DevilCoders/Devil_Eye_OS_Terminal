@@ -22,12 +22,12 @@ Default sampling:
 | Warm-up per benchmark | 500 ms |
 | Measurement duration per sample | 200 ms |
 | Samples | 12 |
-| Reported statistics | Median and p95 nanoseconds/op |
+| Reported statistics | Median and p95 of per-sample mean nanoseconds/op |
 | Throughput | Work units/second |
 
 The harness accepts bounded overrides through `DE_BENCH_WARMUP_MS`, `DE_BENCH_SAMPLE_MS`, and `DE_BENCH_SAMPLES`. The CI workflow fixes these to 500 ms, 200 ms, and 12 samples so runs use the same sampling protocol.
 
-Each CSV contains raw sample rows and an aggregate row. Metadata records the operating system, architecture, CPU model, Rust compiler, and commit SHA. The workflow additionally records the runner image/kernel, CPU inventory, Cargo version, and uploads all results as a 90-day artifact named `performance-baseline-<commit>`.
+Each CSV contains raw sample rows and an aggregate row. The p95 is calculated across the 12 sample means; it is not a per-operation latency percentile. For latency-sensitive follow-up work, use a histogram-capable harness when individual-operation tail latency is required. Metadata records the operating system, architecture, CPU model, Rust compiler, and commit SHA. The workflow additionally records the runner image/kernel, CPU inventory, Cargo version, and uploads all results as a 90-day artifact named `performance-baseline-<commit>`.
 
 Compare results only when the runner class, toolchain, build profile, workload, and sampling configuration match. CI-hosted results are useful for regression tracking but are not a substitute for measurements on the eventual release hardware.
 
@@ -79,6 +79,6 @@ The budgets are acceptance targets, not claims that the current implementation a
 
 1. Run the benchmark workflow on the candidate commit and retain its artifact.
 2. Compare against at least three artifacts from the same runner class and pinned toolchain.
-3. Use median and p95, not a single best sample. Investigate changes larger than 10% before attributing them to code.
+3. Use the median and p95 of sample means, not a single best sample. These summary percentiles describe run-to-run sample variation, not the distribution of individual operations. Investigate changes larger than 10% before attributing them to code.
 4. Keep workload definitions and sampling settings unchanged when comparing commits. A workload change requires a new baseline series.
 5. Do not optimize rendering until the profiling evidence identifies a hot path. DE-020-02 (#72) consumes this harness and adds workload-specific profiling and before/after evidence.
