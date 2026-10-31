@@ -104,6 +104,7 @@ fn resolve_executable(
         let candidate = directory.join(requested);
         match resolve_executable_candidate(&candidate) {
             Ok(path) => return Ok(path),
+            // Missing candidates and ENOTDIR are misses; later PATH entries may still resolve.
             Err(ProgramSpecError::ExecutableNotFound) => {}
             Err(ProgramSpecError::ExecutableNotExecutable) => saw_non_executable = true,
             Err(ProgramSpecError::ExecutableNotRegularFile) => saw_non_regular = true,
