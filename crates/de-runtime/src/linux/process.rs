@@ -187,6 +187,7 @@ impl LinuxPtyChild {
         drop(parent_slave);
 
         let mut command = Command::new(&resolved.executable);
+        command.arg0(program.program());
         command.args(program.args());
         if program.environment_inheritance() == EnvironmentInheritance::Clear {
             command.env_clear();
@@ -583,6 +584,38 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn preserves_requested_argv0_for_pty_spawn() {
+        let _guard = process_test_lock();
+        let output_path = std::env::temp_dir().join(format!(
+            "de-runtime-argv0-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let script = format!("printf '%s' \"$0\" > {}", output_path.display());
+        let program = ProgramSpec::new("sh")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/bin:/usr/bin")
+            .with_arg("-c")
+            .with_arg(script);
+        let mut child =
+            LinuxPtyChild::spawn(&program, test_size(), true).expect("spawn alias through PATH");
+
+        assert_eq!(
+            child.wait().expect("wait alias child"),
+            ProcessExitStatus::Exited(0)
+        );
+        assert_eq!(
+            fs::read_to_string(&output_path).expect("read argv0 output"),
+            "sh"
+        );
+        fs::remove_file(output_path).expect("remove argv0 output");
     }
 
     #[test]
