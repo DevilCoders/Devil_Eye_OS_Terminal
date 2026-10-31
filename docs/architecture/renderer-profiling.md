@@ -20,7 +20,7 @@ The dependency-free `terminal_core` benchmark harness records:
 | One dirty row at each size | Incremental redraw and region handling |
 | Color/style churn at each size | Indexed and RGB colors; bold, dim, italic, inverse, underline, blink, hidden, and strikethrough |
 | Linear selection at each size | Per-cell selection membership and color override |
-| Cursor movement, 80×24 | Two-cell invalidation and cursor overlay |
+| Cursor movement, 80×24 | Two-cell invalidation and cursor overlay on an ASCII-only screen, avoiding wide-cell cursor-span ambiguity |
 | Resize round trip, 80×24 ↔ 160×48 | Surface allocation, checked dimensions, and background initialization |
 | Allocation probes for full and dirty frames | Allocation count and requested bytes during one warmed render call |
 
