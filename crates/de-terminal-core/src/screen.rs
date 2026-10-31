@@ -773,8 +773,15 @@ mod tests {
     fn scroll_down_moves_rows_and_clears_new_top_rows() {
         let mut screen = TerminalScreen::new(size(2u16, 4u16), 8usize).expect("screen");
         for (row, value) in [(1u16, "B"), (2u16, "C")] {
-            screen.grid_mut()
-                .set_grapheme(row, 0u16, value, GraphemeWidth::Single, CellAttributes::default())
+            screen
+                .grid_mut()
+                .set_grapheme(
+                    row,
+                    0u16,
+                    value,
+                    GraphemeWidth::Single,
+                    CellAttributes::default(),
+                )
                 .expect("write row marker");
         }
         screen.set_scroll_region(1u16, 2u16).expect("scroll region");
