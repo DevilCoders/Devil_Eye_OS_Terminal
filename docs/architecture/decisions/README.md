@@ -15,7 +15,7 @@ This directory records decisions that constrain architecture and public subsyste
 | --- | --- | --- |
 | [ADR-0001](0001-rust-c-ownership.md) | Rust application orchestration and independent C DE-Shell ownership | Accepted |
 | [ADR-0002](0002-terminal-shell-separation.md) | Terminal emulator is shell-agnostic | Accepted |
-| [ADR-0003](0003-pty-session-ownership.md) | One independently owned PTY/process session per terminal session | Accepted |
+| [ADR-0003](0003-pty-session-ownership.md) | Backend-specific ownership: one PTY/process handle per external session; one FFI handle per DE-Shell session | Accepted |
 | [ADR-0004](0004-renderer-frame-contract.md) | Immutable terminal frames and bounded damage contract | Accepted |
 | [ADR-0005](0005-linux-first-platform-adapters.md) | Linux x86_64 first, future OS adapters behind neutral contracts | Accepted |
 
