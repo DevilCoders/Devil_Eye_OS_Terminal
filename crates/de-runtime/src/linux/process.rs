@@ -414,6 +414,28 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn can_signal_session_descendants_after_leader_exits() {
+        let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
+        let program = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_arg("-c")
+            .with_arg("sleep 30 & exit 0");
+        let mut child = LinuxPtyChild::spawn(&program, test_size(), true)
+            .expect("spawn shell with background child");
+        let process_group = i32::try_from(child.process_id()).expect("pid fits pid_t");
+
+        assert_eq!(
+            child.wait().expect("wait shell leader"),
+            ProcessExitStatus::Exited(0)
+        );
+        assert_eq!(unsafe { libc::kill(-process_group, 0) }, 0);
+        child
+            .send_signal(Signal::Terminate)
+            .expect("signal remaining session process group");
+    }
+
     #[test]
     fn invalid_executable_fails_without_returning_a_partial_child() {
         let _guard = PROCESS_TEST_LOCK.lock().expect("process test lock");
