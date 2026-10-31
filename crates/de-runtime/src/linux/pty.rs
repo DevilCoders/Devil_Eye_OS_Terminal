@@ -32,9 +32,8 @@ impl PtyPair {
     ///
     /// If any step fails, all descriptors acquired so far are closed by RAII.
     pub fn open(size: TerminalSize) -> io::Result<Self> {
-        let master_raw = unsafe {
-            libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC)
-        };
+        let master_raw =
+            unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
         if master_raw == -1 {
             return Err(io::Error::last_os_error());
         }
@@ -136,13 +135,7 @@ impl PtyPair {
             ws_ypixel: 0,
         };
 
-        if unsafe {
-            libc::ioctl(
-                self.master.as_raw_fd(),
-                libc::TIOCGWINSZ,
-                &mut window_size,
-            )
-        } == -1
+        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCGWINSZ, &mut window_size) } == -1
         {
             return Err(io::Error::last_os_error());
         }
@@ -306,10 +299,7 @@ mod tests {
         drop(pair);
 
         assert_eq!(unsafe { libc::fcntl(master_fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            io::Error::last_os_error().raw_os_error(),
-            Some(libc::EBADF)
-        );
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
         assert_eq!(unsafe { libc::fcntl(slave_fd, libc::F_GETFD) }, -1);
         assert_eq!(
             io::Error::last_os_error().raw_os_error(),
