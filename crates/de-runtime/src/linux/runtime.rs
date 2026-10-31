@@ -533,9 +533,9 @@ fn map_io_error(error: io::Error) -> RuntimeError {
 mod tests {
     use super::LinuxRuntime;
     use crate::{
-        IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
-        RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig,
-        StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
+        IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, ProgramSpecError,
+        PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
+        Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
     use std::num::NonZeroUsize;
     use std::thread;
@@ -666,6 +666,61 @@ mod tests {
         ] {
             assert!(capabilities.supports(capability));
         }
+    }
+
+    #[test]
+    fn rejects_unresolved_executable_and_invalid_working_directory_before_spawn() {
+        let runtime = LinuxRuntime;
+        let missing = ProgramSpec::new("de-runtime-no-such-executable")
+            .expect("program")
+            .clear_environment();
+        let request = ProcessSpawnRequest::new(
+            missing,
+            IoAttachment::Pty(PtyConfig::new(size())),
+        )
+        .expect("valid request structure");
+        match runtime.spawn(request) {
+            Err(error) => assert_eq!(
+                error,
+                RuntimeError::InvalidProgram(ProgramSpecError::ExecutableNotFound)
+            ),
+            Ok(_) => panic!("missing executable unexpectedly spawned"),
+        }
+
+        let invalid_directory = ProgramSpec::new("/bin/sh")
+            .expect("program")
+            .with_working_directory("/etc/passwd");
+        let request = ProcessSpawnRequest::new(
+            invalid_directory,
+            IoAttachment::Pty(PtyConfig::new(size())),
+        )
+        .expect("valid request structure");
+        match runtime.spawn(request) {
+            Err(error) => assert_eq!(
+                error,
+                RuntimeError::InvalidProgram(ProgramSpecError::WorkingDirectoryNotDirectory)
+            ),
+            Ok(_) => panic!("non-directory working directory unexpectedly spawned"),
+        }
+    }
+
+    #[test]
+    fn stdio_spawn_can_clear_environment_and_apply_only_explicit_overrides() {
+        let _guard = runtime_test_lock();
+        let program = ProgramSpec::new("env")
+            .expect("program")
+            .clear_environment()
+            .with_env("PATH", "/usr/bin")
+            .with_env("ONLY_EXPLICIT", "visible");
+        let request = ProcessSpawnRequest::new(program, IoAttachment::Stdio(pipe_config()))
+            .expect("spawn request");
+        let mut process = LinuxRuntime.spawn(request).expect("spawn env");
+
+        let output = read_to_eof(process.as_mut(), false).expect("read environment");
+        let output = String::from_utf8(output).expect("UTF-8 environment output");
+        assert!(output.contains("PATH=/usr/bin"));
+        assert!(output.contains("ONLY_EXPLICIT=visible"));
+        assert_eq!(output.lines().count(), 2);
     }
 
     #[test]
