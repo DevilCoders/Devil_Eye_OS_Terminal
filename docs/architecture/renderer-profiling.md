@@ -153,3 +153,25 @@ The same-run background-only comparison isolates the dominant cost to the glyph/
 - Replace the per-channel tuple loop with explicit red/green/blue blend arithmetic while preserving the existing integer rounding formula.
 
 This optimization must preserve the golden RGBA tests, including non-unit scale, italic/bold glyphs, alpha coverage, selection/cursor overrides, clipping, and wide-cell continuation behavior. Its before/after timing evidence is pending the next successful benchmark artifact.
+
+### Same-CPU before/after comparison — glyph-path optimization
+
+A directly comparable pair is available on the same GitHub-hosted runner CPU model:
+
+- Before glyph optimization: [run 41251178845](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41251178845), source `93f435421e4e6b397a88c1c2545c30cf77f22566`.
+- After glyph optimization: [run 41251744188](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/actions/runs/41251744188), source `e47ff4987a97dd6040d0988319bc4420470620dc`.
+
+Both report Ubuntu 24.04, Linux kernel `7.0.0-1017-azure`, 4 vCPU, AMD EPYC 9V74 80-Core Processor, and Rust/Cargo 1.99.1. The existing full-frame, dirty-row, styled, selection, and cursor workloads are unchanged between these two commits. The render workloads themselves do not allocate during their timed loops, so the allocator counters do not execute in those loops.
+
+| Workload | Before median | After median | Median improvement | Before p95 | After p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full frame, 80×24 | 2.140 ms | 1.650 ms | 22.9% | 2.159 ms | 1.682 ms |
+| Dirty row, 80×24 | 89.16 µs | 70.79 µs | 20.6% | 89.35 µs | 70.91 µs |
+| Full frame, 160×48 | 8.549 ms | 6.591 ms | 22.9% | 8.589 ms | 6.639 ms |
+| Dirty row, 160×48 | 178.10 µs | 140.92 µs | 20.9% | 178.23 µs | 141.01 µs |
+| Full frame, 240×80 | 21.500 ms | 16.582 ms | 22.9% | 21.742 ms | 17.590 ms |
+| Dirty row, 240×80 | 267.84 µs | 209.58 µs | 21.8% | 275.77 µs | 212.87 µs |
+
+Color/style and selection workloads also improved by approximately 20.8–21.7% in median sample means across all three sizes. Cursor movement improved by approximately 21.0%. Resize time was effectively unchanged, as expected because the glyph hot path is not involved.
+
+The before/after pair supports a repeatable ~20–23% reduction in the measured CPU-renderer workloads on this runner class. These are microbenchmark results, not GUI frame-rate or end-user latency guarantees. The allocation-counting wrapper was subsequently tightened so counter increments occur only inside explicit allocation probes; the next run verifies that measurement correction.
