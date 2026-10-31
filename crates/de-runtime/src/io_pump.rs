@@ -86,7 +86,6 @@ enum WorkerCommand {
     Signal(Signal),
     CloseStdin,
     Terminate(TerminationMode),
-    Shutdown,
 }
 
 /// Owns one non-blocking runtime process and drives its PTY I/O on a worker
@@ -270,27 +269,29 @@ fn worker_loop(
         if pending_event.is_none() {
             if let Some((bytes, offset)) = pending_input.as_mut() {
                 let remaining = &bytes[*offset..];
+                let mut clear_pending_input = false;
                 match process.write_stdin(remaining) {
                     Ok(WriteOutcome::Written(count)) if count.get() <= remaining.len() => {
                         *offset += count.get();
-                        if *offset == bytes.len() {
-                            pending_input = None;
-                        }
+                        clear_pending_input = *offset == bytes.len();
                         made_progress = true;
                     }
                     Ok(WriteOutcome::Written(_)) => {
-                        pending_input = None;
+                        clear_pending_input = true;
                         pending_event = Some(IoPumpEvent::Error(RuntimeError::InvalidArgument));
                         stop_after_event = true;
                         made_progress = true;
                     }
                     Ok(WriteOutcome::WouldBlock) => {}
                     Err(error) => {
-                        pending_input = None;
+                        clear_pending_input = true;
                         pending_event = Some(IoPumpEvent::Error(error));
                         stop_after_event = true;
                         made_progress = true;
                     }
+                }
+                if clear_pending_input {
+                    pending_input = None;
                 }
             } else {
                 match commands.try_recv() {
@@ -322,10 +323,6 @@ fn worker_loop(
                             pending_event = Some(IoPumpEvent::Error(error));
                         }
                         made_progress = true;
-                    }
-                    Ok(WorkerCommand::Shutdown) => {
-                        terminate_and_reap(&mut process);
-                        return;
                     }
                     Err(TryRecvError::Empty) => {}
                     Err(TryRecvError::Disconnected) => {
@@ -608,8 +605,8 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .input_blocked = false;
 
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while accepted < chunks.len() && Instant::now() < deadline {
+        let submit_deadline = Instant::now() + Duration::from_secs(3);
+        while accepted < chunks.len() && Instant::now() < submit_deadline {
             match pump.try_write(&chunks[accepted]) {
                 Ok(()) => accepted += 1,
                 Err(IoSubmitError::Backpressure) => thread::sleep(Duration::from_millis(2)),
@@ -619,7 +616,8 @@ mod tests {
         assert_eq!(accepted, chunks.len());
 
         let expected: Vec<u8> = chunks.into_iter().flatten().collect();
-        while Instant::now() < deadline {
+        let write_deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < write_deadline {
             let written_len = state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -698,7 +696,7 @@ mod tests {
         let program = ProgramSpec::new("/bin/sh")
             .expect("shell")
             .with_arg("-c")
-            .with_arg("stty size; sleep 0.25; stty size");
+            .with_arg("stty size; sleep 1; stty size");
         let request = ProcessSpawnRequest::new(
             program,
             IoAttachment::Pty(PtyConfig::new(initial)),
