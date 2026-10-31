@@ -13,12 +13,12 @@ use std::time::{Duration, Instant};
 use de_runtime::ProgramSpec;
 use de_terminal_core::TerminalSize;
 
+use crate::lifecycle::{ApplicationService, ServiceError};
 use crate::service_interfaces::{
     ProcessExit, ProcessRead, RuntimeProcess, RuntimeService, SessionId, SessionKind,
     SessionLifecycle, SessionLifecycleState, SessionManagerService, SessionSpec, TerminalSession,
     TerminationMode,
 };
-use crate::lifecycle::{ApplicationService, ServiceError};
 
 const DEFAULT_MAX_SESSIONS: usize = 32;
 const DEFAULT_MAX_PENDING_INPUT_BYTES: usize = 1024 * 1024;
@@ -251,7 +251,9 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
             )));
         }
         if buffer.is_empty() {
-            return Err(ServiceError::new("terminal output buffer must not be empty"));
+            return Err(ServiceError::new(
+                "terminal output buffer must not be empty",
+            ));
         }
         let process = self
             .process
@@ -339,7 +341,11 @@ impl<P: RuntimeProcess> TerminalSession for ManagedSession<P> {
                             }
                         }
                         Err(error) => {
-                            Self::push_failure(&mut failures, "wait after graceful termination", error);
+                            Self::push_failure(
+                                &mut failures,
+                                "wait after graceful termination",
+                                error,
+                            );
                             if let Err(force_error) = process.terminate(TerminationMode::Force) {
                                 Self::push_failure(&mut failures, "force termination", force_error);
                             }
@@ -507,7 +513,9 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
 
     fn create_session(&mut self, spec: SessionSpec) -> Result<SessionId, ServiceError> {
         if !self.accepting_sessions {
-            return Err(ServiceError::new("session manager is not accepting sessions"));
+            return Err(ServiceError::new(
+                "session manager is not accepting sessions",
+            ));
         }
         if self.sessions.len() >= self.limits.max_sessions() {
             return Err(ServiceError::new("maximum terminal session count reached"));
@@ -522,9 +530,7 @@ impl<R: RuntimeService> SessionManagerService for SessionManager<R> {
             .map_err(|error| ServiceError::new(format!("invalid session program: {error}")))?;
 
         let id = self.allocate_session_id()?;
-        let process = self
-            .runtime
-            .spawn(spec.program(), spec.terminal_size())?;
+        let process = self.runtime.spawn(spec.program(), spec.terminal_size())?;
         let session = ManagedSession::new(id, spec.terminal_size(), process, self.limits)?;
         self.sessions.insert(id, session);
         Ok(id)
