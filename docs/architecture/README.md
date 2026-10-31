@@ -5,7 +5,8 @@ This directory contains the system architecture baseline, component contracts, a
 ## System architecture and cross-component contracts
 
 - [System Architecture](system-architecture.md) — component boundaries, process/session model, ownership, lifecycle, data flows, concurrency, error propagation, Linux-first platform strategy, and security invariants.
-- [Cross-Component API Contracts](api-contracts.md) — session lifecycle, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
+- [Cross-Component API Contracts](api-contracts.md)
+- [Terminal Session Manager](session-manager.md) — session identity, PTY/process ownership, bounded I/O, exit polling, resize, shutdown, and orphan prevention. — session lifecycle, runtime/PTY I/O, terminal and renderer boundaries, FFI ownership/threading, error mapping, versioning, and contract tests.
 - [Renderer Contract](renderer-contract.md) — immutable frames, cell/pixel coordinate spaces, glyph metrics, clipping, bounded damage tracking, and resize semantics.
 - [Keyboard Input Mapping](input-mapping.md) — key/text event separation, xterm key sequences, modifiers, IME handling, and configurable shortcuts.
 - [Linux PTY I/O Contract](linux-pty-io.md) — descriptor ownership, nonblocking progress, backpressure, resize, EOF, cancellation, and stress-test evidence.
