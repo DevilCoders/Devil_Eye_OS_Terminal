@@ -26,7 +26,7 @@ fn setting(name: &str, default: u64, minimum: u64, maximum: u64) -> u64 {
     std::env::var(name)
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| (*minimum..=*maximum).contains(value))
+        .filter(|value| (minimum..=maximum).contains(value))
         .unwrap_or(default)
 }
 
