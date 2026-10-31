@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 _Static_assert(sizeof(de_shell_status_t) == 4U, "ABI status must be 32-bit");
+_Static_assert(_Alignof(de_shell_status_t) == 4U, "ABI status alignment must be 4");
 _Static_assert(sizeof(de_shell_abi_version_t) == 6U, "ABI version must be 6 bytes");
 _Static_assert(_Alignof(de_shell_abi_version_t) == 2U, "ABI version alignment must be 2");
 _Static_assert(offsetof(de_shell_abi_version_t, major) == 0U, "major offset mismatch");
