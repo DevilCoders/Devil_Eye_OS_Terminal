@@ -49,6 +49,10 @@ de_shell_status_t de_shell_destroy(de_shell_t **shell)
     }
 
     owned_shell = *shell;
+    if (owned_shell != NULL && owned_shell->execution_active != 0U) {
+        return DE_SHELL_STATUS_BUSY;
+    }
+
     *shell = NULL;
 
     if (owned_shell != NULL) {
