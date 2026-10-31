@@ -2,7 +2,7 @@
 
 ## Scope
 
-DE-004-01 introduces the independent C library boundary, an opaque per-instance handle, and its initial create/destroy lifecycle. It does not implement shell input buffering, lexical analysis, parsing, command dispatch, process execution, or terminal emulation.
+DE-004-01 introduces the independent C library boundary, an opaque per-instance handle, and its initial create/destroy lifecycle. The per-instance command registry and core `exit` built-in are added by DE-013-01. Input buffering, lexical analysis, parsing, external process execution, and terminal emulation remain separate components.
 
 ## Public API
 
@@ -19,7 +19,7 @@ The caller must not inspect the opaque representation, free it directly, use a c
 
 ## Private representation
 
-The implementation-only structure is declared in `c/internal/shell_internal.h`. It is not installed as a public header and must not leak into Rust or other consumers.
+The implementation-only structure is declared in `c/internal/shell_internal.h`. Each shell instance owns its own command registry; the registry's private API and metadata are not installed as public headers and must not leak into Rust or other consumers.
 
 ## Error and allocation behavior
 
@@ -34,4 +34,4 @@ The CTest lifecycle suite covers successful creation/destruction, invalid argume
 
 ## Deliberate non-goals
 
-The opaque instance has no parser, input buffer, command registry, process handle, PTY, or execution behavior at this stage. Those concerns belong to later DE-004, DE-007, and DE-006 tasks. External shells remain independent of DE-Shell.
+The opaque instance has no parser, input buffer, process handle, PTY, or external execution behavior at this stage. Those concerns belong to DE-004, DE-007, and DE-006 tasks. The built-in registry only resolves in-process handlers; it does not launch programs. External shells remain independent of DE-Shell.
