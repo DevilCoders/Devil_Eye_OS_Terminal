@@ -115,5 +115,4 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=de_shell");
-
 }
