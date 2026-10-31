@@ -676,6 +676,41 @@ mod tests {
     }
 
     #[test]
+    fn program_spec_debug_redacts_paths_arguments_and_environment_values() {
+        let program = ProgramSpec::new("/home/private-user/private-tool")
+            .expect("program")
+            .with_arg("--password=super-secret")
+            .with_env("API_TOKEN", "token-value-must-not-leak")
+            .with_working_directory("/home/private-user/private-data")
+            .clear_environment();
+
+        let debug = format!("{program:?}");
+        assert!(debug.contains("argument_count: 1"));
+        assert!(debug.contains("environment_entry_count: 1"));
+        assert!(debug.contains("environment_inheritance: Clear"));
+        assert!(!debug.contains("private-tool"));
+        assert!(!debug.contains("super-secret"));
+        assert!(!debug.contains("API_TOKEN"));
+        assert!(!debug.contains("token-value-must-not-leak"));
+        assert!(!debug.contains("private-data"));
+    }
+
+    #[test]
+    fn environment_inheritance_is_explicit_and_defaults_to_compatibility_mode() {
+        let inherited = ProgramSpec::new("sh").expect("program");
+        assert_eq!(
+            inherited.environment_inheritance(),
+            EnvironmentInheritance::Inherit
+        );
+
+        let cleared = inherited.clear_environment();
+        assert_eq!(
+            cleared.environment_inheritance(),
+            EnvironmentInheritance::Clear
+        );
+    }
+
+    #[test]
     fn capabilities_are_deduplicated_and_queryable() {
         let capabilities = PlatformCapabilities::new([
             RuntimeCapability::PseudoTerminal,
