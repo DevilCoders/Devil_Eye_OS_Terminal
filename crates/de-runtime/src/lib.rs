@@ -427,10 +427,12 @@ pub trait RuntimeProcess: Send {
     /// Writes some or all of a non-empty byte slice to child stdin.
     fn write_stdin(&mut self, input: &[u8]) -> Result<WriteOutcome, RuntimeError>;
 
-    /// Reads available bytes from child stdout without blocking.
+    /// Reads available bytes into a non-empty output buffer without blocking.
+    /// An empty buffer is rejected with InvalidArgument.
     fn read_stdout(&mut self, output: &mut [u8]) -> Result<ReadOutcome, RuntimeError>;
 
-    /// Reads available bytes from child stderr without blocking.
+    /// Reads available bytes into a non-empty output buffer without blocking.
+    /// An empty buffer is rejected with InvalidArgument.
     fn read_stderr(&mut self, output: &mut [u8]) -> Result<ReadOutcome, RuntimeError>;
 
     /// Closes the child's stdin stream. Repeated close calls are successful.
@@ -670,7 +672,10 @@ mod tests {
             ))
         }
 
-        fn read_stderr(&mut self, _output: &mut [u8]) -> Result<ReadOutcome, RuntimeError> {
+        fn read_stderr(&mut self, output: &mut [u8]) -> Result<ReadOutcome, RuntimeError> {
+            if output.is_empty() {
+                return Err(RuntimeError::InvalidArgument);
+            }
             Ok(ReadOutcome::WouldBlock)
         }
 
@@ -737,6 +742,15 @@ mod tests {
         assert_eq!(
             process.read_stderr(&mut output),
             Ok(ReadOutcome::WouldBlock)
+        );
+        let mut empty_output = [];
+        assert_eq!(
+            process.read_stdout(&mut empty_output),
+            Err(RuntimeError::InvalidArgument)
+        );
+        assert_eq!(
+            process.read_stderr(&mut empty_output),
+            Err(RuntimeError::InvalidArgument)
         );
         process.resize_pty(size).expect("PTY resize");
         process.send_signal(Signal::Interrupt).expect("signal");
