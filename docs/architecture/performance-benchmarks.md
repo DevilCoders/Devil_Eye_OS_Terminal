@@ -71,7 +71,7 @@ The budgets are acceptance targets, not claims that the current implementation a
 
 - The desktop GUI startup path is not implemented, so the harness reports session-manager and PTY-session startup proxies instead of inventing an application cold-start number.
 - A GUI input mapper and event loop are not integrated, so the short parser benchmark is not presented as keyboard-to-render latency.
-- The current terminal model scrolls the visible screen but does not own a retained scrollback history. The row-scroll measurement is not a scrollback benchmark. DE-020-03 must add a bounded scrollback workload and memory budget when that component exists.
+- The current terminal model scrolls the visible screen but does not own a retained scrollback history. The row-scroll measurement is not a scrollback benchmark. A dedicated follow-up task must add a bounded scrollback workload and memory budget when that component exists.
 - The software renderer is the deterministic CPU reference backend. GPU, window-system, font discovery, and compositor latency are outside this baseline.
 - Memory figures report explicit cell and pixel backing buffers only. They exclude allocator metadata, code/data segments, stacks, process RSS, GUI, fonts, and GPU allocations.
 
