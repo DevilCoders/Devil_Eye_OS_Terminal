@@ -15,7 +15,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: engineering-taxonomy
+  group: issue-metadata-reconciliation
   cancel-in-progress: false
 
 jobs:
@@ -282,9 +282,15 @@ jobs:
                 !wanted.has(label)
               );
               for (const label of staleTaxonomy) {
-                await github.rest.issues.removeLabel({
-                  owner, repo, issue_number: issue.number, name: label
-                });
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: issue.number, name: label
+                  });
+                } catch (error) {
+                  // The dependency reconciler may have removed this label
+                  // between the issue snapshot and this request.
+                  if (error.status !== 404) throw error;
+                }
               }
 
               const missingTaxonomy = [...wanted].filter(label => !current.has(label));
