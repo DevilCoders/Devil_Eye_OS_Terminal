@@ -90,3 +90,25 @@ Every task issue should include a stable ID, parent Epic, priority, status, comp
 ## Current setup note
 
 The initial 24 Epic issues and 14 first-wave task issues are created in GitHub. This roadmap is the human-readable index. Native GitHub Milestones, Labels, and Projects/Kanban still need provisioning; they are not represented as created by this file.
+
+
+## Expanded engineering management system
+
+- [Task Catalog](TASK_CATALOG.md) — complete index of 58 task Issues (#25–#82).
+- [Workflow](WORKFLOW.md) — hierarchy, statuses, priorities, dependencies, Definition of Done, and PR rules.
+- [Milestones](MILESTONES.md) — M0–M10 exit criteria.
+- [Kanban operating model](KANBAN.md) — recommended Project views and fields.
+- [Dependency Map](DEPENDENCY_MAP.md) — initial critical-path graph.
+
+## Current backlog inventory
+
+- 24 Epic Issues: #1–#24.
+- 58 Task Issues: #25–#82.
+- 82 total open engineering Issues at the time this index was updated.
+- Issue templates: Epic, Task, Bug.
+- Pull request template with validation and evidence checklist.
+- GitHub Actions automation: `.github/workflows/engineering-taxonomy.yml` provisions taxonomy labels and M0–M10 milestones, then classifies open issues. Run it once manually from **Actions → Engineering taxonomy and issue automation → Run workflow**. It also runs for newly opened/edited/reopened Issues.
+
+## Native Project board
+
+The current GitHub integration does not expose a create/configure GitHub Projects action. Create a repository-level Project named **DEVIL_EYE OS Terminal — Engineering**, add this repository's Issues, and configure the views/fields in [KANBAN.md](KANBAN.md). The labels and milestones can be provisioned by the included workflow after it is run.
