@@ -139,7 +139,10 @@ static int test_operator_tokens(void)
             &count,
             &diagnostic) != DE_SHELL_LEX_STATUS_OK
         || count != sizeof(expected) / sizeof(expected[0])) {
-        (void)fprintf(stderr, "operator token count test failed\n");
+        (void)fprintf(stderr, "operator token count test failed: got %zu expected %zu\n", count, sizeof(expected) / sizeof(expected[0]));
+        for (index = 0U; index < count; index += 1U) {
+            (void)fprintf(stderr, "token[%zu]=%d\n", index, (int)tokens[index].type);
+        }
         return 1;
     }
 
