@@ -832,6 +832,13 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
     size_t stage_index;
     de_shell_status_t status = DE_SHELL_STATUS_INTERNAL_ERROR;
 
+    if (shell->abi_version.major != 0U || shell->abi_version.minor < 2U) {
+        de_shell_set_diagnostic(
+            diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+            (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, SIZE_MAX);
+        return DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+    }
+
     if (stage_count == 0U || stage_count > DE_SHELL_EXEC_MAX_PIPELINE_STAGES
         || node_indices == NULL) {
         de_shell_set_diagnostic(
