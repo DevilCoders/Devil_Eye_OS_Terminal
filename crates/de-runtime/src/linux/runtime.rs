@@ -125,7 +125,10 @@ impl LinuxRuntime {
 
         let mut resolved = Vec::with_capacity(stages.len());
         for stage in stages {
-            let program = stage.program.as_ref().ok_or(RuntimeError::InvalidArgument)?;
+            let program = stage
+                .program
+                .as_ref()
+                .ok_or(RuntimeError::InvalidArgument)?;
             program.validate().map_err(RuntimeError::InvalidProgram)?;
             resolved.push(resolve_program(program).map_err(RuntimeError::InvalidProgram)?);
             for redirection in &stage.redirections {
@@ -140,8 +143,7 @@ impl LinuxRuntime {
             }
         }
 
-        let mut prepared_redirections: Vec<Vec<(bool, File)>> =
-            Vec::with_capacity(stages.len());
+        let mut prepared_redirections: Vec<Vec<(bool, File)>> = Vec::with_capacity(stages.len());
         for stage in stages {
             let mut stage_redirections = Vec::with_capacity(stage.redirections.len());
             for redirection in &stage.redirections {
@@ -782,19 +784,15 @@ mod tests {
     };
     use std::fs;
     use std::num::NonZeroUsize;
-    use std::time::{SystemTime, UNIX_EPOCH};
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     fn temporary_path(label: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock")
             .as_nanos();
-        std::env::temp_dir().join(format!(
-            "devil-eye-{label}-{}-{nonce}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("devil-eye-{label}-{}-{nonce}", std::process::id()))
     }
 
     fn size() -> TerminalSize {
@@ -1317,7 +1315,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn pipeline_connects_stages_and_applies_output_redirection() {
         let _guard = runtime_test_lock();
@@ -1345,7 +1342,10 @@ mod tests {
             result.stage_statuses,
             vec![ProcessExitStatus::Exited(0), ProcessExitStatus::Exited(0)]
         );
-        assert_eq!(fs::read_to_string(&output).expect("read pipeline output"), "HELLO\\n");
+        assert_eq!(
+            fs::read_to_string(&output).expect("read pipeline output"),
+            "HELLO\\n"
+        );
         fs::remove_file(output).expect("remove pipeline output");
     }
 
@@ -1356,16 +1356,17 @@ mod tests {
         let output = temporary_path("pipeline-append");
         fs::write(&input, "from-file").expect("write input fixture");
 
-        let cat = PipelineStage::command(
-            ProgramSpec::new("/usr/bin/cat").expect("cat"),
-        )
-        .with_redirection(PipelineRedirection::Input(input.clone()))
-        .with_redirection(PipelineRedirection::Output(output.clone()));
+        let cat = PipelineStage::command(ProgramSpec::new("/usr/bin/cat").expect("cat"))
+            .with_redirection(PipelineRedirection::Input(input.clone()))
+            .with_redirection(PipelineRedirection::Output(output.clone()));
         let result = LinuxRuntime
             .execute_pipeline(&[cat])
             .expect("execute redirected cat");
         assert_eq!(result.exit_code, 0);
-        assert_eq!(fs::read_to_string(&output).expect("read redirected output"), "from-file");
+        assert_eq!(
+            fs::read_to_string(&output).expect("read redirected output"),
+            "from-file"
+        );
 
         let append = PipelineStage::command(
             ProgramSpec::new("/usr/bin/printf")
@@ -1416,7 +1417,10 @@ mod tests {
             .expect("execute broken-pipe pipeline");
         assert_eq!(result.exit_code, 0);
         assert_eq!(result.stage_statuses.len(), 2usize);
-        assert_eq!(fs::read_to_string(&output).expect("read head output"), "y\\n");
+        assert_eq!(
+            fs::read_to_string(&output).expect("read head output"),
+            "y\\n"
+        );
         fs::remove_file(output).expect("remove broken-pipe output");
     }
 
