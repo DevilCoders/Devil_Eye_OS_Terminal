@@ -56,6 +56,13 @@ de_shell_status_t de_shell_destroy(de_shell_t **shell)
     *shell = NULL;
 
     if (owned_shell != NULL) {
+        size_t index;
+
+        for (index = 0U; index < owned_shell->variable_count; index += 1U) {
+            free(owned_shell->variables[index].name);
+            free(owned_shell->variables[index].value);
+        }
+
         registry_status =
             de_shell_command_registry_destroy(&owned_shell->command_registry);
         free(owned_shell);

@@ -6,6 +6,7 @@
 #include "internal/shell_internal.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,6 +18,8 @@
 #define DE_SHELL_EXEC_MAX_ENVIRONMENT_KEY_BYTES ((size_t)256U)
 #define DE_SHELL_EXEC_MAX_ENVIRONMENT_VALUE_BYTES ((size_t)4096U)
 #define DE_SHELL_EXEC_MAX_PATH_BYTES ((size_t)4096U)
+#define DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES ((size_t)256U)
+#define DE_SHELL_EXEC_MAX_VARIABLES ((size_t)DE_SHELL_INTERNAL_MAX_VARIABLES)
 
 typedef enum de_shell_quote_state {
     DE_SHELL_QUOTE_STATE_NONE = 0,
@@ -104,10 +107,221 @@ static int de_shell_execution_context_is_valid(
     return 1;
 }
 
+
+static int de_shell_identifier_start(unsigned char value)
+{
+    return (value >= (unsigned char)'A' && value <= (unsigned char)'Z')
+        || (value >= (unsigned char)'a' && value <= (unsigned char)'z')
+        || value == (unsigned char)'_';
+}
+
+static int de_shell_identifier_part(unsigned char value)
+{
+    return de_shell_identifier_start(value)
+        || (value >= (unsigned char)'0' && value <= (unsigned char)'9');
+}
+
+static int de_shell_utf8_is_valid(
+    const unsigned char *bytes,
+    size_t length)
+{
+    size_t index = 0U;
+
+    while (index < length) {
+        const unsigned char first = bytes[index];
+        uint32_t codepoint;
+        size_t continuation_count;
+        size_t offset;
+
+        if (first <= 0x7FU) {
+            index += 1U;
+            continue;
+        }
+        if (first >= 0xC2U && first <= 0xDFU) {
+            codepoint = (uint32_t)(first & 0x1FU);
+            continuation_count = 1U;
+        } else if (first >= 0xE0U && first <= 0xEFU) {
+            codepoint = (uint32_t)(first & 0x0FU);
+            continuation_count = 2U;
+        } else if (first >= 0xF0U && first <= 0xF4U) {
+            codepoint = (uint32_t)(first & 0x07U);
+            continuation_count = 3U;
+        } else {
+            return 0;
+        }
+
+        if (continuation_count > length - index - 1U) {
+            return 0;
+        }
+        for (offset = 1U; offset <= continuation_count; offset += 1U) {
+            const unsigned char next = bytes[index + offset];
+            if ((next & 0xC0U) != 0x80U) {
+                return 0;
+            }
+            codepoint = (codepoint << 6U) | (uint32_t)(next & 0x3FU);
+        }
+
+        if ((continuation_count == 1U && codepoint < 0x80U)
+            || (continuation_count == 2U && codepoint < 0x800U)
+            || (continuation_count == 3U && codepoint < 0x10000U)
+            || (codepoint >= 0xD800U && codepoint <= 0xDFFFU)
+            || codepoint > 0x10FFFFU) {
+            return 0;
+        }
+        index += continuation_count + 1U;
+    }
+
+    return 1;
+}
+
+static de_shell_status_t de_shell_append_expansion(
+    char *storage,
+    size_t storage_capacity,
+    size_t output_start,
+    size_t *output_length,
+    const char *value,
+    size_t value_length)
+{
+    if (!de_shell_utf8_is_valid((const unsigned char *)value, value_length)) {
+        return DE_SHELL_STATUS_PARSE_ERROR;
+    }
+    if (value_length > DE_SHELL_EXEC_MAX_WORD_BYTES - *output_length
+        || output_start > storage_capacity
+        || *output_length > storage_capacity - output_start
+        || value_length >= storage_capacity - output_start - *output_length) {
+        return DE_SHELL_STATUS_RESOURCE_LIMIT;
+    }
+
+    if (value_length != 0U) {
+        (void)memcpy(
+            &storage[output_start + *output_length],
+            value,
+            value_length);
+    }
+    *output_length += value_length;
+    return DE_SHELL_STATUS_OK;
+}
+
+static const char *de_shell_lookup_variable(
+    const de_shell_t *shell,
+    const de_shell_execution_context_t *context,
+    const char *name,
+    size_t name_length)
+{
+    size_t index;
+
+    for (index = 0U; index < shell->variable_count; index += 1U) {
+        if (strlen(shell->variables[index].name) == name_length
+            && memcmp(shell->variables[index].name, name, name_length) == 0) {
+            return shell->variables[index].value;
+        }
+    }
+
+    for (index = 0U; index < context->environment_count; index += 1U) {
+        if (strlen(context->environment[index].key) == name_length
+            && memcmp(context->environment[index].key, name, name_length) == 0) {
+            return context->environment[index].value;
+        }
+    }
+
+    return "";
+}
+
+static de_shell_status_t de_shell_set_variable(
+    de_shell_t *shell,
+    const char *name,
+    size_t name_length,
+    const char *value)
+{
+    size_t index;
+    size_t value_length;
+    char *replacement;
+
+    if (name_length == 0U
+        || name_length > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES
+        || !de_shell_identifier_start((unsigned char)name[0])) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+    for (index = 1U; index < name_length; index += 1U) {
+        if (!de_shell_identifier_part((unsigned char)name[index])) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+    }
+
+    value_length = strlen(value);
+    if (value_length > DE_SHELL_EXEC_MAX_ENVIRONMENT_VALUE_BYTES) {
+        return DE_SHELL_STATUS_RESOURCE_LIMIT;
+    }
+
+    replacement = malloc(value_length + 1U);
+    if (replacement == NULL) {
+        return DE_SHELL_STATUS_INTERNAL_ERROR;
+    }
+    (void)memcpy(replacement, value, value_length + 1U);
+
+    for (index = 0U; index < shell->variable_count; index += 1U) {
+        if (strlen(shell->variables[index].name) == name_length
+            && memcmp(shell->variables[index].name, name, name_length) == 0) {
+            free(shell->variables[index].value);
+            shell->variables[index].value = replacement;
+            return DE_SHELL_STATUS_OK;
+        }
+    }
+
+    if (shell->variable_count >= DE_SHELL_EXEC_MAX_VARIABLES) {
+        free(replacement);
+        return DE_SHELL_STATUS_RESOURCE_LIMIT;
+    }
+
+    {
+        char *owned_name = malloc(name_length + 1U);
+        if (owned_name == NULL) {
+            free(replacement);
+            return DE_SHELL_STATUS_INTERNAL_ERROR;
+        }
+        (void)memcpy(owned_name, name, name_length);
+        owned_name[name_length] = '\0';
+        shell->variables[shell->variable_count].name = owned_name;
+        shell->variables[shell->variable_count].value = replacement;
+        shell->variable_count += 1U;
+    }
+
+    return DE_SHELL_STATUS_OK;
+}
+
+static int de_shell_assignment_name_length(
+    const unsigned char *source,
+    const de_shell_word_ref_t *word,
+    size_t *out_name_length)
+{
+    size_t index = 0U;
+    const size_t end = word->source_offset + word->source_length;
+
+    if (word->source_offset >= end
+        || !de_shell_identifier_start(source[word->source_offset])) {
+        return 0;
+    }
+
+    index = word->source_offset + 1U;
+    while (index < end && de_shell_identifier_part(source[index])) {
+        index += 1U;
+    }
+
+    if (index >= end || source[index] != (unsigned char)'=') {
+        return 0;
+    }
+
+    *out_name_length = index - word->source_offset;
+    return 1;
+}
+
 static de_shell_status_t de_shell_decode_word(
     const unsigned char *source,
     size_t source_length,
     const de_shell_word_ref_t *word,
+    de_shell_t *shell,
+    const de_shell_execution_context_t *context,
+    int last_status,
     char *storage,
     size_t storage_capacity,
     size_t *storage_offset,
@@ -158,8 +372,7 @@ static de_shell_status_t de_shell_decode_word(
                 }
                 if (next == (unsigned char)'"'
                     || next == (unsigned char)'\\'
-                    || next == (unsigned char)'$'
-                    || next == (unsigned char)0x60U) {
+                    || next == (unsigned char)'$') {
                     if (output_length >= DE_SHELL_EXEC_MAX_WORD_BYTES) {
                         return DE_SHELL_STATUS_RESOURCE_LIMIT;
                     }
@@ -199,6 +412,85 @@ static de_shell_status_t de_shell_decode_word(
             }
         }
 
+
+        if (quote_state != DE_SHELL_QUOTE_STATE_SINGLE
+            && value == (unsigned char)'$') {
+            size_t name_start = source_index + 1U;
+            size_t name_end = name_start;
+            const char *replacement = "";
+            char status_text[32];
+            size_t replacement_length = 0U;
+            int supported = 0;
+
+            if (name_start < source_end
+                && source[name_start] == (unsigned char)'?') {
+                const int written = snprintf(status_text, sizeof(status_text), "%d", last_status);
+                if (written < 0 || (size_t)written >= sizeof(status_text)) {
+                    return DE_SHELL_STATUS_INTERNAL_ERROR;
+                }
+                replacement = status_text;
+                replacement_length = (size_t)written;
+                source_index += 2U;
+                supported = 1;
+            } else if (name_start < source_end
+                && source[name_start] == (unsigned char)'{') {
+                name_start += 1U;
+                name_end = name_start;
+                while (name_end < source_end
+                    && source[name_end] != (unsigned char)'}') {
+                    name_end += 1U;
+                }
+                if (name_end >= source_end || name_end == name_start
+                    || !de_shell_identifier_start(source[name_start])) {
+                    return DE_SHELL_STATUS_PARSE_ERROR;
+                }
+                if (name_end - name_start > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
+                }
+                {
+                    size_t name_index;
+                    for (name_index = name_start + 1U; name_index < name_end; name_index += 1U) {
+                        if (!de_shell_identifier_part(source[name_index])) {
+                            return DE_SHELL_STATUS_PARSE_ERROR;
+                        }
+                    }
+                }
+                replacement = de_shell_lookup_variable(
+                    shell, context, (const char *)&source[name_start], name_end - name_start);
+                replacement_length = strlen(replacement);
+                source_index = name_end + 1U;
+                supported = 1;
+            } else if (name_start < source_end
+                && de_shell_identifier_start(source[name_start])) {
+                name_end = name_start + 1U;
+                while (name_end < source_end && de_shell_identifier_part(source[name_end])) {
+                    name_end += 1U;
+                }
+                if (name_end - name_start > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
+                }
+                replacement = de_shell_lookup_variable(
+                    shell, context, (const char *)&source[name_start], name_end - name_start);
+                replacement_length = strlen(replacement);
+                source_index = name_end;
+                supported = 1;
+            }
+
+            if (supported != 0) {
+                const de_shell_status_t append_status = de_shell_append_expansion(
+                    storage,
+                    storage_capacity,
+                    output_start,
+                    &output_length,
+                    replacement,
+                    replacement_length);
+                if (append_status != DE_SHELL_STATUS_OK) {
+                    return append_status;
+                }
+                continue;
+            }
+        }
+
         if (output_length >= DE_SHELL_EXEC_MAX_WORD_BYTES) {
             return DE_SHELL_STATUS_RESOURCE_LIMIT;
         }
@@ -213,6 +505,11 @@ static de_shell_status_t de_shell_decode_word(
         return quote_state != DE_SHELL_QUOTE_STATE_NONE
             ? DE_SHELL_STATUS_PARSE_ERROR
             : DE_SHELL_STATUS_RESOURCE_LIMIT;
+    }
+
+    if (!de_shell_utf8_is_valid(
+            (const unsigned char *)&storage[output_start], output_length)) {
+        return DE_SHELL_STATUS_PARSE_ERROR;
     }
 
     storage[output_start + output_length] = '\0';
@@ -236,6 +533,10 @@ static de_shell_status_t de_shell_execute_simple_command(
 {
     size_t index;
     size_t storage_offset = 0U;
+    size_t assignment_count = 0U;
+    size_t command_argc;
+    size_t command_environment_count = 0U;
+    de_shell_environment_entry_t command_environment[DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES];
     const de_shell_command_info_t *command_info = NULL;
     de_shell_registry_status_t registry_status;
     de_shell_command_result_t command_result = DE_SHELL_COMMAND_RESULT_FAILURE;
@@ -274,6 +575,9 @@ static de_shell_status_t de_shell_execute_simple_command(
             source,
             source_length,
             &ast->words[node->first_word + index],
+            shell,
+            context,
+            shell->last_exit_status,
             word_storage,
             word_storage_capacity,
             &storage_offset,
@@ -282,11 +586,107 @@ static de_shell_status_t de_shell_execute_simple_command(
         if (decode_status != DE_SHELL_STATUS_OK) {
             de_shell_set_diagnostic(
                 diagnostic,
-                DE_SHELL_EXECUTION_STAGE_DISPATCH,
+                DE_SHELL_EXECUTION_STAGE_EXPAND,
                 (int)decode_status,
                 ast->words[node->first_word + index].source_offset);
             return decode_status;
         }
+    }
+
+
+    command_argc = node->word_count;
+    while (assignment_count < node->word_count) {
+        size_t name_length = 0U;
+        if (!de_shell_assignment_name_length(
+                source,
+                &ast->words[node->first_word + assignment_count],
+                &name_length)) {
+            break;
+        }
+        if (name_length > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+            de_shell_set_diagnostic(
+                diagnostic,
+                DE_SHELL_EXECUTION_STAGE_EXPAND,
+                (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                ast->words[node->first_word + assignment_count].source_offset);
+            return DE_SHELL_STATUS_RESOURCE_LIMIT;
+        }
+        assignment_count += 1U;
+    }
+
+    if (assignment_count == node->word_count) {
+        for (index = 0U; index < assignment_count; index += 1U) {
+            char *equals = strchr((char *)argv[index], '=');
+            de_shell_status_t assignment_status;
+
+            if (equals == NULL) {
+                return DE_SHELL_STATUS_INTERNAL_ERROR;
+            }
+            *equals = '\0';
+            assignment_status = de_shell_set_variable(
+                shell, argv[index], strlen(argv[index]), equals + 1);
+            if (assignment_status != DE_SHELL_STATUS_OK) {
+                de_shell_set_diagnostic(
+                    diagnostic,
+                    DE_SHELL_EXECUTION_STAGE_EXPAND,
+                    (int)assignment_status,
+                    ast->words[node->first_word + index].source_offset);
+                return assignment_status;
+            }
+        }
+
+        out_result->exit_code = 0;
+        out_result->exit_requested = 0;
+        execution_result->exit_code = 0;
+        execution_result->exit_requested = 0;
+        execution_result->commands_executed += 1U;
+        shell->last_exit_status = 0;
+        return DE_SHELL_STATUS_OK;
+    }
+
+    if (assignment_count != 0U) {
+        for (index = 0U; index < context->environment_count; index += 1U) {
+            command_environment[index] = context->environment[index];
+        }
+        command_environment_count = context->environment_count;
+
+        for (index = 0U; index < assignment_count; index += 1U) {
+            char *equals = strchr((char *)argv[index], '=');
+            size_t environment_index;
+            int replaced = 0;
+
+            if (equals == NULL) {
+                return DE_SHELL_STATUS_INTERNAL_ERROR;
+            }
+            *equals = '\0';
+
+            for (environment_index = 0U;
+                 environment_index < command_environment_count;
+                 environment_index += 1U) {
+                if (strcmp(command_environment[environment_index].key, argv[index]) == 0) {
+                    command_environment[environment_index].value = equals + 1;
+                    replaced = 1;
+                }
+            }
+
+            if (replaced == 0) {
+                if (command_environment_count >= DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES) {
+                    de_shell_set_diagnostic(
+                        diagnostic,
+                        DE_SHELL_EXECUTION_STAGE_EXPAND,
+                        (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                        ast->words[node->first_word + index].source_offset);
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
+                }
+                command_environment[command_environment_count].key = argv[index];
+                command_environment[command_environment_count].value = equals + 1;
+                command_environment_count += 1U;
+            }
+        }
+
+        command_argc -= assignment_count;
+        (void)memmove(argv, &argv[assignment_count], command_argc * sizeof(*argv));
+        argv[command_argc] = NULL;
     }
 
     out_result->exit_requested = 0;
@@ -295,19 +695,28 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = 127;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = 127;
         return DE_SHELL_STATUS_OK;
     }
 
-    argv[node->word_count] = NULL;
+    argv[command_argc] = NULL;
 
     registry_status = de_shell_command_registry_lookup(
         shell->command_registry, argv[0], &command_info);
 
     if (registry_status == DE_SHELL_REGISTRY_STATUS_OK) {
+        if (assignment_count != 0U) {
+            de_shell_set_diagnostic(
+                diagnostic,
+                DE_SHELL_EXECUTION_STAGE_DISPATCH,
+                (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION,
+                node->source_offset);
+            return DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+        }
         registry_status = de_shell_command_registry_dispatch(
             shell->command_registry,
             shell,
-            node->word_count,
+            command_argc,
             argv,
             &command_result);
 
@@ -332,6 +741,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = out_result->exit_code;
         execution_result->exit_requested = out_result->exit_requested;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = out_result->exit_code;
         return DE_SHELL_STATUS_OK;
     }
 
@@ -357,10 +767,10 @@ static de_shell_status_t de_shell_execute_simple_command(
     {
         const de_shell_external_command_t command = {
             argv[0],
-            node->word_count,
+            command_argc,
             argv,
-            context->environment,
-            context->environment_count,
+            assignment_count == 0U ? context->environment : command_environment,
+            assignment_count == 0U ? context->environment_count : command_environment_count,
             context->working_directory,
         };
         int exit_code = 127;
@@ -381,6 +791,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = exit_code;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = exit_code;
     }
 
     return DE_SHELL_STATUS_OK;
@@ -699,13 +1110,8 @@ de_shell_status_t de_shell_execute_source(
         goto cleanup;
     }
 
-    if (ast.word_count > SIZE_MAX - source_length - 1U) {
-        de_shell_set_diagnostic(
-            out_diagnostic, DE_SHELL_EXECUTION_STAGE_INPUT, 7, SIZE_MAX);
-        status = DE_SHELL_STATUS_RESOURCE_LIMIT;
-        goto cleanup;
-    }
-    word_storage_capacity = source_length + ast.word_count + 1U;
+    word_storage_capacity = DE_SHELL_EXEC_MAX_ARGUMENTS
+        * (DE_SHELL_EXEC_MAX_WORD_BYTES + 1U);
 
     frames = calloc(ast.node_count, sizeof(*frames));
     argv = calloc(DE_SHELL_EXEC_MAX_ARGUMENTS + 1U, sizeof(*argv));

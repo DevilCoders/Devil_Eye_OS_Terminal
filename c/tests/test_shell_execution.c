@@ -416,6 +416,440 @@ static int test_context_validation_and_resource_limit(void)
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
 }
 
+
+typedef struct expansion_expectation {
+    const char *expected_argv[8];
+    size_t expected_argc;
+    const char *expected_env_key;
+    const char *expected_env_value;
+    size_t expected_env_count;
+    int return_exit_code;
+    size_t calls;
+    int matched;
+} expansion_expectation_t;
+
+static de_shell_status_t expansion_executor(
+    const de_shell_external_command_t *command,
+    int *out_exit_code,
+    void *user_data)
+{
+    expansion_expectation_t *expectation = (expansion_expectation_t *)user_data;
+    size_t index;
+
+    expectation->calls += 1U;
+    expectation->matched = 0;
+    if (command == NULL || out_exit_code == NULL
+        || command->argc != expectation->expected_argc
+        || command->environment_count != expectation->expected_env_count) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+
+    for (index = 0U; index < command->argc; index += 1U) {
+        if (strcmp(command->argv[index], expectation->expected_argv[index]) != 0) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+    }
+
+    if (expectation->expected_env_count != 0U) {
+        int found = 0;
+        for (index = 0U; index < command->environment_count; index += 1U) {
+            if (strcmp(command->environment[index].key, expectation->expected_env_key) == 0
+                && strcmp(command->environment[index].value, expectation->expected_env_value) == 0) {
+                found = 1;
+            }
+        }
+        if (found == 0) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+    }
+
+    expectation->matched = 1;
+    *out_exit_code = expectation->return_exit_code;
+    return DE_SHELL_STATUS_OK;
+}
+
+typedef struct status_sequence_state {
+    size_t calls;
+} status_sequence_state_t;
+
+static de_shell_status_t status_sequence_executor(
+    const de_shell_external_command_t *command,
+    int *out_exit_code,
+    void *user_data)
+{
+    status_sequence_state_t *state = (status_sequence_state_t *)user_data;
+
+    if (command == NULL || out_exit_code == NULL) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+    if (state->calls == 0U) {
+        if (command->argc != 1U || strcmp(command->argv[0], "fail") != 0) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+        *out_exit_code = 7;
+    } else if (state->calls == 1U) {
+        if (command->argc != 2U
+            || strcmp(command->argv[0], "tool") != 0
+            || strcmp(command->argv[1], "7") != 0) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+        *out_exit_code = 0;
+    } else {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+    state->calls += 1U;
+    return DE_SHELL_STATUS_OK;
+}
+
+static int test_parameter_expansion_and_persistent_variables(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char assignment[] = "A='two words'; B=$A";
+    static const unsigned char expansion[] =
+        "tool \"$A\" \"$B\" '$A' \\$A ${A} $MISSING \"$HOST\"";
+    const de_shell_environment_entry_t environment[] = {
+        {"HOST", "host-value"},
+        {"A", "host-value"},
+    };
+    expansion_expectation_t expectation = {
+        {"tool", "two words", "two words", "$A", "$A", "two words", "", "host-value"},
+        8U, "HOST", "host-value", 2U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        environment, 2U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, assignment, sizeof(assignment) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || result.commands_executed != 2U
+        || result.exit_code != 0) {
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, expansion, sizeof(expansion) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)fprintf(stderr, "parameter expansion/quote behavior failed\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_command_prefix_environment_is_temporary(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char prefix[] = "MODE=temporary tool";
+    static const unsigned char later[] = "tool \"$MODE\"";
+    const de_shell_environment_entry_t environment[] = {
+        {"MODE", "base"},
+    };
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "MODE", "temporary", 1U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        environment, 1U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, prefix, sizeof(prefix) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    expectation.expected_argv[0] = "tool";
+    expectation.expected_argv[1] = "base";
+    expectation.expected_argc = 2U;
+    expectation.calls = 0U;
+    expectation.matched = 0;
+    expectation.expected_env_value = "base";
+
+    if (de_shell_execute_source(
+            shell, later, sizeof(later) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)fprintf(stderr, "command-prefix environment leaked into the shell\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_non_recursive_expansion(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char assignments[] = "OTHER=real; NAME='$OTHER'";
+    static const unsigned char expansion[] = "tool \"$NAME\"";
+    expansion_expectation_t expectation = {
+        {"tool", "$OTHER"}, 2U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, assignments, sizeof(assignments) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || de_shell_execute_source(
+            shell, expansion, sizeof(expansion) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)fprintf(stderr, "variable values were recursively expanded\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_last_status_and_skipped_operand_expansion(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char failure_source[] = "fail";
+    static const unsigned char status_source[] = "tool \"$?\"";
+    static const unsigned char skipped_source[] = "fail && tool ${}";
+    status_sequence_state_t state = {0U};
+    const de_shell_execution_context_t status_context = {
+        NULL, 0U, NULL, status_sequence_executor, &state
+    };
+    expansion_expectation_t skipped = {
+        {"fail"}, 1U, NULL, NULL, 0U, 7, 0U, 0
+    };
+    const de_shell_execution_context_t skipped_context = {
+        NULL, 0U, NULL, expansion_executor, &skipped
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, failure_source, sizeof(failure_source) - 1U,
+            &status_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || result.exit_code != 7
+        || de_shell_execute_source(
+            shell, status_source, sizeof(status_source) - 1U,
+            &status_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 2U
+        || result.exit_code != 0) {
+        (void)fprintf(stderr, "last command status expansion failed\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, skipped_source, sizeof(skipped_source) - 1U,
+            &skipped_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || skipped.calls != 1U
+        || skipped.matched == 0
+        || result.exit_code != 7) {
+        (void)fprintf(stderr, "skipped conditional operand was expanded or executed\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_expansion_output_limit(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool \"$LONG\"x";
+    static char long_value[DE_SHELL_EXEC_MAX_WORD_BYTES + 1U];
+    const de_shell_environment_entry_t environment[] = {
+        {"LONG", long_value},
+    };
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "LONG", long_value, 1U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        environment, 1U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    (void)memset(long_value, 'x', sizeof(long_value) - 1U);
+    long_value[sizeof(long_value) - 1U] = '\0';
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_RESOURCE_LIMIT
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "expansion byte limit was not enforced\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+
+static int test_invalid_braced_expansion_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool ${}";
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_PARSE_ERROR
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "malformed braced expansion was not rejected\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+
+static int test_invalid_utf8_expansion_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool \"$BAD\"";
+    static const unsigned char invalid_value[] = {0xC3U, 0x28U, 0x00U};
+    const de_shell_environment_entry_t environment[] = {
+        {"BAD", (const char *)invalid_value},
+    };
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "BAD", (const char *)invalid_value, 1U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        environment, 1U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_PARSE_ERROR
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "invalid UTF-8 expansion was dispatched\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_double_quoted_backtick_escape_is_preserved(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool \"\\`\"";
+    expansion_expectation_t expectation = {
+        {"tool", "\\`", NULL, NULL, NULL, NULL, NULL, NULL},
+        2U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)fprintf(stderr, "backslash before unsupported backtick was removed\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_overlong_assignment_name_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    unsigned char source[270];
+    static const unsigned char command[] = "tool";
+    size_t source_length = 0U;
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    (void)memset(source, 'A', 257U);
+    source[257] = (unsigned char)'=';
+    source[258] = (unsigned char)'x';
+    source[259] = (unsigned char)' ';
+    (void)memcpy(&source[260], command, sizeof(command) - 1U);
+    source_length = 260U + sizeof(command) - 1U;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, source_length,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_RESOURCE_LIMIT
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "overlong assignment name reached command dispatch\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
 int main(void)
 {
     if (test_builtin_exit_stops_sequence() != 0
@@ -424,7 +858,16 @@ int main(void)
         || test_external_failures_and_missing_executor() != 0
         || test_parse_errors_and_unsupported_nodes() != 0
         || test_reentrancy_and_destroy_guard() != 0
-        || test_context_validation_and_resource_limit() != 0) {
+        || test_context_validation_and_resource_limit() != 0
+        || test_parameter_expansion_and_persistent_variables() != 0
+        || test_command_prefix_environment_is_temporary() != 0
+        || test_non_recursive_expansion() != 0
+        || test_last_status_and_skipped_operand_expansion() != 0
+        || test_expansion_output_limit() != 0
+        || test_invalid_braced_expansion_is_rejected() != 0
+        || test_invalid_utf8_expansion_is_rejected() != 0
+        || test_double_quoted_backtick_escape_is_preserved() != 0
+        || test_overlong_assignment_name_is_rejected() != 0) {
         return 1;
     }
 
