@@ -509,13 +509,14 @@ static int test_parameter_expansion_and_persistent_variables(void)
         "tool \"$A\" \"$B\" '$A' \\$A ${A} $MISSING \"$HOST\"";
     const de_shell_environment_entry_t environment[] = {
         {"HOST", "host-value"},
+        {"A", "host-value"},
     };
     expansion_expectation_t expectation = {
         {"tool", "two words", "two words", "$A", "$A", "two words", "", "host-value"},
-        8U, "HOST", "host-value", 1U, 0, 0U, 0
+        8U, "HOST", "host-value", 2U, 0, 0U, 0
     };
     const de_shell_execution_context_t context = {
-        environment, 1U, NULL, expansion_executor, &expectation
+        environment, 2U, NULL, expansion_executor, &expectation
     };
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
