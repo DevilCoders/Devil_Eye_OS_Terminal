@@ -1,9 +1,9 @@
 //! Linux implementation of the platform-neutral process runtime contracts.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
@@ -75,6 +75,266 @@ impl RuntimeService for LinuxRuntime {
                 Ok(Box::new(LinuxRuntimeProcess::Stdio(process)))
             }
         }
+    }
+}
+
+
+
+/// One redirection applied to a pipeline stage in source order.
+#[derive(Clone)]
+pub enum PipelineRedirection {
+    Input(std::path::PathBuf),
+    Output(std::path::PathBuf),
+    Append(std::path::PathBuf),
+}
+
+/// A pipeline stage. A missing program is valid only for a one-stage
+/// redirection-only command.
+pub struct PipelineStage {
+    program: Option<ProgramSpec>,
+    redirections: Vec<PipelineRedirection>,
+}
+
+impl PipelineStage {
+    pub fn command(program: ProgramSpec) -> Self {
+        Self {
+            program: Some(program),
+            redirections: Vec::new(),
+        }
+    }
+
+    pub fn redirection_only() -> Self {
+        Self {
+            program: None,
+            redirections: Vec::new(),
+        }
+    }
+
+    pub fn with_redirection(mut self, redirection: PipelineRedirection) -> Self {
+        self.redirections.push(redirection);
+        self
+    }
+}
+
+/// Completed pipeline status. The pipeline exit code is the last stage's
+/// conventional exit code; individual outcomes are retained for diagnostics.
+pub struct PipelineExecutionResult {
+    pub exit_code: i32,
+    pub stage_statuses: Vec<ProcessExitStatus>,
+}
+
+impl LinuxRuntime {
+    /// Executes a bounded foreground pipeline with runtime-owned pipes,
+    /// redirection files, process-group cancellation, and deterministic reaping.
+    ///
+    /// Every stage is spawned before any stage is waited on. Explicit
+    /// redirections are applied in source order and override the matching
+    /// pipeline endpoint. A pipeline containing only one redirection-only
+    /// stage performs the requested file operations without changing the
+    /// application's standard streams.
+    pub fn execute_pipeline(
+        &self,
+        stages: &[PipelineStage],
+    ) -> Result<PipelineExecutionResult, RuntimeError> {
+        const MAX_PIPELINE_STAGES: usize = 64usize;
+
+        if stages.is_empty() || stages.len() > MAX_PIPELINE_STAGES {
+            return Err(RuntimeError::ResourceLimitExceeded);
+        }
+        if stages.len() > 1usize && stages.iter().any(|stage| stage.program.is_none()) {
+            return Err(RuntimeError::InvalidArgument);
+        }
+        if stages.len() == 1usize && stages[0].program.is_none() {
+            if stages[0].redirections.is_empty() {
+                return Err(RuntimeError::InvalidArgument);
+            }
+            for redirection in &stages[0].redirections {
+                let _file = open_pipeline_redirection(redirection)?;
+            }
+            return Ok(PipelineExecutionResult {
+                exit_code: 0,
+                stage_statuses: vec![ProcessExitStatus::Exited(0)],
+            });
+        }
+
+        let mut resolved = Vec::with_capacity(stages.len());
+        for stage in stages {
+            let program = stage.program.as_ref().ok_or(RuntimeError::InvalidArgument)?;
+            program.validate().map_err(RuntimeError::InvalidProgram)?;
+            resolved.push(resolve_program(program).map_err(RuntimeError::InvalidProgram)?);
+            for redirection in &stage.redirections {
+                let path = match redirection {
+                    PipelineRedirection::Input(path)
+                    | PipelineRedirection::Output(path)
+                    | PipelineRedirection::Append(path) => path,
+                };
+                if path.as_os_str().as_encoded_bytes().contains(&0u8) {
+                    return Err(RuntimeError::InvalidArgument);
+                }
+            }
+        }
+
+        let mut pipes: Vec<(Option<OwnedFd>, Option<OwnedFd>)> =
+            Vec::with_capacity(stages.len().saturating_sub(1usize));
+        for _ in 0..stages.len().saturating_sub(1usize) {
+            let (read_end, write_end) = create_cloexec_pipe().map_err(map_io_error)?;
+            pipes.push((Some(read_end), Some(write_end)));
+        }
+
+        let mut children: Vec<Child> = Vec::with_capacity(stages.len());
+        let mut process_group: Option<libc::pid_t> = None;
+
+        for (index, stage) in stages.iter().enumerate() {
+            let program = stage.program.as_ref().ok_or(RuntimeError::InvalidArgument)?;
+            let mut stdin = if index == 0usize {
+                Stdio::inherit()
+            } else {
+                let read_end = pipes[index - 1usize]
+                    .0
+                    .take()
+                    .ok_or(RuntimeError::IoFailed)?;
+                Stdio::from(read_end)
+            };
+            let mut stdout = if index + 1usize == stages.len() {
+                Stdio::inherit()
+            } else {
+                let write_end = pipes[index]
+                    .1
+                    .take()
+                    .ok_or(RuntimeError::IoFailed)?;
+                Stdio::from(write_end)
+            };
+
+            for redirection in &stage.redirections {
+                let file = open_pipeline_redirection(redirection)?;
+                match redirection {
+                    PipelineRedirection::Input(_) => stdin = Stdio::from(file),
+                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => {
+                        stdout = Stdio::from(file)
+                    }
+                }
+            }
+
+            let mut command = Command::new(&resolved[index].executable);
+            command.arg0(program.program());
+            command.args(program.args());
+            if program.environment_inheritance() == EnvironmentInheritance::Clear {
+                command.env_clear();
+            }
+            command.envs(
+                program
+                    .environment()
+                    .iter()
+                    .map(|(key, value)| (key, value)),
+            );
+            if let Some(directory) = resolved[index].working_directory.as_deref() {
+                command.current_dir(directory);
+            }
+            command.stdin(stdin).stdout(stdout).stderr(Stdio::inherit());
+
+            let requested_group = process_group;
+            // SAFETY: setpgid is async-signal-safe. The first stage creates a
+            // private group; subsequent stages join that exact group.
+            unsafe {
+                command.pre_exec(move || {
+                    let group = requested_group.unwrap_or(0);
+                    if libc::setpgid(0, group) == -1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+
+            match command.spawn() {
+                Ok(child) => {
+                    if process_group.is_none() {
+                        process_group = i32::try_from(child.id()).ok();
+                        if process_group.is_none() {
+                            children.push(child);
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::ResourceLimitExceeded);
+                        }
+                    }
+                    children.push(child);
+                }
+                Err(error) => {
+                    terminate_pipeline_children(&mut children, process_group);
+                    return Err(map_spawn_error(error));
+                }
+            }
+        }
+
+        // All unused parent-side pipe endpoints are closed before waiting.
+        drop(pipes);
+
+        let mut stage_statuses = Vec::with_capacity(children.len());
+        let mut exit_code = 0;
+        for index in 0..children.len() {
+            match children[index].wait() {
+                Ok(status) => {
+                    exit_code = status.code().unwrap_or_else(|| {
+                        use std::os::unix::process::ExitStatusExt;
+                        128 + status.signal().unwrap_or(0)
+                    });
+                    stage_statuses.push(map_exit_status(status));
+                }
+                Err(_error) => {
+                    terminate_pipeline_children(&mut children, process_group);
+                    return Err(RuntimeError::WaitFailed);
+                }
+            }
+        }
+
+        Ok(PipelineExecutionResult {
+            exit_code,
+            stage_statuses,
+        })
+    }
+}
+
+fn open_pipeline_redirection(redirection: &PipelineRedirection) -> Result<File, RuntimeError> {
+    let mut options = OpenOptions::new();
+    match redirection {
+        PipelineRedirection::Input(path) => {
+            options.read(true);
+            options.open(path).map_err(map_io_error)
+        }
+        PipelineRedirection::Output(path) => {
+            options.write(true).create(true).truncate(true);
+            options.open(path).map_err(map_io_error)
+        }
+        PipelineRedirection::Append(path) => {
+            options.write(true).create(true).append(true);
+            options.open(path).map_err(map_io_error)
+        }
+    }
+}
+
+fn create_cloexec_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    let mut descriptors = [-1; 2];
+    // SAFETY: descriptors points to two writable integers and pipe2 initializes
+    // both descriptors atomically with close-on-exec set.
+    if unsafe { libc::pipe2(descriptors.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: pipe2 returned two fresh owned descriptors.
+    let read_end = unsafe { OwnedFd::from_raw_fd(descriptors[0]) };
+    // SAFETY: pipe2 returned two fresh owned descriptors.
+    let write_end = unsafe { OwnedFd::from_raw_fd(descriptors[1]) };
+    Ok((read_end, write_end))
+}
+
+fn terminate_pipeline_children(children: &mut [Child], process_group: Option<libc::pid_t>) {
+    if let Some(group) = process_group {
+        // SAFETY: a negative PID addresses only the private process group
+        // created for this pipeline.
+        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+    }
+    for child in children.iter_mut() {
+        let _ = child.kill();
+    }
+    for child in children.iter_mut() {
+        let _ = child.wait();
     }
 }
 
