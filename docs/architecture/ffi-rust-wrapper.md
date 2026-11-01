@@ -43,6 +43,8 @@ If no executor is supplied, external commands and pipeline/redirection plans ret
 
 ExternalPipeline exposes ordered stages, the top-level environment/working directory, and per-stage commands/redirections. Each ExternalPipelineStage contains an optional ExternalCommand (None only for a single redirection-only stage) and redirections in source order. ExternalRedirection exposes Input, Output, Append, ErrorOutput, or ErrorAppend, a borrowed target CStr, and the source offset. All borrowed strings are valid only for the callback duration. A host runtime should convert this typed plan to its native process API; it must never reparse a joined command string.
 
+The Linux application crate provides `LinuxShellCommandExecutor`, a concrete `CommandExecutor` adapter that converts borrowed CStr arguments/environment/path values into native `ProgramSpec` and `PipelineStage` values, then calls `RuntimeService::execute_pipeline`. It preserves non-UTF-8 Unix path/argument bytes and inherits the shell host's standard streams unless a redirection overrides them. This closes the C parser → Rust FFI → Linux runtime execution path without joining or reparsing command strings.
+
 The C execution engine rejects built-ins inside pipeline/redirection plans until isolated child-context semantics are specified. A host executor failure is translated by the C engine to EXTERNAL_EXECUTION_FAILED; the diagnostic code preserves the callback's original status.
 
 ## Panic and error containment
