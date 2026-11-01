@@ -287,6 +287,8 @@ pub enum PipelineRedirection {
     Input(PathBuf),
     Output(PathBuf),
     Append(PathBuf),
+    ErrorOutput(PathBuf),
+    ErrorAppend(PathBuf),
 }
 
 /// One stage in a foreground pipeline. A missing program is valid only for a
