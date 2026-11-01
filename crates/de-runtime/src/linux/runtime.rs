@@ -932,6 +932,7 @@ mod tests {
         let capabilities = LinuxRuntime.capabilities();
         for capability in [
             RuntimeCapability::StdioPipes,
+            RuntimeCapability::PipelineExecution,
             RuntimeCapability::PseudoTerminal,
             RuntimeCapability::TerminalResize,
             RuntimeCapability::Signals,
@@ -1337,8 +1338,7 @@ mod tests {
             .with_redirection(PipelineRedirection::Output(output.clone())),
         ];
 
-        let result = LinuxRuntime
-            .execute_pipeline(&stages)
+        let result = RuntimeService::execute_pipeline(&LinuxRuntime, &stages)
             .expect("execute two-stage pipeline");
         assert_eq!(result.exit_code, 0);
         assert_eq!(
