@@ -8,8 +8,9 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::{
-    EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
-    ProcessSpawnRequest, ProgramSpec, ProgramSpecError, ReadOutcome, RuntimeCapability,
+    EnvironmentInheritance, IoAttachment, PipelineExecutionResult, PipelineRedirection,
+    PipelineStage, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
+    ProgramSpecError, ReadOutcome, RuntimeCapability,
     RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
     TerminalSize, TerminationMode, WriteOutcome,
 };
@@ -24,6 +25,7 @@ impl RuntimeService for LinuxRuntime {
     fn capabilities(&self) -> PlatformCapabilities {
         PlatformCapabilities::new([
             RuntimeCapability::StdioPipes,
+            RuntimeCapability::PipelineExecution,
             RuntimeCapability::PseudoTerminal,
             RuntimeCapability::TerminalResize,
             RuntimeCapability::Signals,
@@ -32,6 +34,13 @@ impl RuntimeService for LinuxRuntime {
             RuntimeCapability::WorkingDirectory,
             RuntimeCapability::NonBlockingIo,
         ])
+    }
+
+    fn execute_pipeline(
+        &self,
+        stages: &[PipelineStage],
+    ) -> Result<PipelineExecutionResult, RuntimeError> {
+        LinuxRuntime::execute_pipeline(self, stages)
     }
 
     fn spawn(&self, request: ProcessSpawnRequest) -> Result<Box<dyn RuntimeProcess>, RuntimeError> {
@@ -79,49 +88,6 @@ impl RuntimeService for LinuxRuntime {
 }
 
 
-
-/// One redirection applied to a pipeline stage in source order.
-#[derive(Clone)]
-pub enum PipelineRedirection {
-    Input(std::path::PathBuf),
-    Output(std::path::PathBuf),
-    Append(std::path::PathBuf),
-}
-
-/// A pipeline stage. A missing program is valid only for a one-stage
-/// redirection-only command.
-pub struct PipelineStage {
-    program: Option<ProgramSpec>,
-    redirections: Vec<PipelineRedirection>,
-}
-
-impl PipelineStage {
-    pub fn command(program: ProgramSpec) -> Self {
-        Self {
-            program: Some(program),
-            redirections: Vec::new(),
-        }
-    }
-
-    pub fn redirection_only() -> Self {
-        Self {
-            program: None,
-            redirections: Vec::new(),
-        }
-    }
-
-    pub fn with_redirection(mut self, redirection: PipelineRedirection) -> Self {
-        self.redirections.push(redirection);
-        self
-    }
-}
-
-/// Completed pipeline status. The pipeline exit code is the last stage's
-/// conventional exit code; individual outcomes are retained for diagnostics.
-pub struct PipelineExecutionResult {
-    pub exit_code: i32,
-    pub stage_statuses: Vec<ProcessExitStatus>,
-}
 
 impl LinuxRuntime {
     /// Executes a bounded foreground pipeline with runtime-owned pipes,
