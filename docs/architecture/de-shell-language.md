@@ -78,7 +78,7 @@ A word is a concatenation of unquoted, single-quoted, double-quoted, and escaped
 - Backslash is special only before double quote, backslash, dollar sign, and a line break. Before other characters it remains literal.
 - An unmatched double quote is a lexical error at the opening quote.
 
-The current alpha lexer records raw spans and quote/escape summary flags. Its execution decoder removes quote delimiters and escaped-character backslashes but does not yet implement parameter expansion. The more precise double-quote escape behavior above is the target contract; the alpha decoder's broader backslash removal is a known compatibility gap to close in DE-012-02.
+The lexer records raw spans and quote/escape summary flags. DE-012-02 adds scalar parameter expansion to the execution decoder while preserving the original AST structure. Double-quoted backslash handling follows the explicit escape set above; unsupported substitutions remain literal or are rejected when a braced parameter form is malformed.
 
 ## 4. Grammar
 
@@ -177,7 +177,7 @@ A valid assignment word has the form `NAME=value`, with the identifier grammar a
 - Shell variables are session-local. The host environment is supplied explicitly by the runtime context and is never read or mutated through the C process environment.
 - No `export` builtin is defined in this language version. Command-prefix assignments are the explicit mechanism for per-command environment overrides.
 
-The current execution API already passes environment entries as explicit key/value pairs; DE-012-02 must add the bounded shell-variable store and assignment semantics without introducing implicit process-environment access.
+The execution API passes environment entries as explicit key/value pairs. DE-012-02 adds a bounded per-shell variable store and assignment semantics without reading or mutating the host process environment. The store is limited to 128 variables; names are limited to 256 bytes and values to 4,096 bytes. The last exit status is retained by the shell handle across input calls. Command-prefix assignments are temporary overrides for external commands; prefix assignments before built-ins are rejected until the built-in environment contract is defined.
 
 ## 6. Simple-command execution
 
@@ -304,6 +304,9 @@ Current alpha limits:
 | Environment entries | 256 |
 | Environment key | 256 bytes |
 | Environment value / working directory | 4,096 bytes |
+| Shell variables per session | 128 |
+| Variable name | 256 bytes |
+| Variable value | 4,096 bytes |
 | Parenthesis nesting | 128 |
 
 New expansion buffers, variable storage, pipeline stages, and job records must have explicit limits before implementation. All arithmetic used for capacity calculation must be checked; allocation failure returns a resource error rather than truncating or panicking.
