@@ -1082,6 +1082,14 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
                 redirection_storage[redirection_offset].type =
                     DE_SHELL_IO_REDIRECTION_APPEND;
                 break;
+            case DE_SHELL_REDIRECTION_ERROR_OUTPUT:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_ERROR_OUTPUT;
+                break;
+            case DE_SHELL_REDIRECTION_ERROR_APPEND:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_ERROR_APPEND;
+                break;
             default:
                 de_shell_set_diagnostic(
                     diagnostic, DE_SHELL_EXECUTION_STAGE_REDIRECT,
