@@ -1040,7 +1040,8 @@ int main(void)
         || test_invalid_braced_expansion_is_rejected() != 0
         || test_invalid_utf8_expansion_is_rejected() != 0
         || test_double_quoted_backtick_escape_is_preserved() != 0
-        || test_overlong_assignment_name_is_rejected() != 0) {
+        || test_overlong_assignment_name_is_rejected() != 0
+        || test_legacy_abi_rejects_pipeline_callbacks() != 0) {
         return 1;
     }
 

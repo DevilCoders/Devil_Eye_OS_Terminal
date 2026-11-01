@@ -5,6 +5,7 @@ use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::{
@@ -112,7 +113,7 @@ impl LinuxRuntime {
                 return Err(RuntimeError::InvalidArgument);
             }
             for redirection in &stages[0].redirections {
-                let _file = open_pipeline_redirection(redirection)?;
+                let _file = open_pipeline_redirection(redirection, None)?;
             }
             return Ok(PipelineExecutionResult {
                 exit_code: 0,
@@ -142,9 +143,8 @@ impl LinuxRuntime {
             }
         }
 
-        let mut prepared_redirections: Vec<[Option<File>; 3]> =
-            Vec::with_capacity(stages.len());
-        for stage in stages {
+        let mut prepared_redirections: Vec<[Option<File>; 3]> = Vec::with_capacity(stages.len());
+        for (index, stage) in stages.iter().enumerate() {
             let mut stage_redirections: [Option<File>; 3] = [None, None, None];
             for redirection in &stage.redirections {
                 let stream = match redirection {
@@ -156,7 +156,10 @@ impl LinuxRuntime {
                 };
                 // Replacing an earlier redirection closes its descriptor
                 // immediately while retaining its create/truncate side effect.
-                stage_redirections[stream] = Some(open_pipeline_redirection(redirection)?);
+                stage_redirections[stream] = Some(open_pipeline_redirection(
+                    redirection,
+                    resolved[index].working_directory.as_deref(),
+                )?);
             }
             prepared_redirections.push(stage_redirections);
         }
@@ -289,26 +292,35 @@ impl LinuxRuntime {
     }
 }
 
-fn open_pipeline_redirection(redirection: &PipelineRedirection) -> Result<File, RuntimeError> {
+fn open_pipeline_redirection(
+    redirection: &PipelineRedirection,
+    working_directory: Option<&Path>,
+) -> Result<File, RuntimeError> {
+    let target = match redirection {
+        PipelineRedirection::Input(path)
+        | PipelineRedirection::Output(path)
+        | PipelineRedirection::Append(path)
+        | PipelineRedirection::ErrorOutput(path)
+        | PipelineRedirection::ErrorAppend(path) => path,
+    };
+    let resolved_path = match working_directory {
+        Some(directory) if !target.is_absolute() => directory.join(target),
+        _ => target.to_path_buf(),
+    };
+
     let mut options = OpenOptions::new();
     match redirection {
-        PipelineRedirection::Input(path) => {
+        PipelineRedirection::Input(_) => {
             options.read(true);
-            options.open(path).map_err(map_io_error)
         }
-        PipelineRedirection::Output(path) => {
+        PipelineRedirection::Output(_) | PipelineRedirection::ErrorOutput(_) => {
             options.write(true).create(true).truncate(true);
-            options.open(path).map_err(map_io_error)
         }
-        PipelineRedirection::Append(path) | PipelineRedirection::ErrorAppend(path) => {
+        PipelineRedirection::Append(_) | PipelineRedirection::ErrorAppend(_) => {
             options.write(true).create(true).append(true);
-            options.open(path).map_err(map_io_error)
-        }
-        PipelineRedirection::ErrorOutput(path) => {
-            options.write(true).create(true).truncate(true);
-            options.open(path).map_err(map_io_error)
         }
     }
+    options.open(&resolved_path).map_err(map_io_error)
 }
 
 fn create_cloexec_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
@@ -1367,6 +1379,35 @@ mod tests {
     }
 
     #[test]
+    fn relative_redirections_resolve_against_stage_working_directory() {
+        let _guard = runtime_test_lock();
+        let directory = temporary_path("pipeline-relative-redirection");
+        fs::create_dir(&directory).expect("create stage working directory");
+        fs::write(directory.join("input.txt"), "stage-input").expect("write stage input");
+
+        let stage = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/cat")
+                .expect("cat")
+                .with_working_directory(directory.clone()),
+        )
+        .with_redirection(PipelineRedirection::Input("input.txt".into()))
+        .with_redirection(PipelineRedirection::Output("output.txt".into()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[stage])
+            .expect("execute relative redirections in stage working directory");
+
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(directory.join("output.txt")).expect("read stage output"),
+            "stage-input"
+        );
+
+        fs::remove_file(directory.join("input.txt")).expect("remove stage input");
+        fs::remove_file(directory.join("output.txt")).expect("remove stage output");
+        fs::remove_dir(directory).expect("remove stage working directory");
+    }
+
+    #[test]
     fn input_append_and_redirection_only_operations_are_owned_by_runtime() {
         let _guard = runtime_test_lock();
         let input = temporary_path("pipeline-input");
@@ -1413,7 +1454,10 @@ mod tests {
             .execute_pipeline(&[multiple])
             .expect("execute ordered multiple redirections");
         assert_eq!(result.exit_code, 0);
-        assert_eq!(fs::read(&first_output).expect("read superseded output"), b"");
+        assert_eq!(
+            fs::read(&first_output).expect("read superseded output"),
+            b""
+        );
         assert_eq!(
             fs::read_to_string(&final_output).expect("read final output"),
             "final"

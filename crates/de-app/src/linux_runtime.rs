@@ -1,12 +1,12 @@
 //! Linux adapter connecting the platform runtime to application session contracts.
 
 use crate::lifecycle::{ApplicationService, ServiceError};
+use crate::service_interfaces::{
+    ProcessExit, ProcessRead, RuntimeProcess, RuntimeService, TerminationMode,
+};
 use de_ffi::{
     CommandExecutor, ExternalCommand, ExternalExecutionError, ExternalPipeline,
     ExternalRedirectionKind,
-};
-use crate::service_interfaces::{
-    ProcessExit, ProcessRead, RuntimeProcess, RuntimeService, TerminationMode,
 };
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
