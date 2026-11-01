@@ -66,6 +66,14 @@ static de_shell_status_t fake_executor(
             state->environment_valid = 1;
         }
         if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_ERROR_APPEND
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "errors") == 0) {
+            state->environment_valid = 1;
+        }
+        if (command->pipeline_stage_count == 1U
             && command->pipeline_stages[0].command == NULL
             && command->pipeline_stages[0].redirection_count == 1U
             && command->pipeline_stages[0].redirections[0].type
@@ -307,6 +315,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     static const unsigned char malformed[] = "tool &&";
     static const unsigned char pipeline[] = "tool | tool";
     static const unsigned char redirection[] = "tool > output";
+    static const unsigned char stderr_redirection[] = "tool 2>> errors";
     static const unsigned char background[] = "tool &";
     static const unsigned char builtin_pipeline[] = "exit | tool";
     static const unsigned char builtin_redirection[] = "exit > output";
@@ -354,6 +363,18 @@ static int test_parse_errors_and_unsupported_nodes(void)
         return 1;
     }
 
+    state.environment_valid = 0;
+    if (de_shell_execute_source(
+            shell, stderr_redirection, sizeof(stderr_redirection) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 3U
+        || state.environment_valid == 0
+        || result.commands_executed != 1U) {
+        (void)fprintf(stderr, "stderr append redirection plan was not dispatched\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
     if (de_shell_execute_source(
             shell, builtin_pipeline, sizeof(builtin_pipeline) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
@@ -375,7 +396,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     if (de_shell_execute_source(
             shell, background, sizeof(background) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 2U) {
+        || state.calls != 3U) {
         (void)fprintf(stderr, "background command was executed without a job backend\n");
         (void)de_shell_destroy(&shell);
         return 1;
