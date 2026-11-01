@@ -306,7 +306,7 @@ mod pipeline_tests {
             .expect("execute shell pipeline through Linux runtime");
         assert_eq!(result.exit_code, 0);
         assert_eq!(result.commands_executed, 2usize);
-        assert_eq!(fs::read_to_string(&output).expect("read pipeline output"), "HELLO\\n");
+        assert_eq!(fs::read_to_string(&output).expect("read pipeline output"), "HELLO\n");
         fs::remove_file(output).expect("remove pipeline output");
     }
 
