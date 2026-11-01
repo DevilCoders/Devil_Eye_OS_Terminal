@@ -511,7 +511,7 @@ static de_shell_status_t de_shell_execute_simple_command(
             &ast->words[node->first_word + index],
             shell,
             context,
-            execution_result->exit_code,
+            shell->last_exit_status,
             word_storage,
             word_storage_capacity,
             &storage_offset,
@@ -566,6 +566,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = 0;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = 0;
         return DE_SHELL_STATUS_OK;
     }
 
@@ -620,6 +621,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = 127;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = 0;
         return DE_SHELL_STATUS_OK;
     }
 
@@ -665,6 +667,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = out_result->exit_code;
         execution_result->exit_requested = out_result->exit_requested;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = out_result->exit_code;
         return DE_SHELL_STATUS_OK;
     }
 
@@ -714,6 +717,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = exit_code;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
+        shell->last_exit_status = exit_code;
     }
 
     return DE_SHELL_STATUS_OK;
