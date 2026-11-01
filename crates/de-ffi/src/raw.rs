@@ -241,9 +241,13 @@ unsafe fn parse_external_pipeline<'a>(
         slice::from_raw_parts(request.pipeline_stages, request.pipeline_stage_count)
     };
     let mut stages = Vec::with_capacity(request.pipeline_stage_count);
+    let mut total_redirections = 0usize;
 
     for raw_stage in raw_stages {
-        if raw_stage.redirection_count > MAX_REDIRECTIONS_PER_PLAN
+        total_redirections = total_redirections
+            .checked_add(raw_stage.redirection_count)
+            .ok_or(DeStatus::INVALID_ARGUMENT)?;
+        if total_redirections > MAX_REDIRECTIONS_PER_PLAN
             || (raw_stage.redirection_count != 0 && raw_stage.redirections.is_null())
         {
             return Err(DeStatus::INVALID_ARGUMENT);
