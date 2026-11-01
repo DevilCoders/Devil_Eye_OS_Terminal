@@ -506,7 +506,7 @@ static int test_parameter_expansion_and_persistent_variables(void)
     de_shell_t *shell = NULL;
     static const unsigned char assignment[] = "A='two words'; B=$A";
     static const unsigned char expansion[] =
-        "tool \"$A\" '$A' \\$A ${A} $MISSING \"$HOST\"";
+        "tool \"$A\" \"$B\" '$A' \\$A ${A} $MISSING \"$HOST\"";
     const de_shell_environment_entry_t environment[] = {
         {"HOST", "host-value"},
     };
