@@ -143,7 +143,7 @@ The initial variable feature set is:
 - `${NAME}` — braced form, required when adjacent characters would extend the identifier.
 - `$?` — status of the last completed foreground command/list item.
 
-Identifiers match `[A-Za-z_][A-Za-z0-9_]*`. An unset variable expands to an empty string. A dollar sign not followed by a supported form is literal. Command and arithmetic substitution are not supported.
+Identifiers match `[A-Za-z_][A-Za-z0-9_]*` and are limited to 256 bytes. Lookup checks the shell-session variable store first, then the explicit host environment supplied in the execution context; session variables therefore shadow same-name host entries. An unset variable expands to an empty string. A dollar sign not followed by a supported form is literal. Command and arithmetic substitution are not supported.
 
 ### 5.2 Expansion context
 
