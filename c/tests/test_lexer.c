@@ -126,7 +126,7 @@ static int test_operator_tokens(void)
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_RIGHT_PAREN
     };
-    de_shell_token_t tokens[TOKEN_CAPACITY + 4U];
+    de_shell_token_t tokens[TOKEN_CAPACITY + 16U];
     de_shell_lex_diagnostic_t diagnostic;
     size_t count = 0U;
     size_t index;
