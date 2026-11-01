@@ -826,6 +826,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
     const char **argv_storage = NULL;
     de_shell_environment_entry_t *environment_storage = NULL;
     de_shell_io_redirection_t *redirection_storage = NULL;
+    de_shell_pipeline_stage_t *pipeline_stages = NULL;
     size_t storage_offset = 0U;
     size_t redirection_offset = 0U;
     size_t stage_index;
@@ -855,8 +856,10 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
     redirection_storage = calloc(
         ast->redirection_count == 0U ? 1U : ast->redirection_count,
         sizeof(*redirection_storage));
+    pipeline_stages = calloc(stage_count, sizeof(*pipeline_stages));
     if (stage_storage == NULL || argv_storage == NULL
-        || environment_storage == NULL || redirection_storage == NULL) {
+        || environment_storage == NULL || redirection_storage == NULL
+        || pipeline_stages == NULL) {
         de_shell_set_diagnostic(
             diagnostic, DE_SHELL_EXECUTION_STAGE_INPUT, 9, SIZE_MAX);
         status = DE_SHELL_STATUS_INTERNAL_ERROR;
@@ -1024,7 +1027,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
             current->command.working_directory = context->working_directory;
             current->command.pipeline_stages = NULL;
             current->command.pipeline_stage_count = 0U;
-            current->stage.command = &current->command;
+            pipeline_stages[stage_index].command = &current->command;
         } else {
             if (node->redirection_count == 0U || stage_count != 1U) {
                 de_shell_set_diagnostic(
@@ -1033,11 +1036,11 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
                 status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
                 goto cleanup;
             }
-            current->stage.command = NULL;
+            pipeline_stages[stage_index].command = NULL;
         }
 
-        current->stage.redirections = &redirection_storage[redirection_offset];
-        current->stage.redirection_count = node->redirection_count;
+        pipeline_stages[stage_index].redirections = &redirection_storage[redirection_offset];
+        pipeline_stages[stage_index].redirection_count = node->redirection_count;
         for (word_index = 0U; word_index < node->redirection_count; word_index += 1U) {
             const de_shell_redirection_t *source_redirection =
                 &ast->redirections[node->first_redirection + word_index];
@@ -1094,7 +1097,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
     {
         de_shell_external_command_t request = {
             NULL, 0U, NULL, context->environment, context->environment_count,
-            context->working_directory, &stage_storage[0].stage, stage_count
+            context->working_directory, pipeline_stages, stage_count
         };
         int exit_code = 127;
         const de_shell_status_t callback_status = context->external_executor(
@@ -1118,6 +1121,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
     status = DE_SHELL_STATUS_OK;
 
 cleanup:
+    free(pipeline_stages);
     free(redirection_storage);
     free(environment_storage);
     free(argv_storage);
