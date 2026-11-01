@@ -785,7 +785,7 @@ static int test_double_quoted_backtick_escape_is_preserved(void)
     de_shell_t *shell = NULL;
     static const unsigned char source[] = "tool \"\\`\"";
     expansion_expectation_t expectation = {
-        {"tool", "\\__BT__", NULL, NULL, NULL, NULL, NULL, NULL},
+        {"tool", "\\`", NULL, NULL, NULL, NULL, NULL, NULL},
         2U, NULL, NULL, 0U, 0, 0U, 0
     };
     const de_shell_execution_context_t context = {
