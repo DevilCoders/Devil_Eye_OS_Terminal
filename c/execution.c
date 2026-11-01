@@ -930,13 +930,8 @@ de_shell_status_t de_shell_execute_source(
         goto cleanup;
     }
 
-    if (ast.word_count > SIZE_MAX - source_length - 1U) {
-        de_shell_set_diagnostic(
-            out_diagnostic, DE_SHELL_EXECUTION_STAGE_INPUT, 7, SIZE_MAX);
-        status = DE_SHELL_STATUS_RESOURCE_LIMIT;
-        goto cleanup;
-    }
-    word_storage_capacity = source_length + ast.word_count + 1U;
+    word_storage_capacity = DE_SHELL_EXEC_MAX_ARGUMENTS
+        * (DE_SHELL_EXEC_MAX_WORD_BYTES + 1U);
 
     frames = calloc(ast.node_count, sizeof(*frames));
     argv = calloc(DE_SHELL_EXEC_MAX_ARGUMENTS + 1U, sizeof(*argv));
