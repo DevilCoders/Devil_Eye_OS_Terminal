@@ -1400,6 +1400,25 @@ mod tests {
             "from-file-tail"
         );
 
+        let first_output = temporary_path("superseded-redirection");
+        let final_output = temporary_path("final-redirection");
+        let multiple = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/printf")
+                .expect("printf")
+                .with_arg("final"),
+        )
+        .with_redirection(PipelineRedirection::Output(first_output.clone()))
+        .with_redirection(PipelineRedirection::Output(final_output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[multiple])
+            .expect("execute ordered multiple redirections");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(fs::read(&first_output).expect("read superseded output"), b"");
+        assert_eq!(
+            fs::read_to_string(&final_output).expect("read final output"),
+            "final"
+        );
+
         let empty = temporary_path("redirection-only");
         let redirection_only = PipelineStage::redirection_only()
             .with_redirection(PipelineRedirection::Output(empty.clone()));
@@ -1412,6 +1431,8 @@ mod tests {
         fs::remove_file(input).expect("remove input fixture");
         fs::remove_file(output).expect("remove output fixture");
         fs::remove_file(empty).expect("remove redirection-only file");
+        fs::remove_file(first_output).expect("remove superseded output");
+        fs::remove_file(final_output).expect("remove final output");
     }
 
     #[test]
