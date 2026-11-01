@@ -80,7 +80,8 @@ typedef enum de_shell_execution_stage {
     DE_SHELL_EXECUTION_STAGE_LEX = 2,
     DE_SHELL_EXECUTION_STAGE_PARSE = 3,
     DE_SHELL_EXECUTION_STAGE_DISPATCH = 4,
-    DE_SHELL_EXECUTION_STAGE_EXTERNAL = 5
+    DE_SHELL_EXECUTION_STAGE_EXTERNAL = 5,
+    DE_SHELL_EXECUTION_STAGE_EXPAND = 6
 } de_shell_execution_stage_t;
 
 /*
@@ -106,8 +107,12 @@ typedef struct de_shell_execution_diagnostic {
  * contracts are implemented. No child command is started for a rejected
  * pipeline/background/group node itself.
  *
- * Quotes and backslash escapes are removed from word source spans. Variable,
- * command, and arithmetic expansion are deliberately not performed here.
+ * Quotes and backslash escapes are removed from word source spans. The
+ * execution layer supports scalar $NAME, ${NAME}, and $? expansion outside
+ * single quotes. Assignment-only commands persist session-local variables;
+ * assignment prefixes are temporary environment overrides for external
+ * commands. Values are never field-split, glob-expanded, or recursively
+ * expanded. Command and arithmetic substitution are not supported.
  * Source is bounded to DE_SHELL_EXEC_MAX_SOURCE_BYTES; individual decoded
  * words and argument count are bounded by the constants above.
  *
