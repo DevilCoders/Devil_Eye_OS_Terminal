@@ -377,7 +377,7 @@ impl Shell {
 
         let mut handle = null_mut();
         // SAFETY: handle is valid writable pointer storage.
-        let create_status = DeStatus::from_raw(raw::create_shell(&mut handle));
+        let create_status = DeStatus::from_raw(raw::create_shell_with_abi(&requested, &mut handle));
         if !create_status.is_ok() {
             return Err(ShellError::Status(create_status));
         }
