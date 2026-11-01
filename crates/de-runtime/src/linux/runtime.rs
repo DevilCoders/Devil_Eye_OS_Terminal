@@ -10,9 +10,8 @@ use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use crate::{
     EnvironmentInheritance, IoAttachment, PipelineExecutionResult, PipelineRedirection,
     PipelineStage, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
-    ProgramSpecError, ReadOutcome, RuntimeCapability,
-    RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
-    TerminalSize, TerminationMode, WriteOutcome,
+    ProgramSpecError, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
+    Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
 };
 
 use super::process::{map_exit_status, reap_detached_child, resolve_program, LinuxPtyChild};
