@@ -837,7 +837,7 @@ mod tests {
                 .command()
                 .expect("second pipeline command");
             assert_eq!(second.executable().to_bytes(), b"second");
-            assert_eq!(pipeline.stages()[1].redirections().len(), 2usize);
+            assert_eq!(pipeline.stages()[1].redirections().len(), 3usize);
             assert_eq!(
                 pipeline.stages()[1].redirections()[0].kind(),
                 ExternalRedirectionKind::Append
@@ -854,6 +854,14 @@ mod tests {
                 pipeline.stages()[1].redirections()[1].target().to_bytes(),
                 b"errors.txt"
             );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[2].kind(),
+                ExternalRedirectionKind::ErrorOutput
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[2].target().to_bytes(),
+                b"errors2.txt"
+            );
             Ok(23)
         }
     }
@@ -868,7 +876,7 @@ mod tests {
         };
         let result = shell
             .execute(
-                b"first | second >> result.txt 2>> errors.txt",
+                b"first | second >> result.txt 2>> errors.txt 2> errors2.txt",
                 &context,
                 Some(&mut executor),
             )
