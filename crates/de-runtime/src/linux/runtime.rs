@@ -1474,7 +1474,6 @@ mod tests {
         fs::remove_file(output).expect("remove broken-pipe output");
     }
 
-
     #[test]
     fn spawn_failure_terminates_and_reaps_already_started_pipeline_stages() {
         use std::os::unix::fs::PermissionsExt;
@@ -1493,7 +1492,8 @@ mod tests {
                     .with_arg("30"),
             ),
             PipelineStage::command(
-                ProgramSpec::new(broken_program.as_os_str()).expect("broken interpreter path"),
+                ProgramSpec::new(broken_program.as_os_str())
+                    .expect("broken interpreter path"),
             ),
         ];
 
