@@ -140,7 +140,7 @@ static int test_builtin_exit_stops_sequence(void)
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
 
-    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
         return 1;
     }
 
@@ -312,7 +312,9 @@ static int test_external_failures_and_missing_executor(void)
 static int test_parse_errors_and_unsupported_nodes(void)
 {
     de_shell_t *shell = NULL;
-    static const unsigned char malformed[] = "tool &&";
+    static const de_shell_abi_version_t current_abi_version = {0U, 2U, 0U};
+
+static const unsigned char malformed[] = "tool &&";
     static const unsigned char pipeline[] = "tool | tool";
     static const unsigned char redirection[] = "tool > output";
     static const unsigned char stderr_redirection[] = "tool 2>> errors";
@@ -989,6 +991,35 @@ static int test_overlong_assignment_name_is_rejected(void)
     }
 
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+
+static int test_legacy_abi_rejects_pipeline_callbacks(void)
+{
+    static const unsigned char pipeline[] = "tool | tool";
+    de_shell_t *shell = NULL;
+    executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
+        DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, fake_executor, &state
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, pipeline, sizeof(pipeline) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
+        || state.calls != 0U
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_PIPELINE) {
+        (void)fprintf(stderr, "ABI 0.1 callback received a pipeline request\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+    (void)de_shell_destroy(&shell);
+    return 0;
 }
 
 int main(void)
