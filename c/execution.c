@@ -467,6 +467,10 @@ static de_shell_status_t de_shell_execute_simple_command(
 {
     size_t index;
     size_t storage_offset = 0U;
+    size_t assignment_count = 0U;
+    size_t command_argc;
+    size_t command_environment_count = 0U;
+    de_shell_environment_entry_t command_environment[DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES];
     const de_shell_command_info_t *command_info = NULL;
     de_shell_registry_status_t registry_status;
     de_shell_command_result_t command_result = DE_SHELL_COMMAND_RESULT_FAILURE;
@@ -520,6 +524,93 @@ static de_shell_status_t de_shell_execute_simple_command(
         }
     }
 
+
+    command_argc = node->word_count;
+    while (assignment_count < node->word_count) {
+        size_t name_length = 0U;
+        if (!de_shell_assignment_name_length(
+                source,
+                &ast->words[node->first_word + assignment_count],
+                &name_length)) {
+            break;
+        }
+        assignment_count += 1U;
+    }
+
+    if (assignment_count == node->word_count) {
+        for (index = 0U; index < assignment_count; index += 1U) {
+            char *equals = strchr((char *)argv[index], '=');
+            de_shell_status_t assignment_status;
+
+            if (equals == NULL) {
+                return DE_SHELL_STATUS_INTERNAL_ERROR;
+            }
+            *equals = '\0';
+            assignment_status = de_shell_set_variable(
+                shell, argv[index], strlen(argv[index]), equals + 1);
+            if (assignment_status != DE_SHELL_STATUS_OK) {
+                de_shell_set_diagnostic(
+                    diagnostic,
+                    DE_SHELL_EXECUTION_STAGE_EXPAND,
+                    (int)assignment_status,
+                    ast->words[node->first_word + index].source_offset);
+                return assignment_status;
+            }
+        }
+
+        out_result->exit_code = 0;
+        out_result->exit_requested = 0;
+        execution_result->exit_code = 0;
+        execution_result->exit_requested = 0;
+        execution_result->commands_executed += 1U;
+        return DE_SHELL_STATUS_OK;
+    }
+
+    if (assignment_count != 0U) {
+        for (index = 0U; index < context->environment_count; index += 1U) {
+            command_environment[index] = context->environment[index];
+        }
+        command_environment_count = context->environment_count;
+
+        for (index = 0U; index < assignment_count; index += 1U) {
+            char *equals = strchr((char *)argv[index], '=');
+            size_t environment_index;
+            int replaced = 0;
+
+            if (equals == NULL) {
+                return DE_SHELL_STATUS_INTERNAL_ERROR;
+            }
+            *equals = '\0';
+
+            for (environment_index = 0U;
+                 environment_index < command_environment_count;
+                 environment_index += 1U) {
+                if (strcmp(command_environment[environment_index].key, argv[index]) == 0) {
+                    command_environment[environment_index].value = equals + 1;
+                    replaced = 1;
+                }
+            }
+
+            if (replaced == 0) {
+                if (command_environment_count >= DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES) {
+                    de_shell_set_diagnostic(
+                        diagnostic,
+                        DE_SHELL_EXECUTION_STAGE_EXPAND,
+                        (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                        ast->words[node->first_word + index].source_offset);
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
+                }
+                command_environment[command_environment_count].key = argv[index];
+                command_environment[command_environment_count].value = equals + 1;
+                command_environment_count += 1U;
+            }
+        }
+
+        command_argc -= assignment_count;
+        (void)memmove(argv, &argv[assignment_count], command_argc * sizeof(*argv));
+        argv[command_argc] = NULL;
+    }
+
     out_result->exit_requested = 0;
     if (argv[0][0] == '\0') {
         out_result->exit_code = 127;
@@ -529,16 +620,24 @@ static de_shell_status_t de_shell_execute_simple_command(
         return DE_SHELL_STATUS_OK;
     }
 
-    argv[node->word_count] = NULL;
+    argv[command_argc] = NULL;
 
     registry_status = de_shell_command_registry_lookup(
         shell->command_registry, argv[0], &command_info);
 
     if (registry_status == DE_SHELL_REGISTRY_STATUS_OK) {
+        if (assignment_count != 0U) {
+            de_shell_set_diagnostic(
+                diagnostic,
+                DE_SHELL_EXECUTION_STAGE_DISPATCH,
+                (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION,
+                node->source_offset);
+            return DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+        }
         registry_status = de_shell_command_registry_dispatch(
             shell->command_registry,
             shell,
-            node->word_count,
+            command_argc,
             argv,
             &command_result);
 
@@ -588,10 +687,10 @@ static de_shell_status_t de_shell_execute_simple_command(
     {
         const de_shell_external_command_t command = {
             argv[0],
-            node->word_count,
+            command_argc,
             argv,
-            context->environment,
-            context->environment_count,
+            assignment_count == 0U ? context->environment : command_environment,
+            assignment_count == 0U ? context->environment_count : command_environment_count,
             context->working_directory,
         };
         int exit_code = 127;
