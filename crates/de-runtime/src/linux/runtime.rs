@@ -1480,8 +1480,11 @@ mod tests {
 
         let _guard = runtime_test_lock();
         let broken_program = temporary_path("missing-interpreter");
-        fs::write(&broken_program, b"#!/definitely/missing/devil-eye-interpreter\\n")
-            .expect("write executable fixture");
+        fs::write(
+            &broken_program,
+            b"#!/definitely/missing/devil-eye-interpreter\\n",
+        )
+        .expect("write executable fixture");
         fs::set_permissions(&broken_program, fs::Permissions::from_mode(0o755))
             .expect("make fixture executable");
 
@@ -1492,8 +1495,7 @@ mod tests {
                     .with_arg("30"),
             ),
             PipelineStage::command(
-                ProgramSpec::new(broken_program.as_os_str())
-                    .expect("broken interpreter path"),
+                ProgramSpec::new(broken_program.as_os_str()).expect("broken interpreter path"),
             ),
         ];
 
