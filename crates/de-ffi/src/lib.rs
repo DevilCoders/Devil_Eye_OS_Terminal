@@ -501,7 +501,8 @@ impl Drop for Shell {
 mod tests {
     use super::{
         DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext, ExecutionStage,
-        ExternalCommand, ExternalExecutionError, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
+        CommandExecutor, ExternalCommand, ExternalExecutionError, ExternalPipeline,
+        ExternalRedirectionKind, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
     };
     use std::ffi::CString;
     use std::mem::{align_of, offset_of, size_of};
@@ -533,6 +534,12 @@ mod tests {
         assert!(DeAbiVersion {
             major: 0,
             minor: 0,
+            patch: 99,
+        }
+        .is_compatible_with(library));
+        assert!(DeAbiVersion {
+            major: 0,
+            minor: 1,
             patch: 99,
         }
         .is_compatible_with(library));
@@ -779,6 +786,93 @@ mod tests {
         assert!(observed);
         assert_eq!(result.exit_code, 7);
         assert_eq!(result.commands_executed, 1);
+    }
+
+
+    struct PipelinePlanExecutor {
+        calls: usize,
+        redirection_only: bool,
+    }
+
+    impl CommandExecutor for PipelinePlanExecutor {
+        fn execute(
+            &mut self,
+            _command: ExternalCommand<'_>,
+        ) -> Result<i32, ExternalExecutionError> {
+            Err(ExternalExecutionError::Failed)
+        }
+
+        fn execute_pipeline(
+            &mut self,
+            pipeline: ExternalPipeline<'_>,
+        ) -> Result<i32, ExternalExecutionError> {
+            self.calls += 1;
+            if self.redirection_only {
+                assert_eq!(pipeline.stages().len(), 1usize);
+                let stage = &pipeline.stages()[0];
+                assert!(stage.command().is_none());
+                assert_eq!(stage.redirections().len(), 1usize);
+                assert_eq!(
+                    stage.redirections()[0].kind(),
+                    ExternalRedirectionKind::Output
+                );
+                assert_eq!(stage.redirections()[0].target().to_bytes(), b"created.txt");
+                return Ok(0);
+            }
+
+            assert_eq!(pipeline.stages().len(), 2usize);
+            assert_eq!(
+                pipeline.stages()[0]
+                    .command()
+                    .expect("first pipeline command")
+                    .executable()
+                    .to_bytes(),
+                b"first"
+            );
+            let second = pipeline.stages()[1]
+                .command()
+                .expect("second pipeline command");
+            assert_eq!(second.executable().to_bytes(), b"second");
+            assert_eq!(pipeline.stages()[1].redirections().len(), 1usize);
+            assert_eq!(
+                pipeline.stages()[1].redirections()[0].kind(),
+                ExternalRedirectionKind::Append
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[0].target().to_bytes(),
+                b"result.txt"
+            );
+            Ok(23)
+        }
+    }
+
+    #[test]
+    fn bridges_typed_pipeline_stages_and_redirections_across_the_c_abi() {
+        let mut shell = Shell::new().expect("create shell");
+        let context = ExecutionContext::new();
+        let mut executor = PipelinePlanExecutor {
+            calls: 0usize,
+            redirection_only: false,
+        };
+        let result = shell
+            .execute(
+                b"first | second >> result.txt",
+                &context,
+                Some(&mut executor),
+            )
+            .expect("dispatch typed pipeline plan");
+
+        assert_eq!(executor.calls, 1usize);
+        assert_eq!(result.exit_code, 23);
+        assert_eq!(result.commands_executed, 2usize);
+
+        executor.redirection_only = true;
+        let result = shell
+            .execute(b"> created.txt", &context, Some(&mut executor))
+            .expect("dispatch redirection-only plan");
+        assert_eq!(executor.calls, 2usize);
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.commands_executed, 1usize);
     }
 
     #[test]
