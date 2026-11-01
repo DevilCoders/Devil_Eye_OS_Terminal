@@ -553,7 +553,8 @@ static int test_command_prefix_environment_is_temporary(void)
         {"MODE", "base"},
     };
     expansion_expectation_t expectation = {
-        {"tool"}, 1U, "MODE", "temporary", 1U, 0, 0U, 0
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "MODE", "temporary", 1U, 0, 0U, 0
     };
     const de_shell_execution_context_t context = {
         environment, 1U, NULL, expansion_executor, &expectation
@@ -680,7 +681,8 @@ static int test_expansion_output_limit(void)
         {"LONG", long_value},
     };
     expansion_expectation_t expectation = {
-        {"tool"}, 1U, "LONG", long_value, 1U, 0, 0U, 0
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "LONG", long_value, 1U, 0, 0U, 0
     };
     const de_shell_execution_context_t context = {
         environment, 1U, NULL, expansion_executor, &expectation
