@@ -174,9 +174,7 @@ unsafe fn parse_external_command<'a>(
         arguments.push(unsafe { CStr::from_ptr(*argument) });
     }
 
-    let environment = unsafe {
-        parse_environment(command.environment, command.environment_count)?
-    };
+    let environment = unsafe { parse_environment(command.environment, command.environment_count)? };
     let working_directory = unsafe { parse_working_directory(command.working_directory) };
 
     Ok(ExternalCommand {
@@ -233,13 +231,10 @@ unsafe fn parse_external_pipeline<'a>(
         return Err(DeStatus::INVALID_ARGUMENT);
     }
 
-    let environment = unsafe {
-        parse_environment(request.environment, request.environment_count)?
-    };
+    let environment = unsafe { parse_environment(request.environment, request.environment_count)? };
     let working_directory = unsafe { parse_working_directory(request.working_directory) };
-    let raw_stages = unsafe {
-        slice::from_raw_parts(request.pipeline_stages, request.pipeline_stage_count)
-    };
+    let raw_stages =
+        unsafe { slice::from_raw_parts(request.pipeline_stages, request.pipeline_stage_count) };
     let mut stages = Vec::with_capacity(request.pipeline_stage_count);
     let mut total_redirections = 0usize;
 
