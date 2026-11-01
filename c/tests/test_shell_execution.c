@@ -630,7 +630,8 @@ static int test_non_recursive_expansion(void)
 static int test_last_status_and_skipped_operand_expansion(void)
 {
     de_shell_t *shell = NULL;
-    static const unsigned char status_source[] = "fail; tool \"$?\"";
+    static const unsigned char failure_source[] = "fail";
+    static const unsigned char status_source[] = "tool \"$?\"";
     static const unsigned char skipped_source[] = "fail && tool ${}";
     status_sequence_state_t state = {0U};
     const de_shell_execution_context_t status_context = {
@@ -649,6 +650,10 @@ static int test_last_status_and_skipped_operand_expansion(void)
         return 1;
     }
     if (de_shell_execute_source(
+            shell, failure_source, sizeof(failure_source) - 1U,
+            &status_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || result.exit_code != 7
+        || de_shell_execute_source(
             shell, status_source, sizeof(status_source) - 1U,
             &status_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
         || state.calls != 2U
