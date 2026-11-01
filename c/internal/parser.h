@@ -18,7 +18,9 @@ typedef enum de_shell_ast_node_type {
 typedef enum de_shell_redirection_type {
     DE_SHELL_REDIRECTION_INPUT = 0,
     DE_SHELL_REDIRECTION_OUTPUT = 1,
-    DE_SHELL_REDIRECTION_APPEND = 2
+    DE_SHELL_REDIRECTION_APPEND = 2,
+    DE_SHELL_REDIRECTION_ERROR_OUTPUT = 3,
+    DE_SHELL_REDIRECTION_ERROR_APPEND = 4
 } de_shell_redirection_type_t;
 
 typedef struct de_shell_word_ref {
@@ -87,7 +89,7 @@ typedef struct de_shell_parse_diagnostic {
  *   pipeline   := command ('|' command)*
  *   command    := simple_command | '(' list ')'
  *   simple     := (WORD | redirection)+
- *   redirection:= ('<' | '>' | '>>') WORD
+ *   redirection:= ('<' | '>' | '>>' | '2>' | '2>>') WORD
  *
  * Precedence, from highest to lowest: redirections/words, pipeline,
  * left-associative AND/OR, then sequence/background separators.
