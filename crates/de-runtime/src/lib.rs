@@ -281,7 +281,6 @@ impl StdioConfig {
     }
 }
 
-
 /// One explicit file redirection applied to a pipeline stage in source order.
 #[derive(Clone)]
 pub enum PipelineRedirection {
