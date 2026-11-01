@@ -133,6 +133,8 @@ pub enum ExternalRedirectionKind {
     Input,
     Output,
     Append,
+    ErrorOutput,
+    ErrorAppend,
 }
 
 /// Borrowed redirection target and its source location.
@@ -835,7 +837,7 @@ mod tests {
                 .command()
                 .expect("second pipeline command");
             assert_eq!(second.executable().to_bytes(), b"second");
-            assert_eq!(pipeline.stages()[1].redirections().len(), 1usize);
+            assert_eq!(pipeline.stages()[1].redirections().len(), 2usize);
             assert_eq!(
                 pipeline.stages()[1].redirections()[0].kind(),
                 ExternalRedirectionKind::Append
@@ -843,6 +845,14 @@ mod tests {
             assert_eq!(
                 pipeline.stages()[1].redirections()[0].target().to_bytes(),
                 b"result.txt"
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[1].kind(),
+                ExternalRedirectionKind::ErrorAppend
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[1].target().to_bytes(),
+                b"errors.txt"
             );
             Ok(23)
         }
@@ -858,7 +868,7 @@ mod tests {
         };
         let result = shell
             .execute(
-                b"first | second >> result.txt",
+                b"first | second >> result.txt 2>> errors.txt",
                 &context,
                 Some(&mut executor),
             )
