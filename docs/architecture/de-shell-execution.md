@@ -50,9 +50,9 @@ For a normal simple command without redirections, the host callback receives one
 
 The C core does not open files, create pipes, duplicate descriptors, or spawn children. The runtime must:
 
-- Open `<` targets read-only; open `>` targets with create/truncate; open `>>` targets with create/append.
+- Open `<` targets read-only; open `>` and `2>` targets with create/truncate; open `>>` and `2>>` targets with create/append.
 - Apply multiple redirections in source order, closing superseded descriptors while preserving earlier filesystem side effects.
-- Connect each stage's stdout to the next stage's stdin, with explicit stage redirections overriding the corresponding pipe endpoint.
+- Connect each stage's stdout to the next stage's stdin, with explicit stdin/stdout redirections overriding the corresponding pipe endpoint; stderr redirections replace only the stage's stderr stream.
 - Launch all stages before waiting, close parent pipe copies promptly, and wait/reap every started child.
 - On any setup or launch failure, terminate already-started children, close every owned descriptor, and reap all children before returning an error.
 - Return the last stage's exit code; no `pipefail` behavior is implied.
