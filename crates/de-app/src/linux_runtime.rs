@@ -359,13 +359,15 @@ mod pipeline_tests {
             .expect("execute redirection-only stage with relative working directory");
         assert_eq!(result.exit_code, 0);
         assert_eq!(
-            fs::read(directory.join("redirection-only.txt"))
-                .expect("read redirection-only output"),
+            fs::read(directory.join("redirection-only.txt")).expect("read redirection-only output"),
             b""
         );
 
         let duplicated = directory.join(&directory).join("command-output.txt");
-        assert!(!duplicated.exists(), "relative working directory was joined twice");
+        assert!(
+            !duplicated.exists(),
+            "relative working directory was joined twice"
+        );
 
         fs::remove_file(directory.join("command-output.txt")).expect("remove command output");
         fs::remove_file(directory.join("redirection-only.txt"))

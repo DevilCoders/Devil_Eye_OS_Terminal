@@ -108,7 +108,9 @@ impl LinuxRuntime {
         }
         let redirection_count = stages
             .iter()
-            .try_fold(0usize, |count, stage| count.checked_add(stage.redirections.len()))
+            .try_fold(0usize, |count, stage| {
+                count.checked_add(stage.redirections.len())
+            })
             .ok_or(RuntimeError::ResourceLimitExceeded)?;
         if redirection_count > MAX_PIPELINE_REDIRECTIONS {
             return Err(RuntimeError::ResourceLimitExceeded);
