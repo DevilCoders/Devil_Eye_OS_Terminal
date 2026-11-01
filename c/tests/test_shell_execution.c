@@ -308,6 +308,8 @@ static int test_parse_errors_and_unsupported_nodes(void)
     static const unsigned char pipeline[] = "tool | tool";
     static const unsigned char redirection[] = "tool > output";
     static const unsigned char background[] = "tool &";
+    static const unsigned char builtin_pipeline[] = "exit | tool";
+    static const unsigned char builtin_redirection[] = "exit > output";
     executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
         DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
     const de_shell_execution_context_t context = {
@@ -348,6 +350,24 @@ static int test_parse_errors_and_unsupported_nodes(void)
         || state.environment_valid == 0
         || result.commands_executed != 1U) {
         (void)fprintf(stderr, "typed output-redirection plan was not dispatched\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, builtin_pipeline, sizeof(builtin_pipeline) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
+        || state.calls != 2U) {
+        (void)fprintf(stderr, "built-in pipeline stage was not rejected safely\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, builtin_redirection, sizeof(builtin_redirection) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
+        || state.calls != 2U) {
+        (void)fprintf(stderr, "built-in redirection was not rejected safely\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
