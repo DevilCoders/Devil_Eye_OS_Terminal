@@ -1344,7 +1344,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(&output).expect("read pipeline output"),
-            "HELLO\\n"
+            "HELLO\n"
         );
         fs::remove_file(output).expect("remove pipeline output");
     }
@@ -1419,7 +1419,7 @@ mod tests {
         assert_eq!(result.stage_statuses.len(), 2usize);
         assert_eq!(
             fs::read_to_string(&output).expect("read head output"),
-            "y\\n"
+            "y\n"
         );
         fs::remove_file(output).expect("remove broken-pipe output");
     }
