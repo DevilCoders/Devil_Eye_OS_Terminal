@@ -526,7 +526,7 @@ static int test_parameter_expansion_and_persistent_variables(void)
     if (de_shell_execute_source(
             shell, assignment, sizeof(assignment) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
-        || result.commands_executed != 1U
+        || result.commands_executed != 2U
         || result.exit_code != 0) {
         (void)de_shell_destroy(&shell);
         return 1;
