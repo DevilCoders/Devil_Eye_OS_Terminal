@@ -1474,6 +1474,41 @@ mod tests {
         fs::remove_file(output).expect("remove broken-pipe output");
     }
 
+
+    #[test]
+    fn spawn_failure_terminates_and_reaps_already_started_pipeline_stages() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = runtime_test_lock();
+        let broken_program = temporary_path("missing-interpreter");
+        fs::write(&broken_program, b"#!/definitely/missing/devil-eye-interpreter\\n")
+            .expect("write executable fixture");
+        fs::set_permissions(&broken_program, fs::Permissions::from_mode(0o755))
+            .expect("make fixture executable");
+
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/sleep")
+                    .expect("sleep")
+                    .with_arg("30"),
+            ),
+            PipelineStage::command(
+                ProgramSpec::new(broken_program.as_os_str()).expect("broken interpreter path"),
+            ),
+        ];
+
+        let started = Instant::now();
+        let result = LinuxRuntime.execute_pipeline(&stages);
+        let elapsed = started.elapsed();
+        fs::remove_file(broken_program).expect("remove executable fixture");
+
+        assert!(result.is_err());
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "a child process survived the failed pipeline launch"
+        );
+    }
+
     #[test]
     fn non_pipe_streams_reject_pipe_io_and_non_pty_resize() {
         let _guard = runtime_test_lock();
