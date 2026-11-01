@@ -147,10 +147,10 @@ impl LinuxRuntime {
             let mut stage_redirections = Vec::with_capacity(stage.redirections.len());
             for redirection in &stage.redirections {
                 let stream = match redirection {
-                    PipelineRedirection::Input(_) => 0U8,
-                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1U8,
+                    PipelineRedirection::Input(_) => 0u8,
+                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1u8,
                     PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => {
-                        2U8
+                        2u8
                     }
                 };
                 let file = open_pipeline_redirection(redirection)?;
