@@ -133,8 +133,8 @@ impl LinuxRuntime {
                     PipelineRedirection::Input(path)
                     | PipelineRedirection::Output(path)
                     | PipelineRedirection::Append(path)
-                | PipelineRedirection::ErrorOutput(path)
-                | PipelineRedirection::ErrorAppend(path) => path,
+                    | PipelineRedirection::ErrorOutput(path)
+                    | PipelineRedirection::ErrorAppend(path) => path,
                 };
                 if path.as_os_str().as_encoded_bytes().contains(&0u8) {
                     return Err(RuntimeError::InvalidArgument);
@@ -149,7 +149,9 @@ impl LinuxRuntime {
                 let stream = match redirection {
                     PipelineRedirection::Input(_) => 0U8,
                     PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1U8,
-                    PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => 2U8,
+                    PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => {
+                        2U8
+                    }
                 };
                 let file = open_pipeline_redirection(redirection)?;
                 stage_redirections.push((stream, file));
@@ -1407,7 +1409,6 @@ mod tests {
         fs::remove_file(output).expect("remove output fixture");
         fs::remove_file(empty).expect("remove redirection-only file");
     }
-
 
     #[test]
     fn stderr_output_and_append_redirections_capture_child_errors() {
