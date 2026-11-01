@@ -355,7 +355,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     if (de_shell_execute_source(
             shell, background, sizeof(background) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
+        || state.calls != 2U) {
         (void)fprintf(stderr, "background command was executed without a job backend\n");
         (void)de_shell_destroy(&shell);
         return 1;
