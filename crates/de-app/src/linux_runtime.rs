@@ -271,3 +271,76 @@ fn map_process_exit(status: ProcessExitStatus) -> ProcessExit {
         ProcessExitStatus::Unknown => ProcessExit::Unknown,
     }
 }
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::LinuxShellCommandExecutor;
+    use de_ffi::{ExecutionContext, Shell};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "devil-eye-app-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn ffi_shell_pipeline_executes_through_linux_runtime() {
+        let output = temporary_path("pipeline");
+        let source = format!(
+            "/usr/bin/printf 'hello\\n' | /usr/bin/tr a-z A-Z > {}",
+            output.display()
+        );
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let context = ExecutionContext::new();
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute shell pipeline through Linux runtime");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.commands_executed, 2usize);
+        assert_eq!(fs::read_to_string(&output).expect("read pipeline output"), "HELLO\\n");
+        fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn ffi_shell_stderr_and_redirection_only_plans_reach_linux_runtime() {
+        let stderr_path = temporary_path("stderr");
+        let redirection_only_path = temporary_path("redirection-only");
+        let missing = "/definitely/not/a/devil-eye-app-file";
+        let source = format!("/usr/bin/ls {missing} 2> {}", stderr_path.display());
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let context = ExecutionContext::new();
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute stderr redirection through Linux runtime");
+        assert_eq!(result.exit_code, 2);
+        assert!(
+            fs::read_to_string(&stderr_path)
+                .expect("read stderr file")
+                .contains(missing)
+        );
+
+        let source = format!("> {}", redirection_only_path.display());
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute redirection-only plan through Linux runtime");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read(&redirection_only_path).expect("read created file"),
+            b""
+        );
+
+        fs::remove_file(stderr_path).expect("remove stderr file");
+        fs::remove_file(redirection_only_path).expect("remove redirection-only file");
+    }
+}
