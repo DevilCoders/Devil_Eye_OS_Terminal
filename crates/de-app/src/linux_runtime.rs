@@ -4,14 +4,126 @@ use crate::lifecycle::{ApplicationService, ServiceError};
 use crate::service_interfaces::{
     ProcessExit, ProcessRead, RuntimeProcess, RuntimeService, TerminationMode,
 };
+use de_ffi::{
+    CommandExecutor, ExternalCommand, ExternalExecutionError, ExternalPipeline,
+    ExternalRedirectionKind,
+};
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
-    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
-    RuntimeError, RuntimeProcess as PlatformRuntimeProcess,
+    IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest,
+    ProgramSpec, PtyConfig, ReadOutcome, RuntimeError, RuntimeProcess as PlatformRuntimeProcess,
     RuntimeService as PlatformRuntimeService, Signal, TerminationMode as PlatformTerminationMode,
     WriteOutcome,
 };
 use de_terminal_core::TerminalSize;
+use std::ffi::{CStr, OsString};
+use std::os::unix::ffi::OsStringExt;
+use std::path::PathBuf;
+
+/// Concrete DE-Shell host executor backed by the Linux process runtime.
+///
+/// External commands and complete pipeline plans are converted from the
+/// borrowed C ABI representation into validated native process specifications.
+/// The runtime inherits the shell host's standard streams unless a stage
+/// redirection overrides one of them.
+#[derive(Debug, Default)]
+pub struct LinuxShellCommandExecutor {
+    backend: LinuxRuntime,
+}
+
+impl LinuxShellCommandExecutor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn program_spec(
+        command: &ExternalCommand<'_>,
+        fallback_working_directory: Option<&CStr>,
+    ) -> Result<ProgramSpec, ExternalExecutionError> {
+        let mut program = ProgramSpec::new(os_string(command.executable()))
+            .map_err(|_| ExternalExecutionError::Failed)?;
+        for argument in command.arguments() {
+            program = program.with_arg(os_string(argument));
+        }
+        for entry in command.environment() {
+            program = program.with_env(os_string(entry.key), os_string(entry.value));
+        }
+        if let Some(directory) = command.working_directory().or(fallback_working_directory) {
+            program = program.with_working_directory(PathBuf::from(os_string(directory)));
+        }
+        Ok(program)
+    }
+
+    /// Resolves a relative target once against the shell working directory.
+    ///
+    /// Redirection-only stages have no ProgramSpec for the runtime to resolve,
+    /// so the adapter anchors both command and redirection-only targets here.
+    fn redirection_path(
+        target: &CStr,
+        working_directory: Option<&CStr>,
+    ) -> Result<PathBuf, ExternalExecutionError> {
+        let path = PathBuf::from(os_string(target));
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        let Some(directory) = working_directory else {
+            return Ok(path);
+        };
+        let directory = std::fs::canonicalize(PathBuf::from(os_string(directory)))
+            .map_err(|_| ExternalExecutionError::Failed)?;
+        Ok(directory.join(path))
+    }
+}
+
+fn os_string(value: &CStr) -> OsString {
+    OsString::from_vec(value.to_bytes().to_vec())
+}
+
+impl CommandExecutor for LinuxShellCommandExecutor {
+    fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError> {
+        let stage = PipelineStage::command(Self::program_spec(&command, None)?);
+        PlatformRuntimeService::execute_pipeline(&self.backend, &[stage])
+            .map(|result| result.exit_code)
+            .map_err(|_| ExternalExecutionError::Failed)
+    }
+
+    fn execute_pipeline(
+        &mut self,
+        pipeline: ExternalPipeline<'_>,
+    ) -> Result<i32, ExternalExecutionError> {
+        let mut stages = Vec::with_capacity(pipeline.stages().len());
+        for external_stage in pipeline.stages() {
+            let working_directory = external_stage
+                .command()
+                .and_then(|command| command.working_directory())
+                .or(pipeline.working_directory());
+            let mut stage = match external_stage.command() {
+                Some(command) => PipelineStage::command(Self::program_spec(
+                    command,
+                    pipeline.working_directory(),
+                )?),
+                None => PipelineStage::redirection_only(),
+            };
+
+            for redirection in external_stage.redirections() {
+                let path = Self::redirection_path(redirection.target(), working_directory)?;
+                let redirection = match redirection.kind() {
+                    ExternalRedirectionKind::Input => PipelineRedirection::Input(path),
+                    ExternalRedirectionKind::Output => PipelineRedirection::Output(path),
+                    ExternalRedirectionKind::Append => PipelineRedirection::Append(path),
+                    ExternalRedirectionKind::ErrorOutput => PipelineRedirection::ErrorOutput(path),
+                    ExternalRedirectionKind::ErrorAppend => PipelineRedirection::ErrorAppend(path),
+                };
+                stage = stage.with_redirection(redirection);
+            }
+            stages.push(stage);
+        }
+
+        PlatformRuntimeService::execute_pipeline(&self.backend, &stages)
+            .map(|result| result.exit_code)
+            .map_err(|_| ExternalExecutionError::Failed)
+    }
+}
 
 /// Application-level lifecycle wrapper around the Linux process runtime.
 #[derive(Debug, Default)]
@@ -161,5 +273,137 @@ fn map_process_exit(status: ProcessExitStatus) -> ProcessExit {
             },
         },
         ProcessExitStatus::Unknown => ProcessExit::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::LinuxShellCommandExecutor;
+    use de_ffi::{ExecutionContext, Shell};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "devil-eye-app-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn ffi_shell_pipeline_executes_through_linux_runtime() {
+        let output = temporary_path("pipeline");
+        let source = format!(
+            "/usr/bin/printf 'hello\\n' | /usr/bin/tr a-z A-Z > {}",
+            output.display()
+        );
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let context = ExecutionContext::new();
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute shell pipeline through Linux runtime");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.commands_executed, 2usize);
+        assert_eq!(
+            fs::read_to_string(&output).expect("read pipeline output"),
+            "HELLO\n"
+        );
+        fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn ffi_shell_resolves_relative_redirections_against_relative_working_directory() {
+        use std::ffi::CString;
+        use std::path::PathBuf;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let directory = PathBuf::from(format!(
+            ".devil-eye-app-relative-cwd-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).expect("create relative working directory");
+        let working_directory = CString::new(directory.to_string_lossy().as_bytes())
+            .expect("working directory has no NUL");
+        let context = ExecutionContext {
+            environment: &[],
+            working_directory: Some(&working_directory),
+        };
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(
+                b"/usr/bin/printf relative > command-output.txt",
+                &context,
+                Some(&mut executor),
+            )
+            .expect("execute command with relative working directory");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(directory.join("command-output.txt"))
+                .expect("read command redirection"),
+            "relative"
+        );
+
+        let result = shell
+            .execute(b"> redirection-only.txt", &context, Some(&mut executor))
+            .expect("execute redirection-only stage with relative working directory");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read(directory.join("redirection-only.txt")).expect("read redirection-only output"),
+            b""
+        );
+
+        let duplicated = directory.join(&directory).join("command-output.txt");
+        assert!(
+            !duplicated.exists(),
+            "relative working directory was joined twice"
+        );
+
+        fs::remove_file(directory.join("command-output.txt")).expect("remove command output");
+        fs::remove_file(directory.join("redirection-only.txt"))
+            .expect("remove redirection-only output");
+        fs::remove_dir(directory).expect("remove relative working directory");
+    }
+
+    #[test]
+    fn ffi_shell_stderr_and_redirection_only_plans_reach_linux_runtime() {
+        let stderr_path = temporary_path("stderr");
+        let redirection_only_path = temporary_path("redirection-only");
+        let missing = "/definitely/not/a/devil-eye-app-file";
+        let source = format!("/usr/bin/ls {missing} 2> {}", stderr_path.display());
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let context = ExecutionContext::new();
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute stderr redirection through Linux runtime");
+        assert_eq!(result.exit_code, 2);
+        assert!(fs::read_to_string(&stderr_path)
+            .expect("read stderr file")
+            .contains(missing));
+
+        let source = format!("> {}", redirection_only_path.display());
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute redirection-only plan through Linux runtime");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read(&redirection_only_path).expect("read created file"),
+            b""
+        );
+
+        fs::remove_file(stderr_path).expect("remove stderr file");
+        fs::remove_file(redirection_only_path).expect("remove redirection-only file");
     }
 }

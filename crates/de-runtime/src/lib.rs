@@ -281,6 +281,51 @@ impl StdioConfig {
     }
 }
 
+/// One explicit file redirection applied to a pipeline stage in source order.
+#[derive(Clone)]
+pub enum PipelineRedirection {
+    Input(PathBuf),
+    Output(PathBuf),
+    Append(PathBuf),
+    ErrorOutput(PathBuf),
+    ErrorAppend(PathBuf),
+}
+
+/// One stage in a foreground pipeline. A missing program is valid only for a
+/// single-stage redirection-only operation.
+pub struct PipelineStage {
+    pub(crate) program: Option<ProgramSpec>,
+    pub(crate) redirections: Vec<PipelineRedirection>,
+}
+
+impl PipelineStage {
+    pub fn command(program: ProgramSpec) -> Self {
+        Self {
+            program: Some(program),
+            redirections: Vec::new(),
+        }
+    }
+
+    pub fn redirection_only() -> Self {
+        Self {
+            program: None,
+            redirections: Vec::new(),
+        }
+    }
+
+    pub fn with_redirection(mut self, redirection: PipelineRedirection) -> Self {
+        self.redirections.push(redirection);
+        self
+    }
+}
+
+/// Foreground pipeline outcome. The pipeline exit code is the final stage's
+/// conventional exit code; per-stage outcomes are retained for diagnostics.
+pub struct PipelineExecutionResult {
+    pub exit_code: i32,
+    pub stage_statuses: Vec<ProcessExitStatus>,
+}
+
 /// PTY configuration. A PTY combines the child's terminal-facing streams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PtyConfig {
@@ -349,6 +394,7 @@ impl ProcessSpawnRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeCapability {
     StdioPipes,
+    PipelineExecution,
     PseudoTerminal,
     TerminalResize,
     Signals,
@@ -543,6 +589,17 @@ pub trait RuntimeService: Send + Sync {
 
     /// Creates a child process and transfers OS-resource ownership to its handle.
     fn spawn(&self, request: ProcessSpawnRequest) -> Result<Box<dyn RuntimeProcess>, RuntimeError>;
+
+    /// Executes a bounded foreground pipeline. Backends without this capability
+    /// return a typed unsupported-capability error without starting any child.
+    fn execute_pipeline(
+        &self,
+        _stages: &[PipelineStage],
+    ) -> Result<PipelineExecutionResult, RuntimeError> {
+        Err(RuntimeError::UnsupportedCapability(
+            RuntimeCapability::PipelineExecution,
+        ))
+    }
 }
 
 #[cfg(test)]

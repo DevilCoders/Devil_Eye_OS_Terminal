@@ -7,20 +7,38 @@
 
 de_shell_status_t de_shell_create(de_shell_t **out_shell)
 {
+    static const de_shell_abi_version_t legacy_version = {0U, 1U, 0U};
+
+    return de_shell_create_with_abi(&legacy_version, out_shell);
+}
+
+de_shell_status_t de_shell_create_with_abi(
+    const de_shell_abi_version_t *requested_version,
+    de_shell_t **out_shell)
+{
     de_shell_t *shell = NULL;
     de_shell_registry_status_t registry_status;
+    de_shell_status_t abi_status;
 
     if (out_shell == NULL) {
         return DE_SHELL_STATUS_INVALID_ARGUMENT;
     }
-
     *out_shell = NULL;
+    if (requested_version == NULL) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+
+    abi_status = de_shell_check_abi_version(requested_version);
+    if (abi_status != DE_SHELL_STATUS_OK) {
+        return abi_status;
+    }
 
     shell = calloc(1U, sizeof(*shell));
     if (shell == NULL) {
         return DE_SHELL_STATUS_INTERNAL_ERROR;
     }
 
+    shell->abi_version = *requested_version;
     shell->lifecycle_state = DE_SHELL_INTERNAL_STATE_READY;
     registry_status = de_shell_command_registry_create(&shell->command_registry);
     if (registry_status != DE_SHELL_REGISTRY_STATUS_OK) {

@@ -1,6 +1,8 @@
 #ifndef DE_SHELL_INTERNAL_SHELL_INTERNAL_H
 #define DE_SHELL_INTERNAL_SHELL_INTERNAL_H
 
+#include "de_shell/abi.h"
+
 #include <stddef.h>
 
 #define DE_SHELL_INTERNAL_MAX_VARIABLES 128U
@@ -13,6 +15,7 @@ typedef struct de_shell_variable {
 typedef struct de_shell_command_registry de_shell_command_registry_t;
 
 struct de_shell {
+    de_shell_abi_version_t abi_version;
     unsigned int lifecycle_state;
     de_shell_command_registry_t *command_registry;
     unsigned int execution_active;

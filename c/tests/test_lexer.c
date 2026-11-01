@@ -97,7 +97,7 @@ static int test_escaped_whitespace_and_quotes(void)
 
 static int test_operator_tokens(void)
 {
-    static const unsigned char source[] = "cmd|next && other || x; in<file out>>log & (group)";
+    static const unsigned char source[] = "cmd|next && other || x; in<file out>>log stderr 2>err 2>>errlog name2>out & (group)";
     static const de_shell_token_type_t expected[] = {
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_PIPE,
@@ -113,12 +113,20 @@ static int test_operator_tokens(void)
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_REDIRECT_APPEND,
         DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_OUTPUT,
+        DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_BACKGROUND,
         DE_SHELL_TOKEN_LEFT_PAREN,
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_RIGHT_PAREN
     };
-    de_shell_token_t tokens[TOKEN_CAPACITY + 4U];
+    de_shell_token_t tokens[TOKEN_CAPACITY + 16U];
     de_shell_lex_diagnostic_t diagnostic;
     size_t count = 0U;
     size_t index;
@@ -127,11 +135,14 @@ static int test_operator_tokens(void)
             source,
             sizeof(source) - 1U,
             tokens,
-            TOKEN_CAPACITY + 4U,
+            TOKEN_CAPACITY + 16U,
             &count,
             &diagnostic) != DE_SHELL_LEX_STATUS_OK
         || count != sizeof(expected) / sizeof(expected[0])) {
-        (void)fprintf(stderr, "operator token count test failed\n");
+        (void)fprintf(stderr, "operator token count test failed: got %zu expected %zu\n", count, sizeof(expected) / sizeof(expected[0]));
+        for (index = 0U; index < count; index += 1U) {
+            (void)fprintf(stderr, "token[%zu]=%d\n", index, (int)tokens[index].type);
+        }
         return 1;
     }
 

@@ -1,5 +1,7 @@
 #include "de_shell/execution.h"
 
+static const de_shell_abi_version_t current_abi_version = {0U, 2U, 0U};
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,63 @@ static de_shell_status_t fake_executor(
     state->calls += 1U;
     if (command == NULL || out_exit_code == NULL) {
         return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (command->pipeline_stage_count != 0U) {
+        size_t stage_index;
+        if (command->pipeline_stages == NULL
+            || command->pipeline_stage_count > 64U
+            || command->executable != NULL
+            || command->argc != 0U
+            || command->argv != NULL) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+        for (stage_index = 0U; stage_index < command->pipeline_stage_count; stage_index += 1U) {
+            const de_shell_pipeline_stage_t *stage =
+                &command->pipeline_stages[stage_index];
+            if (stage->redirection_count != 0U && stage->redirections == NULL) {
+                return DE_SHELL_STATUS_INVALID_ARGUMENT;
+            }
+            if (stage->command != NULL
+                && (stage->command->argc == 0U
+                    || stage->command->argv == NULL
+                    || stage->command->executable == NULL)) {
+                return DE_SHELL_STATUS_INVALID_ARGUMENT;
+            }
+        }
+        if (command->pipeline_stage_count == 2U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[1].command != NULL
+            && strcmp(command->pipeline_stages[0].command->executable, "tool") == 0
+            && strcmp(command->pipeline_stages[1].command->executable, "tool") == 0) {
+            state->arguments_valid = 1;
+        }
+        if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_OUTPUT
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "output") == 0) {
+            state->environment_valid = 1;
+        }
+        if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_ERROR_APPEND
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "errors") == 0) {
+            state->environment_valid = 1;
+        }
+        if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command == NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_OUTPUT
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "output") == 0) {
+            state->environment_valid = 1;
+        }
+        *out_exit_code = state->return_exit_code;
+        return state->callback_status;
     }
 
     if (command->argc == 4U
@@ -258,7 +317,10 @@ static int test_parse_errors_and_unsupported_nodes(void)
     static const unsigned char malformed[] = "tool &&";
     static const unsigned char pipeline[] = "tool | tool";
     static const unsigned char redirection[] = "tool > output";
+    static const unsigned char stderr_redirection[] = "tool 2>> errors";
     static const unsigned char background[] = "tool &";
+    static const unsigned char builtin_pipeline[] = "exit | tool";
+    static const unsigned char builtin_redirection[] = "exit > output";
     executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
         DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
     const de_shell_execution_context_t context = {
@@ -267,7 +329,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
 
-    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
         return 1;
     }
 
@@ -283,18 +345,52 @@ static int test_parse_errors_and_unsupported_nodes(void)
 
     if (de_shell_execute_source(
             shell, pipeline, sizeof(pipeline) - 1U,
-            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
-        (void)fprintf(stderr, "pipeline was executed before backend support exists\n");
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 1U
+        || state.arguments_valid == 0
+        || result.commands_executed != 2U) {
+        (void)fprintf(stderr, "typed two-stage pipeline plan was not dispatched\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
 
     if (de_shell_execute_source(
             shell, redirection, sizeof(redirection) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 2U
+        || state.environment_valid == 0
+        || result.commands_executed != 1U) {
+        (void)fprintf(stderr, "typed output-redirection plan was not dispatched\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    state.environment_valid = 0;
+    if (de_shell_execute_source(
+            shell, stderr_redirection, sizeof(stderr_redirection) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 3U
+        || state.environment_valid == 0
+        || result.commands_executed != 1U) {
+        (void)fprintf(stderr, "stderr append redirection plan was not dispatched\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, builtin_pipeline, sizeof(builtin_pipeline) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
-        (void)fprintf(stderr, "redirection was executed before backend support exists\n");
+        || state.calls != 3U) {
+        (void)fprintf(stderr, "built-in pipeline stage was not rejected safely\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, builtin_redirection, sizeof(builtin_redirection) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
+        || state.calls != 3U) {
+        (void)fprintf(stderr, "built-in redirection was not rejected safely\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
@@ -302,8 +398,55 @@ static int test_parse_errors_and_unsupported_nodes(void)
     if (de_shell_execute_source(
             shell, background, sizeof(background) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
+        || state.calls != 3U) {
         (void)fprintf(stderr, "background command was executed without a job backend\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+
+static int test_redirection_only_command_and_failure_cleanup_contract(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char redirection_only[] = "DEST=output; > \"$DEST\"";
+    static const unsigned char pipeline[] = "tool | tool";
+    executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
+        DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, fake_executor, &state
+    };
+    const de_shell_execution_context_t failing_context = {
+        NULL, 0U, NULL, failing_executor, NULL
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, redirection_only, sizeof(redirection_only) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 1U
+        || state.environment_valid == 0
+        || result.commands_executed != 2U) {
+        (void)fprintf(stderr, "redirection-only command or target expansion failed\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, pipeline, sizeof(pipeline) - 1U,
+            &failing_context, &result, &diagnostic)
+        != DE_SHELL_STATUS_EXTERNAL_EXECUTION_FAILED
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_PIPELINE
+        || diagnostic.code != (int)DE_SHELL_STATUS_INTERNAL_ERROR
+        || result.commands_executed != 0U) {
+        (void)fprintf(stderr, "pipeline executor failure was not propagated\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
@@ -850,6 +993,35 @@ static int test_overlong_assignment_name_is_rejected(void)
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
 }
 
+
+static int test_legacy_abi_rejects_pipeline_callbacks(void)
+{
+    static const unsigned char pipeline[] = "tool | tool";
+    de_shell_t *shell = NULL;
+    executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
+        DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, fake_executor, &state
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, pipeline, sizeof(pipeline) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
+        || state.calls != 0U
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_PIPELINE) {
+        (void)fprintf(stderr, "ABI 0.1 callback received a pipeline request\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+    (void)de_shell_destroy(&shell);
+    return 0;
+}
+
 int main(void)
 {
     if (test_builtin_exit_stops_sequence() != 0
@@ -857,6 +1029,7 @@ int main(void)
         || test_and_or_and_sequence_control_flow() != 0
         || test_external_failures_and_missing_executor() != 0
         || test_parse_errors_and_unsupported_nodes() != 0
+        || test_redirection_only_command_and_failure_cleanup_contract() != 0
         || test_reentrancy_and_destroy_guard() != 0
         || test_context_validation_and_resource_limit() != 0
         || test_parameter_expansion_and_persistent_variables() != 0
@@ -867,7 +1040,8 @@ int main(void)
         || test_invalid_braced_expansion_is_rejected() != 0
         || test_invalid_utf8_expansion_is_rejected() != 0
         || test_double_quoted_backtick_escape_is_preserved() != 0
-        || test_overlong_assignment_name_is_rejected() != 0) {
+        || test_overlong_assignment_name_is_rejected() != 0
+        || test_legacy_abi_rejects_pipeline_callbacks() != 0) {
         return 1;
     }
 

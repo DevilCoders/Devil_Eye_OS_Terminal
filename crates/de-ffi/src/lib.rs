@@ -16,7 +16,7 @@ mod raw;
 /// Current Rust/C interface version.
 pub const ABI_VERSION: DeAbiVersion = DeAbiVersion {
     major: 0,
-    minor: 1,
+    minor: 2,
     patch: 0,
 };
 
@@ -127,10 +127,93 @@ impl<'a> ExternalCommand<'a> {
     }
 }
 
+/// Kind of explicit file redirection in a pipeline stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalRedirectionKind {
+    Input,
+    Output,
+    Append,
+    ErrorOutput,
+    ErrorAppend,
+}
+
+/// Borrowed redirection target and its source location.
+#[derive(Debug)]
+pub struct ExternalRedirection<'a> {
+    kind: ExternalRedirectionKind,
+    target: &'a CStr,
+    source_offset: usize,
+}
+
+impl ExternalRedirection<'_> {
+    pub const fn kind(&self) -> ExternalRedirectionKind {
+        self.kind
+    }
+
+    pub const fn target(&self) -> &CStr {
+        self.target
+    }
+
+    pub const fn source_offset(&self) -> usize {
+        self.source_offset
+    }
+}
+
+/// One borrowed stage in a pipeline. A missing command denotes a
+/// redirection-only operation and is valid only in a one-stage plan.
+#[derive(Debug)]
+pub struct ExternalPipelineStage<'a> {
+    command: Option<ExternalCommand<'a>>,
+    redirections: Vec<ExternalRedirection<'a>>,
+}
+
+impl<'a> ExternalPipelineStage<'a> {
+    pub const fn command(&self) -> Option<&ExternalCommand<'a>> {
+        self.command.as_ref()
+    }
+
+    pub fn redirections(&self) -> &[ExternalRedirection<'a>] {
+        &self.redirections
+    }
+}
+
+/// Complete ordered pipeline request. All strings are borrowed only for the
+/// duration of the synchronous CommandExecutor callback.
+#[derive(Debug)]
+pub struct ExternalPipeline<'a> {
+    stages: Vec<ExternalPipelineStage<'a>>,
+    environment: Vec<EnvironmentEntry<'a>>,
+    working_directory: Option<&'a CStr>,
+}
+
+impl<'a> ExternalPipeline<'a> {
+    pub fn stages(&self) -> &[ExternalPipelineStage<'a>] {
+        &self.stages
+    }
+
+    pub fn environment(&self) -> &[EnvironmentEntry<'a>] {
+        &self.environment
+    }
+
+    pub const fn working_directory(&self) -> Option<&'a CStr> {
+        self.working_directory
+    }
+}
+
 /// A host executor handles external commands. The callback is synchronous;
 /// every C string in the request is borrowed only for the duration of execute.
 pub trait CommandExecutor {
     fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError>;
+
+    /// Handles a complete pipeline or redirection-only request. Existing
+    /// single-command executors remain source-compatible and fail closed for
+    /// plans they do not explicitly implement.
+    fn execute_pipeline(
+        &mut self,
+        _pipeline: ExternalPipeline<'_>,
+    ) -> Result<i32, ExternalExecutionError> {
+        Err(ExternalExecutionError::Failed)
+    }
 }
 
 impl<F> CommandExecutor for F
@@ -160,6 +243,9 @@ pub enum ExecutionStage {
     Parse,
     Dispatch,
     External,
+    Expand,
+    Redirect,
+    Pipeline,
     Unknown(i32),
 }
 
@@ -172,6 +258,9 @@ impl ExecutionStage {
             3 => Self::Parse,
             4 => Self::Dispatch,
             5 => Self::External,
+            6 => Self::Expand,
+            7 => Self::Redirect,
+            8 => Self::Pipeline,
             other => Self::Unknown(other),
         }
     }
@@ -288,7 +377,7 @@ impl Shell {
 
         let mut handle = null_mut();
         // SAFETY: handle is valid writable pointer storage.
-        let create_status = DeStatus::from_raw(raw::create_shell(&mut handle));
+        let create_status = DeStatus::from_raw(raw::create_shell_with_abi(&requested, &mut handle));
         if !create_status.is_ok() {
             return Err(ShellError::Status(create_status));
         }
@@ -413,8 +502,9 @@ impl Drop for Shell {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext, ExecutionStage,
-        ExternalCommand, ExternalExecutionError, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
+        CommandExecutor, DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
+        ExecutionStage, ExternalCommand, ExternalExecutionError, ExternalPipeline,
+        ExternalRedirectionKind, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
     };
     use std::ffi::CString;
     use std::mem::{align_of, offset_of, size_of};
@@ -425,7 +515,7 @@ mod tests {
             ABI_VERSION,
             DeAbiVersion {
                 major: 0,
-                minor: 1,
+                minor: 2,
                 patch: 0,
             }
         );
@@ -455,6 +545,12 @@ mod tests {
             patch: 99,
         }
         .is_compatible_with(library));
+        assert!(DeAbiVersion {
+            major: 0,
+            minor: 2,
+            patch: 99,
+        }
+        .is_compatible_with(library));
     }
 
     #[test]
@@ -467,7 +563,7 @@ mod tests {
         .is_compatible_with(ABI_VERSION));
         assert!(!DeAbiVersion {
             major: 0,
-            minor: 2,
+            minor: 3,
             patch: 0,
         }
         .is_compatible_with(ABI_VERSION));
@@ -510,7 +606,7 @@ mod tests {
         assert_eq!(offset_of!(RawEnvironmentEntry, key), 0);
         assert_eq!(offset_of!(RawEnvironmentEntry, value), 8);
 
-        assert_eq!(size_of::<RawExternalCommand>(), 48);
+        assert_eq!(size_of::<RawExternalCommand>(), 64);
         assert_eq!(align_of::<RawExternalCommand>(), 8);
         assert_eq!(offset_of!(RawExternalCommand, executable), 0);
         assert_eq!(offset_of!(RawExternalCommand, argc), 8);
@@ -518,6 +614,23 @@ mod tests {
         assert_eq!(offset_of!(RawExternalCommand, environment), 24);
         assert_eq!(offset_of!(RawExternalCommand, environment_count), 32);
         assert_eq!(offset_of!(RawExternalCommand, working_directory), 40);
+        assert_eq!(offset_of!(RawExternalCommand, pipeline_stages), 48);
+        assert_eq!(offset_of!(RawExternalCommand, pipeline_stage_count), 56);
+
+        assert_eq!(size_of::<super::raw::RawIoRedirection>(), 24);
+        assert_eq!(align_of::<super::raw::RawIoRedirection>(), 8);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, kind), 0);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, target), 8);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, source_offset), 16);
+
+        assert_eq!(size_of::<super::raw::RawPipelineStage>(), 24);
+        assert_eq!(align_of::<super::raw::RawPipelineStage>(), 8);
+        assert_eq!(offset_of!(super::raw::RawPipelineStage, command), 0);
+        assert_eq!(offset_of!(super::raw::RawPipelineStage, redirections), 8);
+        assert_eq!(
+            offset_of!(super::raw::RawPipelineStage, redirection_count),
+            16
+        );
 
         assert_eq!(size_of::<RawExecutionContext>(), 40);
         assert_eq!(align_of::<RawExecutionContext>(), 8);
@@ -678,6 +791,108 @@ mod tests {
         assert!(observed);
         assert_eq!(result.exit_code, 7);
         assert_eq!(result.commands_executed, 1);
+    }
+
+    struct PipelinePlanExecutor {
+        calls: usize,
+        redirection_only: bool,
+    }
+
+    impl CommandExecutor for PipelinePlanExecutor {
+        fn execute(
+            &mut self,
+            _command: ExternalCommand<'_>,
+        ) -> Result<i32, ExternalExecutionError> {
+            Err(ExternalExecutionError::Failed)
+        }
+
+        fn execute_pipeline(
+            &mut self,
+            pipeline: ExternalPipeline<'_>,
+        ) -> Result<i32, ExternalExecutionError> {
+            self.calls += 1;
+            if self.redirection_only {
+                assert_eq!(pipeline.stages().len(), 1usize);
+                let stage = &pipeline.stages()[0];
+                assert!(stage.command().is_none());
+                assert_eq!(stage.redirections().len(), 1usize);
+                assert_eq!(
+                    stage.redirections()[0].kind(),
+                    ExternalRedirectionKind::Output
+                );
+                assert_eq!(stage.redirections()[0].target().to_bytes(), b"created.txt");
+                return Ok(0);
+            }
+
+            assert_eq!(pipeline.stages().len(), 2usize);
+            assert_eq!(
+                pipeline.stages()[0]
+                    .command()
+                    .expect("first pipeline command")
+                    .executable()
+                    .to_bytes(),
+                b"first"
+            );
+            let second = pipeline.stages()[1]
+                .command()
+                .expect("second pipeline command");
+            assert_eq!(second.executable().to_bytes(), b"second");
+            assert_eq!(pipeline.stages()[1].redirections().len(), 3usize);
+            assert_eq!(
+                pipeline.stages()[1].redirections()[0].kind(),
+                ExternalRedirectionKind::Append
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[0].target().to_bytes(),
+                b"result.txt"
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[1].kind(),
+                ExternalRedirectionKind::ErrorAppend
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[1].target().to_bytes(),
+                b"errors.txt"
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[2].kind(),
+                ExternalRedirectionKind::ErrorOutput
+            );
+            assert_eq!(
+                pipeline.stages()[1].redirections()[2].target().to_bytes(),
+                b"errors2.txt"
+            );
+            Ok(23)
+        }
+    }
+
+    #[test]
+    fn bridges_typed_pipeline_stages_and_redirections_across_the_c_abi() {
+        let mut shell = Shell::new().expect("create shell");
+        let context = ExecutionContext::new();
+        let mut executor = PipelinePlanExecutor {
+            calls: 0usize,
+            redirection_only: false,
+        };
+        let result = shell
+            .execute(
+                b"first | second >> result.txt 2>> errors.txt 2> errors2.txt",
+                &context,
+                Some(&mut executor),
+            )
+            .expect("dispatch typed pipeline plan");
+
+        assert_eq!(executor.calls, 1usize);
+        assert_eq!(result.exit_code, 23);
+        assert_eq!(result.commands_executed, 2usize);
+
+        executor.redirection_only = true;
+        let result = shell
+            .execute(b"> created.txt", &context, Some(&mut executor))
+            .expect("dispatch redirection-only plan");
+        assert_eq!(executor.calls, 2usize);
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.commands_executed, 1usize);
     }
 
     #[test]

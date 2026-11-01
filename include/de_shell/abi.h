@@ -26,7 +26,7 @@ typedef int32_t de_shell_status_t;
 #define DE_SHELL_STATUS_ABI_MISMATCH ((de_shell_status_t)9)
 
 #define DE_SHELL_ABI_VERSION_MAJOR UINT16_C(0)
-#define DE_SHELL_ABI_VERSION_MINOR UINT16_C(1)
+#define DE_SHELL_ABI_VERSION_MINOR UINT16_C(2)
 #define DE_SHELL_ABI_VERSION_PATCH UINT16_C(0)
 
 /*

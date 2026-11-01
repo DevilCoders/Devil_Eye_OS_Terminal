@@ -35,6 +35,7 @@ Supported AST nodes:
 - Sequence operator `;`.
 - AND operator `&&`, executing the right side only after exit code 0.
 - OR operator `||`, executing the right side only after a non-zero exit code.
+- External-command pipelines and `<`, `>`, `>>` redirections, dispatched as one immutable runtime plan.
 - The per-shell `exit` built-in, which requests shell termination and short-circuits the remainder of the current list.
 
 Words are decoded from their original source spans. Single and double quote delimiters are removed; backslash escaping is applied; `$NAME`, `${NAME}`, and `$?` expand outside single quotes. Expansion is scalar and non-recursive: values containing spaces remain one argument, wildcard bytes are not expanded, and empty values preserve an empty argument. Empty quoted arguments remain empty strings. UTF-8 bytes are preserved.
@@ -43,16 +44,26 @@ Assignment-only commands such as `NAME=value` update the bounded variable store 
 
 The shell handle retains the last completed command status across `de_shell_execute_source` calls, so `$?` works across interactive input lines. Expansion occurs only when a conditional AST operand is selected; skipped `&&`/`||` operands are neither expanded nor executed.
 
+## Pipeline and redirection execution plans
+
+For a normal simple command without redirections, the host callback receives one `de_shell_external_command_t` as before. For a pipeline or any redirection, the same callback receives a plan request: the top-level request has `pipeline_stage_count > 0` and an ordered `pipeline_stages` array. Each stage contains either a command request or a null command for a redirection-only command, plus its redirections in source order. Targets are decoded and expanded by the C core before dispatch.
+
+The C core does not open files, create pipes, duplicate descriptors, or spawn children. The runtime must:
+
+- Open `<` targets read-only; open `>` and `2>` targets with create/truncate; open `>>` and `2>>` targets with create/append.
+- Apply multiple redirections in source order, closing superseded descriptors while preserving earlier filesystem side effects.
+- Connect each stage's stdout to the next stage's stdin, with explicit stdin/stdout redirections overriding the corresponding pipe endpoint; stderr redirections replace only the stage's stderr stream.
+- Resolve relative redirection targets against the stage's configured working directory, not the application process's working directory.
+- Enforce the 64-stage and 1,024 aggregate-redirection limits even when the runtime API is called directly rather than through DE-Shell.
+- Launch all stages before waiting, close parent pipe copies promptly, and wait/reap every started child.
+- On any setup or launch failure, terminate already-started children, close every owned descriptor, and reap all children before returning an error.
+- Return the last stage's exit code; no `pipefail` behavior is implied.
+
+A redirection-only command is represented by one stage with `command == NULL`; the runtime performs the open/close operation without permanently changing the application's standard streams. Built-ins inside pipelines or with redirections are rejected until isolated child-context execution is defined.
+
 ## Explicitly unsupported execution nodes
 
-The alpha parser recognizes more syntax than this execution task implements. The execution engine returns `DE_SHELL_STATUS_UNSUPPORTED_OPERATION` for:
-
-- Pipelines.
-- Background jobs.
-- Parenthesized subshell groups.
-- Input/output/append redirections.
-
-These nodes are not silently executed as ordinary commands. Pipeline, redirection, and job-control behavior belongs to the later execution/backend tasks. DE-012-02 (#58) implements scalar variable expansion and assignment semantics.
+The parser recognizes more syntax than this execution task implements. The execution engine still returns `DE_SHELL_STATUS_UNSUPPORTED_OPERATION` for background jobs and parenthesized subshell groups. These nodes are not silently executed as ordinary commands. DE-012-02 (#58) implements scalar variable expansion and assignment semantics; DE-012-03 (#79) dispatches external pipeline and redirection plans.
 
 ## Bounds and failure behavior
 
@@ -81,4 +92,4 @@ The C core owns its temporary token, AST, argument, and traversal buffers and fr
 
 ## Tests
 
-CTest covers built-in exit and short-circuiting, quote removal and empty arguments, explicit environment/working-directory forwarding, AND/OR/sequence control flow, callback error propagation, missing executor behavior, malformed input, unsupported pipeline/redirection/background nodes, reentrancy/destruction guards, context validation, source bounds, empty input, scalar/braced/status expansion, single-quote and escape suppression, assignment persistence, temporary command-prefix environment overrides, non-recursive values, skipped-operand laziness, and expansion output limits.
+CTest covers built-in exit and short-circuiting, quote removal and empty arguments, explicit environment/working-directory forwarding, AND/OR/sequence control flow, callback error propagation, missing executor behavior, malformed input, unsupported background/group nodes; typed pipeline/redirection plan dispatch, reentrancy/destruction guards, context validation, source bounds, empty input, scalar/braced/status expansion, single-quote and escape suppression, assignment persistence, temporary command-prefix environment overrides, non-recursive values, skipped-operand laziness, and expansion output limits.

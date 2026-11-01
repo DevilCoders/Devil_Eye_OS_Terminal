@@ -14,6 +14,7 @@
 #define DE_SHELL_EXEC_MAX_AST_NODES ((size_t)4096U)
 #define DE_SHELL_EXEC_MAX_WORDS ((size_t)4096U)
 #define DE_SHELL_EXEC_MAX_REDIRECTIONS ((size_t)1024U)
+#define DE_SHELL_EXEC_MAX_PIPELINE_STAGES ((size_t)64U)
 #define DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES ((size_t)256U)
 #define DE_SHELL_EXEC_MAX_ENVIRONMENT_KEY_BYTES ((size_t)256U)
 #define DE_SHELL_EXEC_MAX_ENVIRONMENT_VALUE_BYTES ((size_t)4096U)
@@ -772,6 +773,8 @@ static de_shell_status_t de_shell_execute_simple_command(
             assignment_count == 0U ? context->environment : command_environment,
             assignment_count == 0U ? context->environment_count : command_environment_count,
             context->working_directory,
+            NULL,
+            0U,
         };
         int exit_code = 127;
         const de_shell_status_t callback_status = context->external_executor(
@@ -794,6 +797,393 @@ static de_shell_status_t de_shell_execute_simple_command(
         shell->last_exit_status = exit_code;
     }
 
+    return DE_SHELL_STATUS_OK;
+}
+
+
+typedef struct de_shell_pipeline_stage_storage {
+    de_shell_external_command_t command;
+    de_shell_pipeline_stage_t stage;
+    const char **argv;
+    de_shell_environment_entry_t *environment;
+} de_shell_pipeline_stage_storage_t;
+
+static de_shell_status_t de_shell_execute_pipeline_nodes(
+    de_shell_t *shell,
+    const unsigned char *source,
+    size_t source_length,
+    const de_shell_ast_t *ast,
+    const size_t *node_indices,
+    size_t stage_count,
+    const de_shell_execution_context_t *context,
+    char *word_storage,
+    size_t word_storage_capacity,
+    de_shell_execution_result_t *execution_result,
+    de_shell_eval_result_t *out_result,
+    de_shell_execution_diagnostic_t *diagnostic)
+{
+    de_shell_pipeline_stage_storage_t *stage_storage = NULL;
+    const char **argv_storage = NULL;
+    de_shell_environment_entry_t *environment_storage = NULL;
+    de_shell_io_redirection_t *redirection_storage = NULL;
+    de_shell_pipeline_stage_t *pipeline_stages = NULL;
+    size_t storage_offset = 0U;
+    size_t redirection_offset = 0U;
+    size_t stage_index;
+    de_shell_status_t status = DE_SHELL_STATUS_INTERNAL_ERROR;
+
+    if (shell->abi_version.major != 0U || shell->abi_version.minor < 2U) {
+        de_shell_set_diagnostic(
+            diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+            (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, SIZE_MAX);
+        return DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+    }
+
+    if (stage_count == 0U || stage_count > DE_SHELL_EXEC_MAX_PIPELINE_STAGES
+        || node_indices == NULL) {
+        de_shell_set_diagnostic(
+            diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+            (int)DE_SHELL_STATUS_RESOURCE_LIMIT, SIZE_MAX);
+        return DE_SHELL_STATUS_RESOURCE_LIMIT;
+    }
+
+    if (context->external_executor == NULL) {
+        de_shell_set_diagnostic(
+            diagnostic, DE_SHELL_EXECUTION_STAGE_EXTERNAL, 0, SIZE_MAX);
+        return DE_SHELL_STATUS_EXECUTION_UNAVAILABLE;
+    }
+
+    stage_storage = calloc(stage_count, sizeof(*stage_storage));
+    argv_storage = calloc(
+        stage_count * (DE_SHELL_EXEC_MAX_ARGUMENTS + 1U),
+        sizeof(*argv_storage));
+    environment_storage = calloc(
+        stage_count * DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES,
+        sizeof(*environment_storage));
+    redirection_storage = calloc(
+        ast->redirection_count == 0U ? 1U : ast->redirection_count,
+        sizeof(*redirection_storage));
+    pipeline_stages = calloc(stage_count, sizeof(*pipeline_stages));
+    if (stage_storage == NULL || argv_storage == NULL
+        || environment_storage == NULL || redirection_storage == NULL
+        || pipeline_stages == NULL) {
+        de_shell_set_diagnostic(
+            diagnostic, DE_SHELL_EXECUTION_STAGE_INPUT, 9, SIZE_MAX);
+        status = DE_SHELL_STATUS_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    for (stage_index = 0U; stage_index < stage_count; stage_index += 1U) {
+        const size_t node_index = node_indices[stage_index];
+        const de_shell_ast_node_t *node;
+        de_shell_pipeline_stage_storage_t *current = &stage_storage[stage_index];
+        size_t assignment_count = 0U;
+        size_t command_argc;
+        size_t word_index;
+        size_t environment_count = context->environment_count;
+
+        if (node_index >= ast->node_count) {
+            de_shell_set_diagnostic(
+                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE, 1, SIZE_MAX);
+            status = DE_SHELL_STATUS_INTERNAL_ERROR;
+            goto cleanup;
+        }
+        node = &ast->nodes[node_index];
+        if (node->type != DE_SHELL_AST_SIMPLE_COMMAND
+            || node->first_word > ast->word_count
+            || node->word_count > ast->word_count - node->first_word
+            || node->first_redirection > ast->redirection_count
+            || node->redirection_count > ast->redirection_count - node->first_redirection
+            || node->word_count > DE_SHELL_EXEC_MAX_ARGUMENTS
+            || node->redirection_count > DE_SHELL_EXEC_MAX_REDIRECTIONS - redirection_offset) {
+            de_shell_set_diagnostic(
+                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE, 2, node->source_offset);
+            status = DE_SHELL_STATUS_RESOURCE_LIMIT;
+            goto cleanup;
+        }
+
+        current->argv = &argv_storage[
+            stage_index * (DE_SHELL_EXEC_MAX_ARGUMENTS + 1U)];
+        current->environment = &environment_storage[
+            stage_index * DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES];
+
+        for (word_index = 0U; word_index < context->environment_count; word_index += 1U) {
+            current->environment[word_index] = context->environment[word_index];
+        }
+
+        for (word_index = 0U; word_index < node->word_count; word_index += 1U) {
+            const de_shell_status_t decode_status = de_shell_decode_word(
+                source,
+                source_length,
+                &ast->words[node->first_word + word_index],
+                shell,
+                context,
+                shell->last_exit_status,
+                word_storage,
+                word_storage_capacity,
+                &storage_offset,
+                &current->argv[word_index]);
+            if (decode_status != DE_SHELL_STATUS_OK) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_EXPAND,
+                    (int)decode_status,
+                    ast->words[node->first_word + word_index].source_offset);
+                status = decode_status;
+                goto cleanup;
+            }
+        }
+
+        command_argc = node->word_count;
+        while (assignment_count < node->word_count) {
+            size_t name_length = 0U;
+            if (!de_shell_assignment_name_length(
+                    source,
+                    &ast->words[node->first_word + assignment_count],
+                    &name_length)) {
+                break;
+            }
+            if (name_length > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_EXPAND,
+                    (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                    ast->words[node->first_word + assignment_count].source_offset);
+                status = DE_SHELL_STATUS_RESOURCE_LIMIT;
+                goto cleanup;
+            }
+            assignment_count += 1U;
+        }
+
+        if (assignment_count == node->word_count && node->word_count != 0U) {
+            de_shell_set_diagnostic(
+                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, node->source_offset);
+            status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+            goto cleanup;
+        }
+
+        for (word_index = 0U; word_index < assignment_count; word_index += 1U) {
+            char *equals = strchr((char *)current->argv[word_index], '=');
+            size_t environment_index;
+            int replaced = 0;
+
+            if (equals == NULL) {
+                status = DE_SHELL_STATUS_INTERNAL_ERROR;
+                goto cleanup;
+            }
+            *equals = '\0';
+            for (environment_index = 0U;
+                 environment_index < environment_count;
+                 environment_index += 1U) {
+                if (strcmp(
+                        current->environment[environment_index].key,
+                        current->argv[word_index]) == 0) {
+                    current->environment[environment_index].value = equals + 1;
+                    replaced = 1;
+                }
+            }
+            if (replaced == 0) {
+                if (environment_count >= DE_SHELL_EXEC_MAX_ENVIRONMENT_ENTRIES) {
+                    de_shell_set_diagnostic(
+                        diagnostic, DE_SHELL_EXECUTION_STAGE_EXPAND,
+                        (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                        ast->words[node->first_word + word_index].source_offset);
+                    status = DE_SHELL_STATUS_RESOURCE_LIMIT;
+                    goto cleanup;
+                }
+                current->environment[environment_count].key = current->argv[word_index];
+                current->environment[environment_count].value = equals + 1;
+                environment_count += 1U;
+            }
+        }
+
+        command_argc -= assignment_count;
+        if (assignment_count != 0U) {
+            (void)memmove(
+                current->argv,
+                &current->argv[assignment_count],
+                command_argc * sizeof(*current->argv));
+        }
+        current->argv[command_argc] = NULL;
+
+        if (command_argc != 0U) {
+            const de_shell_command_info_t *command_info = NULL;
+            const de_shell_registry_status_t lookup_status =
+                de_shell_command_registry_lookup(
+                    shell->command_registry, current->argv[0], &command_info);
+            if (lookup_status == DE_SHELL_REGISTRY_STATUS_OK) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                    (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, node->source_offset);
+                status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+                goto cleanup;
+            }
+            if (lookup_status != DE_SHELL_REGISTRY_STATUS_NOT_FOUND
+                && lookup_status != DE_SHELL_REGISTRY_STATUS_INVALID_ARGUMENT) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_DISPATCH,
+                    (int)lookup_status, node->source_offset);
+                status = DE_SHELL_STATUS_INTERNAL_ERROR;
+                goto cleanup;
+            }
+            current->command.executable = current->argv[0];
+            current->command.argc = command_argc;
+            current->command.argv = current->argv;
+            current->command.environment = assignment_count == 0U
+                ? context->environment : current->environment;
+            current->command.environment_count = environment_count;
+            current->command.working_directory = context->working_directory;
+            current->command.pipeline_stages = NULL;
+            current->command.pipeline_stage_count = 0U;
+            pipeline_stages[stage_index].command = &current->command;
+        } else {
+            if (node->redirection_count == 0U || stage_count != 1U) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                    (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, node->source_offset);
+                status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+                goto cleanup;
+            }
+            pipeline_stages[stage_index].command = NULL;
+        }
+
+        pipeline_stages[stage_index].redirections = &redirection_storage[redirection_offset];
+        pipeline_stages[stage_index].redirection_count = node->redirection_count;
+        for (word_index = 0U; word_index < node->redirection_count; word_index += 1U) {
+            const de_shell_redirection_t *source_redirection =
+                &ast->redirections[node->first_redirection + word_index];
+            const de_shell_word_ref_t target_word = {
+                source_redirection->target_offset,
+                source_redirection->target_length,
+                source_redirection->target_flags
+            };
+            const char *target = NULL;
+            const de_shell_status_t decode_status = de_shell_decode_word(
+                source, source_length, &target_word, shell, context,
+                shell->last_exit_status, word_storage, word_storage_capacity,
+                &storage_offset, &target);
+
+            if (decode_status != DE_SHELL_STATUS_OK || target[0] == '\0') {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_REDIRECT,
+                    (int)(decode_status == DE_SHELL_STATUS_OK
+                        ? DE_SHELL_STATUS_PARSE_ERROR : decode_status),
+                    source_redirection->operator_offset);
+                status = decode_status == DE_SHELL_STATUS_OK
+                    ? DE_SHELL_STATUS_PARSE_ERROR : decode_status;
+                goto cleanup;
+            }
+
+            redirection_storage[redirection_offset].target = target;
+            redirection_storage[redirection_offset].source_offset =
+                source_redirection->operator_offset;
+            switch (source_redirection->type) {
+            case DE_SHELL_REDIRECTION_INPUT:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_INPUT;
+                break;
+            case DE_SHELL_REDIRECTION_OUTPUT:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_OUTPUT;
+                break;
+            case DE_SHELL_REDIRECTION_APPEND:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_APPEND;
+                break;
+            case DE_SHELL_REDIRECTION_ERROR_OUTPUT:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_ERROR_OUTPUT;
+                break;
+            case DE_SHELL_REDIRECTION_ERROR_APPEND:
+                redirection_storage[redirection_offset].type =
+                    DE_SHELL_IO_REDIRECTION_ERROR_APPEND;
+                break;
+            default:
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_REDIRECT,
+                    (int)DE_SHELL_STATUS_INTERNAL_ERROR,
+                    source_redirection->operator_offset);
+                status = DE_SHELL_STATUS_INTERNAL_ERROR;
+                goto cleanup;
+            }
+            redirection_offset += 1U;
+        }
+    }
+
+    {
+        de_shell_external_command_t request = {
+            NULL, 0U, NULL, context->environment, context->environment_count,
+            context->working_directory, pipeline_stages, stage_count
+        };
+        int exit_code = 127;
+        const de_shell_status_t callback_status = context->external_executor(
+            &request, &exit_code, context->user_data);
+
+        if (callback_status != DE_SHELL_STATUS_OK) {
+            de_shell_set_diagnostic(
+                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                (int)callback_status, ast->nodes[node_indices[0]].source_offset);
+            status = DE_SHELL_STATUS_EXTERNAL_EXECUTION_FAILED;
+            goto cleanup;
+        }
+
+        out_result->exit_code = exit_code;
+        out_result->exit_requested = 0;
+        execution_result->exit_code = exit_code;
+        execution_result->exit_requested = 0;
+        execution_result->commands_executed += stage_count;
+        shell->last_exit_status = exit_code;
+    }
+    status = DE_SHELL_STATUS_OK;
+
+cleanup:
+    free(pipeline_stages);
+    free(redirection_storage);
+    free(environment_storage);
+    free(argv_storage);
+    free(stage_storage);
+    return status;
+}
+
+static de_shell_status_t de_shell_collect_pipeline_nodes(
+    const de_shell_ast_t *ast,
+    size_t root,
+    size_t *out_nodes,
+    size_t *out_count,
+    de_shell_execution_diagnostic_t *diagnostic)
+{
+    size_t reversed[DE_SHELL_EXEC_MAX_PIPELINE_STAGES];
+    size_t count = 0U;
+    size_t cursor = root;
+
+    if (ast == NULL || out_nodes == NULL || out_count == NULL
+        || root >= ast->node_count) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+
+    while (ast->nodes[cursor].type == DE_SHELL_AST_PIPELINE) {
+        const de_shell_ast_node_t *node = &ast->nodes[cursor];
+        if (count + 1U >= DE_SHELL_EXEC_MAX_PIPELINE_STAGES
+            || node->left_child >= ast->node_count
+            || node->right_child >= ast->node_count) {
+            de_shell_set_diagnostic(
+                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                (int)DE_SHELL_STATUS_RESOURCE_LIMIT, node->source_offset);
+            return DE_SHELL_STATUS_RESOURCE_LIMIT;
+        }
+        reversed[count] = node->right_child;
+        count += 1U;
+        cursor = node->left_child;
+    }
+
+    reversed[count] = cursor;
+    count += 1U;
+    *out_count = count;
+    {
+        size_t index;
+        for (index = 0U; index < count; index += 1U) {
+            out_nodes[index] = reversed[count - index - 1U];
+        }
+    }
     return DE_SHELL_STATUS_OK;
 }
 
@@ -834,6 +1224,39 @@ static de_shell_status_t de_shell_evaluate_ast(
         node = &ast->nodes[frame->node_index];
 
         if (frame->state == 0U) {
+            if (node->type == DE_SHELL_AST_SIMPLE_COMMAND
+                && (node->redirection_count != 0U || node->word_count == 0U)) {
+                const size_t single_node[] = {frame->node_index};
+                const de_shell_status_t command_status = de_shell_execute_pipeline_nodes(
+                    shell, source, source_length, ast, single_node, 1U, context,
+                    word_storage, word_storage_capacity, execution_result,
+                    &completed, diagnostic);
+                if (command_status != DE_SHELL_STATUS_OK) {
+                    return command_status;
+                }
+                depth -= 1U;
+                continue;
+            }
+
+            if (node->type == DE_SHELL_AST_PIPELINE) {
+                size_t pipeline_nodes[DE_SHELL_EXEC_MAX_PIPELINE_STAGES];
+                size_t pipeline_count = 0U;
+                const de_shell_status_t collect_status = de_shell_collect_pipeline_nodes(
+                    ast, frame->node_index, pipeline_nodes, &pipeline_count, diagnostic);
+                if (collect_status != DE_SHELL_STATUS_OK) {
+                    return collect_status;
+                }
+                const de_shell_status_t pipeline_status = de_shell_execute_pipeline_nodes(
+                    shell, source, source_length, ast, pipeline_nodes, pipeline_count,
+                    context, word_storage, word_storage_capacity, execution_result,
+                    &completed, diagnostic);
+                if (pipeline_status != DE_SHELL_STATUS_OK) {
+                    return pipeline_status;
+                }
+                depth -= 1U;
+                continue;
+            }
+
             if (node->type == DE_SHELL_AST_SIMPLE_COMMAND) {
                 const de_shell_status_t command_status = de_shell_execute_simple_command(
                     shell,
@@ -1110,7 +1533,7 @@ de_shell_status_t de_shell_execute_source(
         goto cleanup;
     }
 
-    word_storage_capacity = DE_SHELL_EXEC_MAX_ARGUMENTS
+    word_storage_capacity = DE_SHELL_EXEC_MAX_WORDS
         * (DE_SHELL_EXEC_MAX_WORD_BYTES + 1U);
 
     frames = calloc(ast.node_count, sizeof(*frames));
