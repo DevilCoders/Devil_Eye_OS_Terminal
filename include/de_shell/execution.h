@@ -110,7 +110,8 @@ typedef struct de_shell_execution_diagnostic {
  * Quotes and backslash escapes are removed from word source spans. The
  * execution layer supports scalar $NAME, ${NAME}, and $? expansion outside
  * single quotes. Assignment-only commands persist session-local variables;
- * assignment prefixes are temporary environment overrides for external
+ * session variables shadow same-name entries in the explicit host environment.
+ * Assignment prefixes are temporary environment overrides for external
  * commands. Values are never field-split, glob-expanded, or recursively
  * expanded. Command and arithmetic substitution are not supported.
  * Source is bounded to DE_SHELL_EXEC_MAX_SOURCE_BYTES; individual decoded
