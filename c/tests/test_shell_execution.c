@@ -745,6 +745,110 @@ static int test_invalid_braced_expansion_is_rejected(void)
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
 }
 
+
+static int test_invalid_utf8_expansion_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool \"$BAD\"";
+    static const unsigned char invalid_value[] = {0xC3U, 0x28U, 0x00U};
+    const de_shell_environment_entry_t environment[] = {
+        {"BAD", (const char *)invalid_value},
+    };
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, "BAD", (const char *)invalid_value, 1U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        environment, 1U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_PARSE_ERROR
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "invalid UTF-8 expansion was dispatched\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_double_quoted_backtick_escape_is_preserved(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool \"\\`\"";
+    expansion_expectation_t expectation = {
+        {"tool", "\\__BT__", NULL, NULL, NULL, NULL, NULL, NULL},
+        2U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0) {
+        (void)fprintf(stderr, "backslash before unsupported backtick was removed\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+static int test_overlong_assignment_name_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    unsigned char source[270];
+    static const unsigned char command[] = "tool";
+    size_t source_length = 0U;
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    (void)memset(source, 'A', 257U);
+    source[257] = (unsigned char)'=';
+    source[258] = (unsigned char)'x';
+    source[259] = (unsigned char)' ';
+    (void)memcpy(&source[260], command, sizeof(command) - 1U);
+    source_length = 260U + sizeof(command) - 1U;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, source_length,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_RESOURCE_LIMIT
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "overlong assignment name reached command dispatch\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
 int main(void)
 {
     if (test_builtin_exit_stops_sequence() != 0
@@ -759,7 +863,10 @@ int main(void)
         || test_non_recursive_expansion() != 0
         || test_last_status_and_skipped_operand_expansion() != 0
         || test_expansion_output_limit() != 0
-        || test_invalid_braced_expansion_is_rejected() != 0) {
+        || test_invalid_braced_expansion_is_rejected() != 0
+        || test_invalid_utf8_expansion_is_rejected() != 0
+        || test_double_quoted_backtick_escape_is_preserved() != 0
+        || test_overlong_assignment_name_is_rejected() != 0) {
         return 1;
     }
 
