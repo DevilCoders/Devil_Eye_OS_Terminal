@@ -97,6 +97,7 @@ pub(super) struct RawExecutionDiagnostic {
 unsafe extern "C" {
     pub fn de_shell_get_abi_version(out_version: *mut RawAbiVersion) -> c_int;
     pub fn de_shell_check_abi_version(requested_version: *const RawAbiVersion) -> c_int;
+    #[cfg(test)]
     pub fn de_shell_create(out_shell: *mut *mut DeShellOpaque) -> c_int;
     pub fn de_shell_create_with_abi(
         requested_version: *const RawAbiVersion,
@@ -341,13 +342,8 @@ pub(super) fn create_shell_with_abi(
     unsafe { de_shell_create_with_abi(requested_version, out_shell) }
 }
 
-pub(super) fn create_shell(out_shell: &mut *mut DeShellOpaque) -> c_int {
-    // SAFETY: the reference guarantees writable pointer storage.
-    unsafe { de_shell_create(out_shell) }
-}
-
 pub(super) fn destroy_shell(shell: &mut *mut DeShellOpaque) -> c_int {
-    // SAFETY: the pointer is the owned handle variable returned by create_shell.
+    // SAFETY: the pointer is the owned handle variable returned by create_shell_with_abi.
     unsafe { de_shell_destroy(shell) }
 }
 
