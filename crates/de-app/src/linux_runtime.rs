@@ -11,8 +11,7 @@ use crate::service_interfaces::{
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
     IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest,
-    ProgramSpec, PtyConfig, ReadOutcome,
-    RuntimeError, RuntimeProcess as PlatformRuntimeProcess,
+    ProgramSpec, PtyConfig, ReadOutcome, RuntimeError, RuntimeProcess as PlatformRuntimeProcess,
     RuntimeService as PlatformRuntimeService, Signal, TerminationMode as PlatformTerminationMode,
     WriteOutcome,
 };
@@ -103,12 +102,8 @@ impl CommandExecutor for LinuxShellCommandExecutor {
                     ExternalRedirectionKind::Input => PipelineRedirection::Input(path),
                     ExternalRedirectionKind::Output => PipelineRedirection::Output(path),
                     ExternalRedirectionKind::Append => PipelineRedirection::Append(path),
-                    ExternalRedirectionKind::ErrorOutput => {
-                        PipelineRedirection::ErrorOutput(path)
-                    }
-                    ExternalRedirectionKind::ErrorAppend => {
-                        PipelineRedirection::ErrorAppend(path)
-                    }
+                    ExternalRedirectionKind::ErrorOutput => PipelineRedirection::ErrorOutput(path),
+                    ExternalRedirectionKind::ErrorAppend => PipelineRedirection::ErrorAppend(path),
                 };
                 stage = stage.with_redirection(redirection);
             }
@@ -324,11 +319,9 @@ mod pipeline_tests {
             .execute(source.as_bytes(), &context, Some(&mut executor))
             .expect("execute stderr redirection through Linux runtime");
         assert_eq!(result.exit_code, 2);
-        assert!(
-            fs::read_to_string(&stderr_path)
-                .expect("read stderr file")
-                .contains(missing)
-        );
+        assert!(fs::read_to_string(&stderr_path)
+            .expect("read stderr file")
+            .contains(missing));
 
         let source = format!("> {}", redirection_only_path.display());
         let result = shell
