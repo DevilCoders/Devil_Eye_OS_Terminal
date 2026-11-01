@@ -174,6 +174,18 @@ impl LinuxRuntime {
             }
         }
 
+        let mut prepared_redirections: Vec<Vec<(bool, File)>> =
+            Vec::with_capacity(stages.len());
+        for stage in stages {
+            let mut stage_redirections = Vec::with_capacity(stage.redirections.len());
+            for redirection in &stage.redirections {
+                let is_input = matches!(redirection, PipelineRedirection::Input(_));
+                let file = open_pipeline_redirection(redirection)?;
+                stage_redirections.push((is_input, file));
+            }
+            prepared_redirections.push(stage_redirections);
+        }
+
         let mut pipes: Vec<(Option<OwnedFd>, Option<OwnedFd>)> =
             Vec::with_capacity(stages.len().saturating_sub(1usize));
         for _ in 0..stages.len().saturating_sub(1usize) {
@@ -189,29 +201,33 @@ impl LinuxRuntime {
             let mut stdin = if index == 0usize {
                 Stdio::inherit()
             } else {
-                let read_end = pipes[index - 1usize]
-                    .0
-                    .take()
-                    .ok_or(RuntimeError::IoFailed)?;
+                let read_end = match pipes[index - 1usize].0.take() {
+                    Some(descriptor) => descriptor,
+                    None => {
+                        terminate_pipeline_children(&mut children, process_group);
+                        return Err(RuntimeError::IoFailed);
+                    }
+                };
                 Stdio::from(read_end)
             };
             let mut stdout = if index + 1usize == stages.len() {
                 Stdio::inherit()
             } else {
-                let write_end = pipes[index]
-                    .1
-                    .take()
-                    .ok_or(RuntimeError::IoFailed)?;
+                let write_end = match pipes[index].1.take() {
+                    Some(descriptor) => descriptor,
+                    None => {
+                        terminate_pipeline_children(&mut children, process_group);
+                        return Err(RuntimeError::IoFailed);
+                    }
+                };
                 Stdio::from(write_end)
             };
 
-            for redirection in &stage.redirections {
-                let file = open_pipeline_redirection(redirection)?;
-                match redirection {
-                    PipelineRedirection::Input(_) => stdin = Stdio::from(file),
-                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => {
-                        stdout = Stdio::from(file)
-                    }
+            for (is_input, file) in prepared_redirections[index].drain(..) {
+                if is_input {
+                    stdin = Stdio::from(file);
+                } else {
+                    stdout = Stdio::from(file);
                 }
             }
 
