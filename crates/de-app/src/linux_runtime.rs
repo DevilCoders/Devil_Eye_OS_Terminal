@@ -87,7 +87,7 @@ impl CommandExecutor for LinuxShellCommandExecutor {
         for external_stage in pipeline.stages() {
             let working_directory = external_stage
                 .command()
-                .and_then(ExternalCommand::working_directory)
+                .and_then(|command| command.working_directory())
                 .or(pipeline.working_directory());
             let mut stage = match external_stage.command() {
                 Some(command) => PipelineStage::command(Self::program_spec(
