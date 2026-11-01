@@ -17,6 +17,7 @@ struct de_shell {
     de_shell_command_registry_t *command_registry;
     unsigned int execution_active;
     size_t variable_count;
+    int last_exit_status;
     de_shell_variable_t variables[DE_SHELL_INTERNAL_MAX_VARIABLES];
 };
 
