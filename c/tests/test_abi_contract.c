@@ -1,8 +1,24 @@
 #include "de_shell/abi.h"
+#include "de_shell/execution.h"
 #include "de_shell/shell.h"
 
 #include <stddef.h>
 #include <stdio.h>
+
+_Static_assert(sizeof(de_shell_external_command_t) == 64U, "external command ABI size mismatch");
+_Static_assert(_Alignof(de_shell_external_command_t) == 8U, "external command ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_external_command_t, pipeline_stages) == 48U, "pipeline pointer offset mismatch");
+_Static_assert(offsetof(de_shell_external_command_t, pipeline_stage_count) == 56U, "pipeline count offset mismatch");
+_Static_assert(sizeof(de_shell_pipeline_stage_t) == 24U, "pipeline stage ABI size mismatch");
+_Static_assert(_Alignof(de_shell_pipeline_stage_t) == 8U, "pipeline stage ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, command) == 0U, "pipeline command offset mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, redirections) == 8U, "pipeline redirection offset mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, redirection_count) == 16U, "pipeline redirection count offset mismatch");
+_Static_assert(sizeof(de_shell_io_redirection_t) == 24U, "redirection ABI size mismatch");
+_Static_assert(_Alignof(de_shell_io_redirection_t) == 8U, "redirection ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, kind) == 0U, "redirection kind offset mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, target) == 8U, "redirection target offset mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, source_offset) == 16U, "redirection source offset mismatch");
 
 _Static_assert(sizeof(de_shell_status_t) == 4U, "ABI status must be 32-bit");
 _Static_assert(_Alignof(de_shell_status_t) == 4U, "ABI status alignment must be 4");
