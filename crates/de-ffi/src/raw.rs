@@ -7,7 +7,10 @@ use std::ffi::{c_char, c_int, c_void, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::slice;
 
-use super::{CallbackContext, DeStatus, EnvironmentEntry, ExternalCommand, ExternalExecutionError};
+use super::{
+    CallbackContext, DeStatus, EnvironmentEntry, ExternalCommand, ExternalExecutionError,
+    ExternalPipeline, ExternalPipelineStage, ExternalRedirection, ExternalRedirectionKind,
+};
 
 pub(super) const MAX_ARGUMENTS: usize = 256;
 pub(super) const MAX_ENVIRONMENT_ENTRIES: usize = 256;
@@ -105,13 +108,23 @@ pub(super) unsafe extern "C" fn external_executor_callback(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let raw_command = unsafe { &*command };
         let callback_context = unsafe { &mut *user_data.cast::<CallbackContext<'_>>() };
-        let command = unsafe { parse_external_command(raw_command)? };
-        callback_context
-            .executor
-            .execute(command)
-            .map_err(|error| match error {
-                ExternalExecutionError::Failed => DeStatus::EXTERNAL_EXECUTION_FAILED,
-            })
+        if raw_command.pipeline_stage_count != 0 {
+            let pipeline = unsafe { parse_external_pipeline(raw_command)? };
+            callback_context
+                .executor
+                .execute_pipeline(pipeline)
+                .map_err(|error| match error {
+                    ExternalExecutionError::Failed => DeStatus::EXTERNAL_EXECUTION_FAILED,
+                })
+        } else {
+            let command = unsafe { parse_external_command(raw_command)? };
+            callback_context
+                .executor
+                .execute(command)
+                .map_err(|error| match error {
+                    ExternalExecutionError::Failed => DeStatus::EXTERNAL_EXECUTION_FAILED,
+                })
+        }
     }));
 
     match result {
@@ -136,6 +149,8 @@ unsafe fn parse_external_command<'a>(
         || command.argc > MAX_ARGUMENTS
         || command.environment_count > MAX_ENVIRONMENT_ENTRIES
         || (command.environment_count != 0 && command.environment.is_null())
+        || !command.pipeline_stages.is_null()
+        || command.pipeline_stage_count != 0
     {
         return Err(DeStatus::INVALID_ARGUMENT);
     }
@@ -159,10 +174,29 @@ unsafe fn parse_external_command<'a>(
         arguments.push(unsafe { CStr::from_ptr(*argument) });
     }
 
-    let mut environment = Vec::with_capacity(command.environment_count);
-    if command.environment_count != 0 {
-        let entries =
-            unsafe { slice::from_raw_parts(command.environment, command.environment_count) };
+    let environment = unsafe {
+        parse_environment(command.environment, command.environment_count)?
+    };
+    let working_directory = unsafe { parse_working_directory(command.working_directory) };
+
+    Ok(ExternalCommand {
+        executable,
+        arguments,
+        environment,
+        working_directory,
+    })
+}
+
+unsafe fn parse_environment<'a>(
+    pointer: *const RawEnvironmentEntry,
+    count: usize,
+) -> Result<Vec<EnvironmentEntry<'a>>, DeStatus> {
+    if count > MAX_ENVIRONMENT_ENTRIES || (count != 0 && pointer.is_null()) {
+        return Err(DeStatus::INVALID_ARGUMENT);
+    }
+    let mut environment = Vec::with_capacity(count);
+    if count != 0 {
+        let entries = unsafe { slice::from_raw_parts(pointer, count) };
         for entry in entries {
             if entry.key.is_null() || entry.value.is_null() {
                 return Err(DeStatus::INVALID_ARGUMENT);
@@ -175,16 +209,92 @@ unsafe fn parse_external_command<'a>(
             environment.push(EnvironmentEntry { key, value });
         }
     }
+    Ok(environment)
+}
 
-    let working_directory = if command.working_directory.is_null() {
+unsafe fn parse_working_directory<'a>(pointer: *const c_char) -> Option<&'a CStr> {
+    if pointer.is_null() {
         None
     } else {
-        Some(unsafe { CStr::from_ptr(command.working_directory) })
-    };
+        Some(unsafe { CStr::from_ptr(pointer) })
+    }
+}
 
-    Ok(ExternalCommand {
-        executable,
-        arguments,
+unsafe fn parse_external_pipeline<'a>(
+    request: &'a RawExternalCommand,
+) -> Result<ExternalPipeline<'a>, DeStatus> {
+    if !request.executable.is_null()
+        || request.argc != 0
+        || !request.argv.is_null()
+        || request.pipeline_stages.is_null()
+        || request.pipeline_stage_count == 0
+        || request.pipeline_stage_count > MAX_PIPELINE_STAGES
+    {
+        return Err(DeStatus::INVALID_ARGUMENT);
+    }
+
+    let environment = unsafe {
+        parse_environment(request.environment, request.environment_count)?
+    };
+    let working_directory = unsafe { parse_working_directory(request.working_directory) };
+    let raw_stages = unsafe {
+        slice::from_raw_parts(request.pipeline_stages, request.pipeline_stage_count)
+    };
+    let mut stages = Vec::with_capacity(request.pipeline_stage_count);
+
+    for raw_stage in raw_stages {
+        if raw_stage.redirection_count > MAX_REDIRECTIONS_PER_PLAN
+            || (raw_stage.redirection_count != 0 && raw_stage.redirections.is_null())
+        {
+            return Err(DeStatus::INVALID_ARGUMENT);
+        }
+        if raw_stage.command.is_null()
+            && (request.pipeline_stage_count != 1 || raw_stage.redirection_count == 0)
+        {
+            return Err(DeStatus::INVALID_ARGUMENT);
+        }
+
+        let command = if raw_stage.command.is_null() {
+            None
+        } else {
+            Some(unsafe { parse_external_command(&*raw_stage.command)? })
+        };
+
+        let mut redirections = Vec::with_capacity(raw_stage.redirection_count);
+        if raw_stage.redirection_count != 0 {
+            let raw_redirections = unsafe {
+                slice::from_raw_parts(raw_stage.redirections, raw_stage.redirection_count)
+            };
+            for raw_redirection in raw_redirections {
+                if raw_redirection.target.is_null() {
+                    return Err(DeStatus::INVALID_ARGUMENT);
+                }
+                let target = unsafe { CStr::from_ptr(raw_redirection.target) };
+                if target.to_bytes().is_empty() {
+                    return Err(DeStatus::INVALID_ARGUMENT);
+                }
+                let kind = match raw_redirection.kind {
+                    0 => ExternalRedirectionKind::Input,
+                    1 => ExternalRedirectionKind::Output,
+                    2 => ExternalRedirectionKind::Append,
+                    _ => return Err(DeStatus::INVALID_ARGUMENT),
+                };
+                redirections.push(ExternalRedirection {
+                    kind,
+                    target,
+                    source_offset: raw_redirection.source_offset,
+                });
+            }
+        }
+
+        stages.push(ExternalPipelineStage {
+            command,
+            redirections,
+        });
+    }
+
+    Ok(ExternalPipeline {
+        stages,
         environment,
         working_directory,
     })
