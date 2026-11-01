@@ -378,7 +378,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     if (de_shell_execute_source(
             shell, builtin_pipeline, sizeof(builtin_pipeline) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 2U) {
+        || state.calls != 3U) {
         (void)fprintf(stderr, "built-in pipeline stage was not rejected safely\\n");
         (void)de_shell_destroy(&shell);
         return 1;
@@ -387,7 +387,7 @@ static int test_parse_errors_and_unsupported_nodes(void)
     if (de_shell_execute_source(
             shell, builtin_redirection, sizeof(builtin_redirection) - 1U,
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 2U) {
+        || state.calls != 3U) {
         (void)fprintf(stderr, "built-in redirection was not rejected safely\\n");
         (void)de_shell_destroy(&shell);
         return 1;
