@@ -621,7 +621,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         execution_result->exit_code = 127;
         execution_result->exit_requested = 0;
         execution_result->commands_executed += 1U;
-        shell->last_exit_status = 0;
+        shell->last_exit_status = 127;
         return DE_SHELL_STATUS_OK;
     }
 
