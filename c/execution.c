@@ -509,6 +509,9 @@ static de_shell_status_t de_shell_execute_simple_command(
             source,
             source_length,
             &ast->words[node->first_word + index],
+            shell,
+            context,
+            execution_result->exit_code,
             word_storage,
             word_storage_capacity,
             &storage_offset,
@@ -517,7 +520,7 @@ static de_shell_status_t de_shell_execute_simple_command(
         if (decode_status != DE_SHELL_STATUS_OK) {
             de_shell_set_diagnostic(
                 diagnostic,
-                DE_SHELL_EXECUTION_STAGE_DISPATCH,
+                DE_SHELL_EXECUTION_STAGE_EXPAND,
                 (int)decode_status,
                 ast->words[node->first_word + index].source_offset);
             return decode_status;
