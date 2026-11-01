@@ -224,7 +224,7 @@ static de_shell_status_t de_shell_set_variable(
             return DE_SHELL_STATUS_INTERNAL_ERROR;
         }
         (void)memcpy(owned_name, name, name_length);
-        owned_name[name_length] = '\\0';
+        owned_name[name_length] = '\0';
         shell->variables[shell->variable_count].name = owned_name;
         shell->variables[shell->variable_count].value = replacement;
         shell->variable_count += 1U;
