@@ -65,6 +65,14 @@ static de_shell_status_t fake_executor(
             && strcmp(command->pipeline_stages[0].redirections[0].target, "output") == 0) {
             state->environment_valid = 1;
         }
+        if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command == NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_OUTPUT
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "output") == 0) {
+            state->environment_valid = 1;
+        }
         *out_exit_code = state->return_exit_code;
         return state->callback_status;
     }
@@ -349,6 +357,53 @@ static int test_parse_errors_and_unsupported_nodes(void)
             &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
         || state.calls != 0U) {
         (void)fprintf(stderr, "background command was executed without a job backend\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
+
+static int test_redirection_only_command_and_failure_cleanup_contract(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char redirection_only[] = "DEST=output; > \"$DEST\"";
+    static const unsigned char pipeline[] = "tool | tool";
+    executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
+        DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, fake_executor, &state
+    };
+    const de_shell_execution_context_t failing_context = {
+        NULL, 0U, NULL, failing_executor, NULL
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, redirection_only, sizeof(redirection_only) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 1U
+        || state.environment_valid == 0
+        || result.commands_executed != 2U) {
+        (void)fprintf(stderr, "redirection-only command or target expansion failed\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, pipeline, sizeof(pipeline) - 1U,
+            &failing_context, &result, &diagnostic)
+        != DE_SHELL_STATUS_EXTERNAL_EXECUTION_FAILED
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_PIPELINE
+        || diagnostic.code != (int)DE_SHELL_STATUS_INTERNAL_ERROR
+        || result.commands_executed != 0U) {
+        (void)fprintf(stderr, "pipeline executor failure was not propagated\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
@@ -902,6 +957,7 @@ int main(void)
         || test_and_or_and_sequence_control_flow() != 0
         || test_external_failures_and_missing_executor() != 0
         || test_parse_errors_and_unsupported_nodes() != 0
+        || test_redirection_only_command_and_failure_cleanup_contract() != 0
         || test_reentrancy_and_destroy_guard() != 0
         || test_context_validation_and_resource_limit() != 0
         || test_parameter_expansion_and_persistent_variables() != 0
