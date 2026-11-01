@@ -1408,6 +1408,44 @@ mod tests {
         fs::remove_file(empty).expect("remove redirection-only file");
     }
 
+
+    #[test]
+    fn stderr_output_and_append_redirections_capture_child_errors() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("stderr-redirection");
+        let missing = "/definitely/not/a/devil-eye-file";
+
+        let truncate = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/ls")
+                .expect("ls")
+                .with_arg(missing),
+        )
+        .with_redirection(PipelineRedirection::ErrorOutput(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[truncate])
+            .expect("execute stderr truncate redirection");
+        assert_eq!(result.exit_code, 2);
+        let first = fs::read_to_string(&output).expect("read stderr output");
+        assert!(first.contains(missing));
+
+        fs::write(&output, "prefix\\n").expect("write stderr append prefix");
+        let append = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/ls")
+                .expect("ls")
+                .with_arg(missing),
+        )
+        .with_redirection(PipelineRedirection::ErrorAppend(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[append])
+            .expect("execute stderr append redirection");
+        assert_eq!(result.exit_code, 2);
+        let combined = fs::read_to_string(&output).expect("read appended stderr");
+        assert!(combined.starts_with("prefix\\n"));
+        assert!(combined.matches(missing).count() >= 1usize);
+
+        fs::remove_file(output).expect("remove stderr output");
+    }
+
     #[test]
     fn broken_pipe_pipeline_reaps_all_stages() {
         let _guard = runtime_test_lock();
