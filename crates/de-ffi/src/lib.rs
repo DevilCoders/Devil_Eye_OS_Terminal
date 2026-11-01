@@ -16,7 +16,7 @@ mod raw;
 /// Current Rust/C interface version.
 pub const ABI_VERSION: DeAbiVersion = DeAbiVersion {
     major: 0,
-    minor: 1,
+    minor: 2,
     patch: 0,
 };
 
@@ -127,10 +127,91 @@ impl<'a> ExternalCommand<'a> {
     }
 }
 
+/// Kind of explicit file redirection in a pipeline stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalRedirectionKind {
+    Input,
+    Output,
+    Append,
+}
+
+/// Borrowed redirection target and its source location.
+#[derive(Debug)]
+pub struct ExternalRedirection<'a> {
+    kind: ExternalRedirectionKind,
+    target: &'a CStr,
+    source_offset: usize,
+}
+
+impl ExternalRedirection<'_> {
+    pub const fn kind(&self) -> ExternalRedirectionKind {
+        self.kind
+    }
+
+    pub const fn target(&self) -> &CStr {
+        self.target
+    }
+
+    pub const fn source_offset(&self) -> usize {
+        self.source_offset
+    }
+}
+
+/// One borrowed stage in a pipeline. A missing command denotes a
+/// redirection-only operation and is valid only in a one-stage plan.
+#[derive(Debug)]
+pub struct ExternalPipelineStage<'a> {
+    command: Option<ExternalCommand<'a>>,
+    redirections: Vec<ExternalRedirection<'a>>,
+}
+
+impl<'a> ExternalPipelineStage<'a> {
+    pub const fn command(&self) -> Option<&ExternalCommand<'a>> {
+        self.command.as_ref()
+    }
+
+    pub fn redirections(&self) -> &[ExternalRedirection<'a>] {
+        &self.redirections
+    }
+}
+
+/// Complete ordered pipeline request. All strings are borrowed only for the
+/// duration of the synchronous CommandExecutor callback.
+#[derive(Debug)]
+pub struct ExternalPipeline<'a> {
+    stages: Vec<ExternalPipelineStage<'a>>,
+    environment: Vec<EnvironmentEntry<'a>>,
+    working_directory: Option<&'a CStr>,
+}
+
+impl<'a> ExternalPipeline<'a> {
+    pub fn stages(&self) -> &[ExternalPipelineStage<'a>] {
+        &self.stages
+    }
+
+    pub fn environment(&self) -> &[EnvironmentEntry<'a>] {
+        &self.environment
+    }
+
+    pub const fn working_directory(&self) -> Option<&'a CStr> {
+        self.working_directory
+    }
+}
+
 /// A host executor handles external commands. The callback is synchronous;
 /// every C string in the request is borrowed only for the duration of execute.
 pub trait CommandExecutor {
     fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError>;
+
+    /// Handles a complete pipeline or redirection-only request. Existing
+    /// single-command executors remain source-compatible and fail closed for
+    /// plans they do not explicitly implement.
+    fn execute_pipeline(
+        &mut self,
+        _pipeline: ExternalPipeline<'_>,
+    ) -> Result<i32, ExternalExecutionError> {
+        Err(ExternalExecutionError::Failed)
+    }
 }
 
 impl<F> CommandExecutor for F
@@ -160,6 +241,9 @@ pub enum ExecutionStage {
     Parse,
     Dispatch,
     External,
+    Expand,
+    Redirect,
+    Pipeline,
     Unknown(i32),
 }
 
@@ -172,6 +256,9 @@ impl ExecutionStage {
             3 => Self::Parse,
             4 => Self::Dispatch,
             5 => Self::External,
+            6 => Self::Expand,
+            7 => Self::Redirect,
+            8 => Self::Pipeline,
             other => Self::Unknown(other),
         }
     }
@@ -425,7 +512,7 @@ mod tests {
             ABI_VERSION,
             DeAbiVersion {
                 major: 0,
-                minor: 1,
+                minor: 2,
                 patch: 0,
             }
         );
@@ -451,7 +538,7 @@ mod tests {
         .is_compatible_with(library));
         assert!(DeAbiVersion {
             major: 0,
-            minor: 1,
+            minor: 2,
             patch: 99,
         }
         .is_compatible_with(library));
@@ -467,7 +554,7 @@ mod tests {
         .is_compatible_with(ABI_VERSION));
         assert!(!DeAbiVersion {
             major: 0,
-            minor: 2,
+            minor: 3,
             patch: 0,
         }
         .is_compatible_with(ABI_VERSION));
@@ -510,7 +597,7 @@ mod tests {
         assert_eq!(offset_of!(RawEnvironmentEntry, key), 0);
         assert_eq!(offset_of!(RawEnvironmentEntry, value), 8);
 
-        assert_eq!(size_of::<RawExternalCommand>(), 48);
+        assert_eq!(size_of::<RawExternalCommand>(), 64);
         assert_eq!(align_of::<RawExternalCommand>(), 8);
         assert_eq!(offset_of!(RawExternalCommand, executable), 0);
         assert_eq!(offset_of!(RawExternalCommand, argc), 8);
@@ -518,6 +605,20 @@ mod tests {
         assert_eq!(offset_of!(RawExternalCommand, environment), 24);
         assert_eq!(offset_of!(RawExternalCommand, environment_count), 32);
         assert_eq!(offset_of!(RawExternalCommand, working_directory), 40);
+        assert_eq!(offset_of!(RawExternalCommand, pipeline_stages), 48);
+        assert_eq!(offset_of!(RawExternalCommand, pipeline_stage_count), 56);
+
+        assert_eq!(size_of::<super::raw::RawIoRedirection>(), 24);
+        assert_eq!(align_of::<super::raw::RawIoRedirection>(), 8);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, kind), 0);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, target), 8);
+        assert_eq!(offset_of!(super::raw::RawIoRedirection, source_offset), 16);
+
+        assert_eq!(size_of::<super::raw::RawPipelineStage>(), 24);
+        assert_eq!(align_of::<super::raw::RawPipelineStage>(), 8);
+        assert_eq!(offset_of!(super::raw::RawPipelineStage, command), 0);
+        assert_eq!(offset_of!(super::raw::RawPipelineStage, redirections), 8);
+        assert_eq!(offset_of!(super::raw::RawPipelineStage, redirection_count), 16);
 
         assert_eq!(size_of::<RawExecutionContext>(), 40);
         assert_eq!(align_of::<RawExecutionContext>(), 8);
