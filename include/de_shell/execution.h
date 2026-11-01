@@ -22,6 +22,20 @@ typedef struct de_shell_environment_entry {
     const char *value;
 } de_shell_environment_entry_t;
 
+typedef enum de_shell_io_redirection_type {
+    DE_SHELL_IO_REDIRECTION_INPUT = 0,
+    DE_SHELL_IO_REDIRECTION_OUTPUT = 1,
+    DE_SHELL_IO_REDIRECTION_APPEND = 2
+} de_shell_io_redirection_type_t;
+
+typedef struct de_shell_io_redirection {
+    de_shell_io_redirection_type_t type;
+    const char *target;
+    size_t source_offset;
+} de_shell_io_redirection_t;
+
+typedef struct de_shell_pipeline_stage de_shell_pipeline_stage_t;
+
 /*
  * One external command request. argv[0] is the executable name/path and
  * every argument remains a separate NUL-terminated string. argv[argc] is a
@@ -35,10 +49,30 @@ typedef struct de_shell_external_command {
     const de_shell_environment_entry_t *environment;
     size_t environment_count;
     const char *working_directory;
+    /*
+     * When pipeline_stage_count is non-zero, this is a complete pipeline or
+     * redirection-only execution plan. In that form executable/argc/argv are
+     * NULL/zero and pipeline_stages contains the ordered stages. A stage with
+     * command == NULL performs redirections only.
+     */
+    const de_shell_pipeline_stage_t *pipeline_stages;
+    size_t pipeline_stage_count;
 } de_shell_external_command_t;
 
+struct de_shell_pipeline_stage {
+    const de_shell_external_command_t *command;
+    const de_shell_io_redirection_t *redirections;
+    size_t redirection_count;
+};
+
 /*
- * Host-provided process executor. The DE-Shell C core does not call system(),
+ * Host-provided process executor. For a normal simple command the request
+ * contains one command and pipeline_stage_count == 0. For pipelines or any
+ * redirection it contains a complete immutable plan in pipeline_stages; the
+ * runtime must prepare every stage before waiting, own every pipe/file
+ * descriptor, and reap/cancel all started children on every failure path.
+ *
+ * The DE-Shell C core does not call system(),
  * popen(), fork(), exec(), or an implicit command interpreter. A Rust/runtime
  * adapter supplies this callback and owns actual process creation.
  *
@@ -99,13 +133,15 @@ typedef struct de_shell_execution_diagnostic {
  *
  * Supported execution nodes:
  * - simple commands (built-ins or host-provided external commands);
+ * - external-command pipelines and <, >, >> redirections through the host
+ *   executor's typed execution-plan request;
  * - ';', '&&', and '||' control flow with left-to-right shell semantics.
  *
- * Pipelines, background execution, parenthesized subshell groups, and I/O
- * redirections are parsed but rejected with
- * DE_SHELL_STATUS_UNSUPPORTED_OPERATION until their dedicated execution
- * contracts are implemented. No child command is started for a rejected
- * pipeline/background/group node itself.
+ * Background execution and parenthesized subshell groups remain unsupported.
+ * Pipeline stages containing built-ins are rejected until isolated child
+ * contexts are defined. External pipeline stages and redirections are passed
+ * as a single typed plan to the host executor; the C core never opens files,
+ * creates pipes, or launches processes.
  *
  * Quotes and backslash escapes are removed from word source spans. The
  * execution layer supports scalar $NAME, ${NAME}, and $? expansion outside
