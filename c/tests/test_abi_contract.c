@@ -16,7 +16,7 @@ _Static_assert(offsetof(de_shell_pipeline_stage_t, redirections) == 8U, "pipelin
 _Static_assert(offsetof(de_shell_pipeline_stage_t, redirection_count) == 16U, "pipeline redirection count offset mismatch");
 _Static_assert(sizeof(de_shell_io_redirection_t) == 24U, "redirection ABI size mismatch");
 _Static_assert(_Alignof(de_shell_io_redirection_t) == 8U, "redirection ABI alignment mismatch");
-_Static_assert(offsetof(de_shell_io_redirection_t, kind) == 0U, "redirection kind offset mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, type) == 0U, "redirection kind offset mismatch");
 _Static_assert(offsetof(de_shell_io_redirection_t, target) == 8U, "redirection target offset mismatch");
 _Static_assert(offsetof(de_shell_io_redirection_t, source_offset) == 16U, "redirection source offset mismatch");
 
@@ -54,14 +54,14 @@ static int test_version_query(void)
 
 static int test_version_compatibility(void)
 {
-    const de_shell_abi_version_t older_minor = {0U, 0U, 99U};
+    const de_shell_abi_version_t oldest_minor = {0U, 0U, 99U};
     const de_shell_abi_version_t older_minor = {0U, 1U, 99U};
     const de_shell_abi_version_t same_minor_new_patch = {0U, 2U, 99U};
     const de_shell_abi_version_t future_minor = {0U, 3U, 0U};
     const de_shell_abi_version_t future_major = {1U, 0U, 0U};
 
     if (de_shell_check_abi_version(NULL) != DE_SHELL_STATUS_INVALID_ARGUMENT
-        || de_shell_check_abi_version(&older_minor) != DE_SHELL_STATUS_OK
+        || de_shell_check_abi_version(&oldest_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&older_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&same_minor_new_patch) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&future_minor) != DE_SHELL_STATUS_ABI_MISMATCH
