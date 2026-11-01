@@ -1,17 +1,125 @@
 //! Linux adapter connecting the platform runtime to application session contracts.
 
 use crate::lifecycle::{ApplicationService, ServiceError};
+use de_ffi::{
+    CommandExecutor, ExternalCommand, ExternalExecutionError, ExternalPipeline,
+    ExternalRedirectionKind,
+};
 use crate::service_interfaces::{
     ProcessExit, ProcessRead, RuntimeProcess, RuntimeService, TerminationMode,
 };
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
-    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
+    IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest,
+    ProgramSpec, PtyConfig, ReadOutcome,
     RuntimeError, RuntimeProcess as PlatformRuntimeProcess,
     RuntimeService as PlatformRuntimeService, Signal, TerminationMode as PlatformTerminationMode,
     WriteOutcome,
 };
 use de_terminal_core::TerminalSize;
+use std::ffi::{CStr, OsString};
+use std::os::unix::ffi::OsStringExt;
+use std::path::PathBuf;
+
+/// Concrete DE-Shell host executor backed by the Linux process runtime.
+///
+/// External commands and complete pipeline plans are converted from the
+/// borrowed C ABI representation into validated native process specifications.
+/// The runtime inherits the shell host's standard streams unless a stage
+/// redirection overrides one of them.
+#[derive(Debug, Default)]
+pub struct LinuxShellCommandExecutor {
+    backend: LinuxRuntime,
+}
+
+impl LinuxShellCommandExecutor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn program_spec(
+        command: &ExternalCommand<'_>,
+        fallback_working_directory: Option<&CStr>,
+    ) -> Result<ProgramSpec, ExternalExecutionError> {
+        let mut program = ProgramSpec::new(os_string(command.executable()))
+            .map_err(|_| ExternalExecutionError::Failed)?;
+        for argument in command.arguments() {
+            program = program.with_arg(os_string(argument));
+        }
+        for entry in command.environment() {
+            program = program.with_env(os_string(entry.key), os_string(entry.value));
+        }
+        if let Some(directory) = command.working_directory().or(fallback_working_directory) {
+            program = program.with_working_directory(PathBuf::from(os_string(directory)));
+        }
+        Ok(program)
+    }
+
+    fn redirection_path(target: &CStr, working_directory: Option<&CStr>) -> PathBuf {
+        let path = PathBuf::from(os_string(target));
+        if path.is_absolute() {
+            path
+        } else if let Some(directory) = working_directory {
+            PathBuf::from(os_string(directory)).join(path)
+        } else {
+            path
+        }
+    }
+}
+
+fn os_string(value: &CStr) -> OsString {
+    OsString::from_vec(value.to_bytes().to_vec())
+}
+
+impl CommandExecutor for LinuxShellCommandExecutor {
+    fn execute(&mut self, command: ExternalCommand<'_>) -> Result<i32, ExternalExecutionError> {
+        let stage = PipelineStage::command(Self::program_spec(&command, None)?);
+        PlatformRuntimeService::execute_pipeline(&self.backend, &[stage])
+            .map(|result| result.exit_code)
+            .map_err(|_| ExternalExecutionError::Failed)
+    }
+
+    fn execute_pipeline(
+        &mut self,
+        pipeline: ExternalPipeline<'_>,
+    ) -> Result<i32, ExternalExecutionError> {
+        let mut stages = Vec::with_capacity(pipeline.stages().len());
+        for external_stage in pipeline.stages() {
+            let working_directory = external_stage
+                .command()
+                .and_then(ExternalCommand::working_directory)
+                .or(pipeline.working_directory());
+            let mut stage = match external_stage.command() {
+                Some(command) => PipelineStage::command(Self::program_spec(
+                    command,
+                    pipeline.working_directory(),
+                )?),
+                None => PipelineStage::redirection_only(),
+            };
+
+            for redirection in external_stage.redirections() {
+                let path = Self::redirection_path(redirection.target(), working_directory);
+                let redirection = match redirection.kind() {
+                    ExternalRedirectionKind::Input => PipelineRedirection::Input(path),
+                    ExternalRedirectionKind::Output => PipelineRedirection::Output(path),
+                    ExternalRedirectionKind::Append => PipelineRedirection::Append(path),
+                    ExternalRedirectionKind::ErrorOutput => {
+                        PipelineRedirection::ErrorOutput(path)
+                    }
+                    ExternalRedirectionKind::ErrorAppend => {
+                        PipelineRedirection::ErrorAppend(path)
+                    }
+                };
+                stage = stage.with_redirection(redirection);
+            }
+            stages.push(stage);
+        }
+
+        PlatformRuntimeService::execute_pipeline(&self.backend, &stages)
+            .map(|result| result.exit_code)
+            .map_err(|_| ExternalExecutionError::Failed)
+    }
+}
 
 /// Application-level lifecycle wrapper around the Linux process runtime.
 #[derive(Debug, Default)]
