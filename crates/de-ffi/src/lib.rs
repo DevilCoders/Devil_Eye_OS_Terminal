@@ -500,8 +500,8 @@ impl Drop for Shell {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext, ExecutionStage,
-        CommandExecutor, ExternalCommand, ExternalExecutionError, ExternalPipeline,
+        CommandExecutor, DeAbiVersion, DeStatus, EnvironmentEntry, ExecutionContext,
+        ExecutionStage, ExternalCommand, ExternalExecutionError, ExternalPipeline,
         ExternalRedirectionKind, Shell, ShellError, ABI_VERSION, MAX_SOURCE_BYTES,
     };
     use std::ffi::CString;
@@ -625,7 +625,10 @@ mod tests {
         assert_eq!(align_of::<super::raw::RawPipelineStage>(), 8);
         assert_eq!(offset_of!(super::raw::RawPipelineStage, command), 0);
         assert_eq!(offset_of!(super::raw::RawPipelineStage, redirections), 8);
-        assert_eq!(offset_of!(super::raw::RawPipelineStage, redirection_count), 16);
+        assert_eq!(
+            offset_of!(super::raw::RawPipelineStage, redirection_count),
+            16
+        );
 
         assert_eq!(size_of::<RawExecutionContext>(), 40);
         assert_eq!(align_of::<RawExecutionContext>(), 8);
@@ -787,7 +790,6 @@ mod tests {
         assert_eq!(result.exit_code, 7);
         assert_eq!(result.commands_executed, 1);
     }
-
 
     struct PipelinePlanExecutor {
         calls: usize,
