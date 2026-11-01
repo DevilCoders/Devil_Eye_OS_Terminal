@@ -200,8 +200,8 @@ impl LinuxRuntime {
 
             for (stream, file) in prepared_redirections[index].drain(..) {
                 match stream {
-                    0U8 => stdin = Stdio::from(file),
-                    1U8 => stdout = Stdio::from(file),
+                    0 => stdin = Stdio::from(file),
+                    1 => stdout = Stdio::from(file),
                     _ => stderr = Stdio::from(file),
                 }
             }
