@@ -537,6 +537,7 @@ static de_shell_status_t de_shell_execute_simple_command(
                 &name_length)) {
             break;
         }
+        (void)name_length;
         assignment_count += 1U;
     }
 
