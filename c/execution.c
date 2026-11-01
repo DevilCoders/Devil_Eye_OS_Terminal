@@ -256,7 +256,7 @@ static int de_shell_assignment_name_length(
     }
 
     *out_name_length = index - word->source_offset;
-    return *out_name_length <= DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES;
+    return 1;
 }
 
 static de_shell_status_t de_shell_decode_word(
@@ -543,7 +543,14 @@ static de_shell_status_t de_shell_execute_simple_command(
                 &name_length)) {
             break;
         }
-        (void)name_length;
+        if (name_length > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+            de_shell_set_diagnostic(
+                diagnostic,
+                DE_SHELL_EXECUTION_STAGE_EXPAND,
+                (int)DE_SHELL_STATUS_RESOURCE_LIMIT,
+                ast->words[node->first_word + assignment_count].source_offset);
+            return DE_SHELL_STATUS_RESOURCE_LIMIT;
+        }
         assignment_count += 1U;
     }
 
