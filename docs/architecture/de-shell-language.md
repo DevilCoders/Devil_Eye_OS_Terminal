@@ -334,7 +334,7 @@ Security invariants:
 | `;` sequence | Implemented | Implemented | Supported |
 | `&&` / `||` | Implemented | Implemented | Supported |
 | `|` pipeline | AST implemented | Typed runtime plan | Supported for external stages; built-ins deferred |
-| `<`, `>`, `>>` | AST implemented | Typed runtime plan | Supported for external commands; built-ins deferred |
+| `<`, `>`, `>>`, `2>`, `2>>` | AST implemented | Typed runtime plan | Supported for external commands; built-ins deferred |
 | Parenthesized group | AST implemented | Rejected | Deferred child context |
 | `&` background | AST implemented | Rejected | Deferred job-control backend |
 | Parameter expansion | Not implemented | Not implemented | DE-012-02 |
