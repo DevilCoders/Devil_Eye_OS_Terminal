@@ -228,7 +228,7 @@ A pipeline contains two or more commands separated by `|`. For stages `C1 | C2 |
 - The pipeline exit status is the exit status of the last stage. A pipefail option is not part of the initial language version.
 - Pipeline stages execute in child contexts. Built-in state changes in a stage do not mutate the parent shell session.
 
-The current parser builds left-associated PIPELINE nodes, but the current execution engine deliberately returns UNSUPPORTED_OPERATION before launching any stage. Pipeline process/descriptor behavior is implemented by DE-012-03 (#79) together with the PTY/runtime contracts.
+The current parser builds left-associated PIPELINE nodes. DE-012-03 (#79) flattens each pipeline into an ordered typed execution plan; the host runtime owns file opens, pipe creation, process launch, wait, cancellation, descriptor closure, and reaping. Built-ins inside pipelines and redirections remain unsupported until isolated child-context execution is defined.
 
 ## 9. Lists, conditional execution, groups, and background jobs
 
@@ -333,8 +333,8 @@ Security invariants:
 | Empty quoted argument | Implemented | Implemented/tested | Supported |
 | `;` sequence | Implemented | Implemented | Supported |
 | `&&` / `||` | Implemented | Implemented | Supported |
-| `|` pipeline | AST implemented | Rejected | DE-012-03 |
-| `<`, `>`, `>>` | AST implemented | Rejected | DE-012-03 |
+| `|` pipeline | AST implemented | Typed runtime plan | Supported for external stages; built-ins deferred |
+| `<`, `>`, `>>` | AST implemented | Typed runtime plan | Supported for external commands; built-ins deferred |
 | Parenthesized group | AST implemented | Rejected | Deferred child context |
 | `&` background | AST implemented | Rejected | Deferred job-control backend |
 | Parameter expansion | Not implemented | Not implemented | DE-012-02 |
