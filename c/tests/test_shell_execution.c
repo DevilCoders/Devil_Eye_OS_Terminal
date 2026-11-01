@@ -1,5 +1,7 @@
 #include "de_shell/execution.h"
 
+static const de_shell_abi_version_t current_abi_version = {0U, 2U, 0U};
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,7 +142,7 @@ static int test_builtin_exit_stops_sequence(void)
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
 
-    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
         return 1;
     }
 
@@ -312,9 +314,7 @@ static int test_external_failures_and_missing_executor(void)
 static int test_parse_errors_and_unsupported_nodes(void)
 {
     de_shell_t *shell = NULL;
-    static const de_shell_abi_version_t current_abi_version = {0U, 2U, 0U};
-
-static const unsigned char malformed[] = "tool &&";
+    static const unsigned char malformed[] = "tool &&";
     static const unsigned char pipeline[] = "tool | tool";
     static const unsigned char redirection[] = "tool > output";
     static const unsigned char stderr_redirection[] = "tool 2>> errors";
@@ -329,7 +329,7 @@ static const unsigned char malformed[] = "tool &&";
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
 
-    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
         return 1;
     }
 
@@ -424,7 +424,7 @@ static int test_redirection_only_command_and_failure_cleanup_contract(void)
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
 
-    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
         return 1;
     }
 
