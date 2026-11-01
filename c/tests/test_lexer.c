@@ -97,7 +97,7 @@ static int test_escaped_whitespace_and_quotes(void)
 
 static int test_operator_tokens(void)
 {
-    static const unsigned char source[] = "cmd|next && other || x; in<file out>>log & (group)";
+    static const unsigned char source[] = "cmd|next && other || x; in<file out>>log stderr 2>err 2>>errlog name2>out & (group)";
     static const de_shell_token_type_t expected[] = {
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_PIPE,
@@ -112,6 +112,14 @@ static int test_operator_tokens(void)
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_REDIRECT_APPEND,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_WORD,
+        DE_SHELL_TOKEN_REDIRECT_OUTPUT,
         DE_SHELL_TOKEN_WORD,
         DE_SHELL_TOKEN_BACKGROUND,
         DE_SHELL_TOKEN_LEFT_PAREN,
