@@ -165,7 +165,10 @@ impl LinuxRuntime {
         let mut process_group: Option<libc::pid_t> = None;
 
         for (index, stage) in stages.iter().enumerate() {
-            let program = stage.program.as_ref().ok_or(RuntimeError::InvalidArgument)?;
+            let program = stage
+                .program
+                .as_ref()
+                .ok_or(RuntimeError::InvalidArgument)?;
             let mut stdin = if index == 0usize {
                 Stdio::inherit()
             } else {
