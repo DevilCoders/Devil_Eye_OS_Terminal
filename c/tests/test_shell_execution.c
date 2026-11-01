@@ -28,6 +28,47 @@ static de_shell_status_t fake_executor(
         return DE_SHELL_STATUS_INVALID_ARGUMENT;
     }
 
+    if (command->pipeline_stage_count != 0U) {
+        size_t stage_index;
+        if (command->pipeline_stages == NULL
+            || command->pipeline_stage_count > 64U
+            || command->executable != NULL
+            || command->argc != 0U
+            || command->argv != NULL) {
+            return DE_SHELL_STATUS_INVALID_ARGUMENT;
+        }
+        for (stage_index = 0U; stage_index < command->pipeline_stage_count; stage_index += 1U) {
+            const de_shell_pipeline_stage_t *stage =
+                &command->pipeline_stages[stage_index];
+            if (stage->redirection_count != 0U && stage->redirections == NULL) {
+                return DE_SHELL_STATUS_INVALID_ARGUMENT;
+            }
+            if (stage->command != NULL
+                && (stage->command->argc == 0U
+                    || stage->command->argv == NULL
+                    || stage->command->executable == NULL)) {
+                return DE_SHELL_STATUS_INVALID_ARGUMENT;
+            }
+        }
+        if (command->pipeline_stage_count == 2U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[1].command != NULL
+            && strcmp(command->pipeline_stages[0].command->executable, "tool") == 0
+            && strcmp(command->pipeline_stages[1].command->executable, "tool") == 0) {
+            state->arguments_valid = 1;
+        }
+        if (command->pipeline_stage_count == 1U
+            && command->pipeline_stages[0].command != NULL
+            && command->pipeline_stages[0].redirection_count == 1U
+            && command->pipeline_stages[0].redirections[0].type
+                == DE_SHELL_IO_REDIRECTION_OUTPUT
+            && strcmp(command->pipeline_stages[0].redirections[0].target, "output") == 0) {
+            state->environment_valid = 1;
+        }
+        *out_exit_code = state->return_exit_code;
+        return state->callback_status;
+    }
+
     if (command->argc == 4U
         && strcmp(command->executable, "tool") == 0
         && strcmp(command->argv[0], "tool") == 0
@@ -283,18 +324,22 @@ static int test_parse_errors_and_unsupported_nodes(void)
 
     if (de_shell_execute_source(
             shell, pipeline, sizeof(pipeline) - 1U,
-            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
-        (void)fprintf(stderr, "pipeline was executed before backend support exists\n");
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 1U
+        || state.arguments_valid == 0
+        || result.commands_executed != 2U) {
+        (void)fprintf(stderr, "typed two-stage pipeline plan was not dispatched\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
 
     if (de_shell_execute_source(
             shell, redirection, sizeof(redirection) - 1U,
-            &context, &result, &diagnostic) != DE_SHELL_STATUS_UNSUPPORTED_OPERATION
-        || state.calls != 0U) {
-        (void)fprintf(stderr, "redirection was executed before backend support exists\n");
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 2U
+        || state.environment_valid == 0
+        || result.commands_executed != 1U) {
+        (void)fprintf(stderr, "typed output-redirection plan was not dispatched\\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
