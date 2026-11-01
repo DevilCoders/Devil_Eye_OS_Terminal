@@ -86,8 +86,6 @@ impl RuntimeService for LinuxRuntime {
     }
 }
 
-
-
 impl LinuxRuntime {
     /// Executes a bounded foreground pipeline with runtime-owned pipes,
     /// redirection files, process-group cancellation, and deterministic reaping.
