@@ -14,6 +14,8 @@ use super::{
 
 pub(super) const MAX_ARGUMENTS: usize = 256;
 pub(super) const MAX_ENVIRONMENT_ENTRIES: usize = 256;
+pub(super) const MAX_PIPELINE_STAGES: usize = 64;
+pub(super) const MAX_REDIRECTIONS_PER_PLAN: usize = 1024;
 
 #[repr(C)]
 pub(super) struct DeShellOpaque {
@@ -43,6 +45,22 @@ pub(super) struct RawExternalCommand {
     pub environment: *const RawEnvironmentEntry,
     pub environment_count: usize,
     pub working_directory: *const c_char,
+    pub pipeline_stages: *const RawPipelineStage,
+    pub pipeline_stage_count: usize,
+}
+
+#[repr(C)]
+pub(super) struct RawIoRedirection {
+    pub kind: c_int,
+    pub target: *const c_char,
+    pub source_offset: usize,
+}
+
+#[repr(C)]
+pub(super) struct RawPipelineStage {
+    pub command: *const RawExternalCommand,
+    pub redirections: *const RawIoRedirection,
+    pub redirection_count: usize,
 }
 
 pub(super) type RawExternalExecutor = unsafe extern "C" fn(
