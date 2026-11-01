@@ -504,15 +504,15 @@ static de_shell_status_t status_sequence_executor(
 static int test_parameter_expansion_and_persistent_variables(void)
 {
     de_shell_t *shell = NULL;
-    static const unsigned char assignment[] = "A='two words'";
+    static const unsigned char assignment[] = "A='two words'; B=$A";
     static const unsigned char expansion[] =
         "tool \"$A\" '$A' \\$A ${A} $MISSING \"$HOST\"";
     const de_shell_environment_entry_t environment[] = {
         {"HOST", "host-value"},
     };
     expansion_expectation_t expectation = {
-        {"tool", "two words", "$A", "$A", "two words", "", "host-value"},
-        7U, "HOST", "host-value", 1U, 0, 0U, 0
+        {"tool", "two words", "two words", "$A", "$A", "two words", "", "host-value"},
+        8U, "HOST", "host-value", 1U, 0, 0U, 0
     };
     const de_shell_execution_context_t context = {
         environment, 1U, NULL, expansion_executor, &expectation
@@ -714,6 +714,37 @@ static int test_expansion_output_limit(void)
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
 }
 
+
+static int test_invalid_braced_expansion_is_rejected(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char source[] = "tool ${}";
+    expansion_expectation_t expectation = {
+        {"tool", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+        1U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create(&shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+    if (de_shell_execute_source(
+            shell, source, sizeof(source) - 1U,
+            &context, &result, &diagnostic) != DE_SHELL_STATUS_PARSE_ERROR
+        || diagnostic.stage != DE_SHELL_EXECUTION_STAGE_EXPAND
+        || expectation.calls != 0U) {
+        (void)fprintf(stderr, "malformed braced expansion was not rejected\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
 int main(void)
 {
     if (test_builtin_exit_stops_sequence() != 0
@@ -727,7 +758,8 @@ int main(void)
         || test_command_prefix_environment_is_temporary() != 0
         || test_non_recursive_expansion() != 0
         || test_last_status_and_skipped_operand_expansion() != 0
-        || test_expansion_output_limit() != 0) {
+        || test_expansion_output_limit() != 0
+        || test_invalid_braced_expansion_is_rejected() != 0) {
         return 1;
     }
 
