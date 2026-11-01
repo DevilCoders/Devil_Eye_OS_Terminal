@@ -142,19 +142,21 @@ impl LinuxRuntime {
             }
         }
 
-        let mut prepared_redirections: Vec<Vec<(u8, File)>> = Vec::with_capacity(stages.len());
+        let mut prepared_redirections: Vec<[Option<File>; 3]> =
+            Vec::with_capacity(stages.len());
         for stage in stages {
-            let mut stage_redirections = Vec::with_capacity(stage.redirections.len());
+            let mut stage_redirections: [Option<File>; 3] = [None, None, None];
             for redirection in &stage.redirections {
                 let stream = match redirection {
-                    PipelineRedirection::Input(_) => 0u8,
-                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1u8,
+                    PipelineRedirection::Input(_) => 0usize,
+                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1usize,
                     PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => {
-                        2u8
+                        2usize
                     }
                 };
-                let file = open_pipeline_redirection(redirection)?;
-                stage_redirections.push((stream, file));
+                // Replacing an earlier redirection closes its descriptor
+                // immediately while retaining its create/truncate side effect.
+                stage_redirections[stream] = Some(open_pipeline_redirection(redirection)?);
             }
             prepared_redirections.push(stage_redirections);
         }
@@ -200,12 +202,14 @@ impl LinuxRuntime {
             };
             let mut stderr = Stdio::inherit();
 
-            for (stream, file) in prepared_redirections[index].drain(..) {
-                match stream {
-                    0 => stdin = Stdio::from(file),
-                    1 => stdout = Stdio::from(file),
-                    _ => stderr = Stdio::from(file),
-                }
+            if let Some(file) = prepared_redirections[index][0].take() {
+                stdin = Stdio::from(file);
+            }
+            if let Some(file) = prepared_redirections[index][1].take() {
+                stdout = Stdio::from(file);
+            }
+            if let Some(file) = prepared_redirections[index][2].take() {
+                stderr = Stdio::from(file);
             }
 
             let mut command = Command::new(&resolved[index].executable);
