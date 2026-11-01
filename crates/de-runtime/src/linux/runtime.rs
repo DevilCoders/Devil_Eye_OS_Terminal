@@ -132,7 +132,9 @@ impl LinuxRuntime {
                 let path = match redirection {
                     PipelineRedirection::Input(path)
                     | PipelineRedirection::Output(path)
-                    | PipelineRedirection::Append(path) => path,
+                    | PipelineRedirection::Append(path)
+                | PipelineRedirection::ErrorOutput(path)
+                | PipelineRedirection::ErrorAppend(path) => path,
                 };
                 if path.as_os_str().as_encoded_bytes().contains(&0u8) {
                     return Err(RuntimeError::InvalidArgument);
@@ -140,13 +142,17 @@ impl LinuxRuntime {
             }
         }
 
-        let mut prepared_redirections: Vec<Vec<(bool, File)>> = Vec::with_capacity(stages.len());
+        let mut prepared_redirections: Vec<Vec<(u8, File)>> = Vec::with_capacity(stages.len());
         for stage in stages {
             let mut stage_redirections = Vec::with_capacity(stage.redirections.len());
             for redirection in &stage.redirections {
-                let is_input = matches!(redirection, PipelineRedirection::Input(_));
+                let stream = match redirection {
+                    PipelineRedirection::Input(_) => 0U8,
+                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1U8,
+                    PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => 2U8,
+                };
                 let file = open_pipeline_redirection(redirection)?;
-                stage_redirections.push((is_input, file));
+                stage_redirections.push((stream, file));
             }
             prepared_redirections.push(stage_redirections);
         }
@@ -190,12 +196,13 @@ impl LinuxRuntime {
                 };
                 Stdio::from(write_end)
             };
+            let mut stderr = Stdio::inherit();
 
-            for (is_input, file) in prepared_redirections[index].drain(..) {
-                if is_input {
-                    stdin = Stdio::from(file);
-                } else {
-                    stdout = Stdio::from(file);
+            for (stream, file) in prepared_redirections[index].drain(..) {
+                match stream {
+                    0U8 => stdin = Stdio::from(file),
+                    1U8 => stdout = Stdio::from(file),
+                    _ => stderr = Stdio::from(file),
                 }
             }
 
@@ -214,7 +221,7 @@ impl LinuxRuntime {
             if let Some(directory) = resolved[index].working_directory.as_deref() {
                 command.current_dir(directory);
             }
-            command.stdin(stdin).stdout(stdout).stderr(Stdio::inherit());
+            command.stdin(stdin).stdout(stdout).stderr(stderr);
 
             let requested_group = process_group;
             // SAFETY: setpgid is async-signal-safe. The first stage creates a
@@ -287,8 +294,12 @@ fn open_pipeline_redirection(redirection: &PipelineRedirection) -> Result<File, 
             options.write(true).create(true).truncate(true);
             options.open(path).map_err(map_io_error)
         }
-        PipelineRedirection::Append(path) => {
+        PipelineRedirection::Append(path) | PipelineRedirection::ErrorAppend(path) => {
             options.write(true).create(true).append(true);
+            options.open(path).map_err(map_io_error)
+        }
+        PipelineRedirection::ErrorOutput(path) => {
+            options.write(true).create(true).truncate(true);
             options.open(path).map_err(map_io_error)
         }
     }
