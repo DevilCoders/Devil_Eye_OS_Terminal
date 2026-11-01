@@ -773,6 +773,8 @@ static de_shell_status_t de_shell_execute_simple_command(
             assignment_count == 0U ? context->environment : command_environment,
             assignment_count == 0U ? context->environment_count : command_environment_count,
             context->working_directory,
+            NULL,
+            0U,
         };
         int exit_code = 127;
         const de_shell_status_t callback_status = context->external_executor(
@@ -1016,7 +1018,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
             current->command.executable = current->argv[0];
             current->command.argc = command_argc;
             current->command.argv = current->argv;
-            current->command.environment = environment_count == context->environment_count
+            current->command.environment = assignment_count == 0U
                 ? context->environment : current->environment;
             current->command.environment_count = environment_count;
             current->command.working_directory = context->working_directory;
