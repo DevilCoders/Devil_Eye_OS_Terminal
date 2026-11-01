@@ -41,7 +41,7 @@ The C request and all pointed-to strings are valid only until the callback retur
 
 If no executor is supplied, external commands and pipeline/redirection plans return EXECUTION_UNAVAILABLE. Existing closure-based CommandExecutor implementations remain valid for single commands and fail closed for pipeline plans unless they override execute_pipeline.
 
-ExternalPipeline exposes ordered stages, the top-level environment/working directory, and per-stage commands/redirections. Each ExternalPipelineStage contains an optional ExternalCommand (None only for a single redirection-only stage) and redirections in source order. ExternalRedirection exposes Input, Output, or Append, a borrowed target CStr, and the source offset. All borrowed strings are valid only for the callback duration. A host runtime should convert this typed plan to its native process API; it must never reparse a joined command string.
+ExternalPipeline exposes ordered stages, the top-level environment/working directory, and per-stage commands/redirections. Each ExternalPipelineStage contains an optional ExternalCommand (None only for a single redirection-only stage) and redirections in source order. ExternalRedirection exposes Input, Output, Append, ErrorOutput, or ErrorAppend, a borrowed target CStr, and the source offset. All borrowed strings are valid only for the callback duration. A host runtime should convert this typed plan to its native process API; it must never reparse a joined command string.
 
 The C execution engine rejects built-ins inside pipeline/redirection plans until isolated child-context semantics are specified. A host executor failure is translated by the C engine to EXTERNAL_EXECUTION_FAILED; the diagnostic code preserves the callback's original status.
 
