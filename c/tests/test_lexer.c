@@ -135,7 +135,7 @@ static int test_operator_tokens(void)
             source,
             sizeof(source) - 1U,
             tokens,
-            TOKEN_CAPACITY + 4U,
+            TOKEN_CAPACITY + 16U,
             &count,
             &diagnostic) != DE_SHELL_LEX_STATUS_OK
         || count != sizeof(expected) / sizeof(expected[0])) {
