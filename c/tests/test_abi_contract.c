@@ -39,11 +39,13 @@ static int test_version_query(void)
 static int test_version_compatibility(void)
 {
     const de_shell_abi_version_t older_minor = {0U, 0U, 99U};
-    const de_shell_abi_version_t same_minor_new_patch = {0U, 1U, 99U};
-    const de_shell_abi_version_t future_minor = {0U, 2U, 0U};
+    const de_shell_abi_version_t older_minor = {0U, 1U, 99U};
+    const de_shell_abi_version_t same_minor_new_patch = {0U, 2U, 99U};
+    const de_shell_abi_version_t future_minor = {0U, 3U, 0U};
     const de_shell_abi_version_t future_major = {1U, 0U, 0U};
 
     if (de_shell_check_abi_version(NULL) != DE_SHELL_STATUS_INVALID_ARGUMENT
+        || de_shell_check_abi_version(&older_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&older_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&same_minor_new_patch) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&future_minor) != DE_SHELL_STATUS_ABI_MISMATCH
