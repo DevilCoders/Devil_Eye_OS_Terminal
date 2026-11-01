@@ -276,6 +276,8 @@ unsafe fn parse_external_pipeline<'a>(
                     0 => ExternalRedirectionKind::Input,
                     1 => ExternalRedirectionKind::Output,
                     2 => ExternalRedirectionKind::Append,
+                    3 => ExternalRedirectionKind::ErrorOutput,
+                    4 => ExternalRedirectionKind::ErrorAppend,
                     _ => return Err(DeStatus::INVALID_ARGUMENT),
                 };
                 redirections.push(ExternalRedirection {
