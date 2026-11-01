@@ -389,6 +389,9 @@ static de_shell_status_t de_shell_decode_word(
                     || !de_shell_identifier_start(source[name_start])) {
                     return DE_SHELL_STATUS_PARSE_ERROR;
                 }
+                if (name_end - name_start > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
+                }
                 {
                     size_t name_index;
                     for (name_index = name_start + 1U; name_index < name_end; name_index += 1U) {
@@ -407,6 +410,9 @@ static de_shell_status_t de_shell_decode_word(
                 name_end = name_start + 1U;
                 while (name_end < source_end && de_shell_identifier_part(source[name_end])) {
                     name_end += 1U;
+                }
+                if (name_end - name_start > DE_SHELL_EXEC_MAX_VARIABLE_NAME_BYTES) {
+                    return DE_SHELL_STATUS_RESOURCE_LIMIT;
                 }
                 replacement = de_shell_lookup_variable(
                     shell, context, (const char *)&source[name_start], name_end - name_start);
