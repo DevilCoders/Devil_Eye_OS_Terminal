@@ -808,15 +808,28 @@ fn map_io_error(error: io::Error) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
-    use super::LinuxRuntime;
+    use super::{LinuxRuntime, PipelineRedirection, PipelineStage};
     use crate::{
         IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, ProgramSpecError,
         PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
         Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
+    use std::fs;
     use std::num::NonZeroUsize;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "devil-eye-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
 
     fn size() -> TerminalSize {
         TerminalSize::new(80u16, 24u16).expect("valid terminal size")
@@ -1336,6 +1349,109 @@ mod tests {
                 ProgramSpecError::ExecutableNotFound
             ))
         ));
+    }
+
+
+    #[test]
+    fn pipeline_connects_stages_and_applies_output_redirection() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("pipeline-output");
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/printf")
+                    .expect("printf")
+                    .with_arg("hello\\n"),
+            ),
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/tr")
+                    .expect("tr")
+                    .with_arg("a-z")
+                    .with_arg("A-Z"),
+            )
+            .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute two-stage pipeline");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stage_statuses,
+            vec![ProcessExitStatus::Exited(0), ProcessExitStatus::Exited(0)]
+        );
+        assert_eq!(fs::read_to_string(&output).expect("read pipeline output"), "HELLO\\n");
+        fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn input_append_and_redirection_only_operations_are_owned_by_runtime() {
+        let _guard = runtime_test_lock();
+        let input = temporary_path("pipeline-input");
+        let output = temporary_path("pipeline-append");
+        fs::write(&input, "from-file").expect("write input fixture");
+
+        let cat = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/cat").expect("cat"),
+        )
+        .with_redirection(PipelineRedirection::Input(input.clone()))
+        .with_redirection(PipelineRedirection::Output(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[cat])
+            .expect("execute redirected cat");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(fs::read_to_string(&output).expect("read redirected output"), "from-file");
+
+        let append = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/printf")
+                .expect("printf")
+                .with_arg("-tail"),
+        )
+        .with_redirection(PipelineRedirection::Append(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[append])
+            .expect("execute append redirection");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(&output).expect("read appended output"),
+            "from-file-tail"
+        );
+
+        let empty = temporary_path("redirection-only");
+        let redirection_only = PipelineStage::redirection_only()
+            .with_redirection(PipelineRedirection::Output(empty.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[redirection_only])
+            .expect("execute redirection-only command");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(fs::read(&empty).expect("read created file"), b"");
+
+        fs::remove_file(input).expect("remove input fixture");
+        fs::remove_file(output).expect("remove output fixture");
+        fs::remove_file(empty).expect("remove redirection-only file");
+    }
+
+    #[test]
+    fn broken_pipe_pipeline_reaps_all_stages() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("broken-pipe");
+        let stages = [
+            PipelineStage::command(ProgramSpec::new("/usr/bin/yes").expect("yes")),
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/head")
+                    .expect("head")
+                    .with_arg("-n")
+                    .with_arg("1"),
+            )
+            .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute broken-pipe pipeline");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stage_statuses.len(), 2usize);
+        assert_eq!(fs::read_to_string(&output).expect("read head output"), "y\\n");
+        fs::remove_file(output).expect("remove broken-pipe output");
     }
 
     #[test]
