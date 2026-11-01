@@ -98,6 +98,10 @@ unsafe extern "C" {
     pub fn de_shell_get_abi_version(out_version: *mut RawAbiVersion) -> c_int;
     pub fn de_shell_check_abi_version(requested_version: *const RawAbiVersion) -> c_int;
     pub fn de_shell_create(out_shell: *mut *mut DeShellOpaque) -> c_int;
+    pub fn de_shell_create_with_abi(
+        requested_version: *const RawAbiVersion,
+        out_shell: *mut *mut DeShellOpaque,
+    ) -> c_int;
     pub fn de_shell_destroy(shell: *mut *mut DeShellOpaque) -> c_int;
     pub fn de_shell_execute_source(
         shell: *mut DeShellOpaque,
@@ -327,6 +331,14 @@ pub(super) fn query_abi_version(out_version: &mut RawAbiVersion) -> c_int {
 pub(super) fn check_abi_version(requested_version: &RawAbiVersion) -> c_int {
     // SAFETY: the reference guarantees readable storage with the required layout.
     unsafe { de_shell_check_abi_version(requested_version) }
+}
+
+pub(super) fn create_shell_with_abi(
+    requested_version: &RawAbiVersion,
+    out_shell: &mut *mut DeShellOpaque,
+) -> c_int {
+    // SAFETY: both references provide valid ABI-compatible storage.
+    unsafe { de_shell_create_with_abi(requested_version, out_shell) }
 }
 
 pub(super) fn create_shell(out_shell: &mut *mut DeShellOpaque) -> c_int {
