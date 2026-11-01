@@ -25,7 +25,9 @@ typedef struct de_shell_environment_entry {
 typedef enum de_shell_io_redirection_type {
     DE_SHELL_IO_REDIRECTION_INPUT = 0,
     DE_SHELL_IO_REDIRECTION_OUTPUT = 1,
-    DE_SHELL_IO_REDIRECTION_APPEND = 2
+    DE_SHELL_IO_REDIRECTION_APPEND = 2,
+    DE_SHELL_IO_REDIRECTION_ERROR_OUTPUT = 3,
+    DE_SHELL_IO_REDIRECTION_ERROR_APPEND = 4
 } de_shell_io_redirection_type_t;
 
 typedef struct de_shell_io_redirection {
@@ -135,7 +137,7 @@ typedef struct de_shell_execution_diagnostic {
  *
  * Supported execution nodes:
  * - simple commands (built-ins or host-provided external commands);
- * - external-command pipelines and <, >, >> redirections through the host
+ * - external-command pipelines and <, >, >>, 2>, 2>> redirections through the host
  *   executor's typed execution-plan request;
  * - ';', '&&', and '||' control flow with left-to-right shell semantics.
  *
