@@ -101,8 +101,16 @@ impl LinuxRuntime {
         stages: &[PipelineStage],
     ) -> Result<PipelineExecutionResult, RuntimeError> {
         const MAX_PIPELINE_STAGES: usize = 64usize;
+        const MAX_PIPELINE_REDIRECTIONS: usize = 1_024usize;
 
         if stages.is_empty() || stages.len() > MAX_PIPELINE_STAGES {
+            return Err(RuntimeError::ResourceLimitExceeded);
+        }
+        let redirection_count = stages
+            .iter()
+            .try_fold(0usize, |count, stage| count.checked_add(stage.redirections.len()))
+            .ok_or(RuntimeError::ResourceLimitExceeded)?;
+        if redirection_count > MAX_PIPELINE_REDIRECTIONS {
             return Err(RuntimeError::ResourceLimitExceeded);
         }
         if stages.len() > 1usize && stages.iter().any(|stage| stage.program.is_none()) {
@@ -1405,6 +1413,33 @@ mod tests {
         fs::remove_file(directory.join("input.txt")).expect("remove stage input");
         fs::remove_file(directory.join("output.txt")).expect("remove stage output");
         fs::remove_dir(directory).expect("remove stage working directory");
+    }
+
+    #[test]
+    fn pipeline_enforces_aggregate_redirection_limit() {
+        let _guard = runtime_test_lock();
+
+        let mut at_limit = PipelineStage::redirection_only();
+        for _ in 0..1_024usize {
+            at_limit = at_limit.with_redirection(PipelineRedirection::Input("/dev/null".into()));
+        }
+        let result = LinuxRuntime
+            .execute_pipeline(&[at_limit])
+            .expect("the documented redirection limit is accepted");
+        assert_eq!(result.exit_code, 0);
+
+        let mut over_limit = PipelineStage::command(
+            ProgramSpec::new("/definitely/not/a/devil-eye-executable")
+                .expect("syntactically valid executable path"),
+        );
+        for _ in 0..1_025usize {
+            over_limit =
+                over_limit.with_redirection(PipelineRedirection::Output("/dev/null".into()));
+        }
+        assert!(matches!(
+            LinuxRuntime.execute_pipeline(&[over_limit]),
+            Err(RuntimeError::ResourceLimitExceeded)
+        ));
     }
 
     #[test]

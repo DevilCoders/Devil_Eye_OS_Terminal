@@ -54,15 +54,24 @@ impl LinuxShellCommandExecutor {
         Ok(program)
     }
 
-    fn redirection_path(target: &CStr, working_directory: Option<&CStr>) -> PathBuf {
+    /// Resolves a relative target once against the shell working directory.
+    ///
+    /// Redirection-only stages have no ProgramSpec for the runtime to resolve,
+    /// so the adapter anchors both command and redirection-only targets here.
+    fn redirection_path(
+        target: &CStr,
+        working_directory: Option<&CStr>,
+    ) -> Result<PathBuf, ExternalExecutionError> {
         let path = PathBuf::from(os_string(target));
         if path.is_absolute() {
-            path
-        } else if let Some(directory) = working_directory {
-            PathBuf::from(os_string(directory)).join(path)
-        } else {
-            path
+            return Ok(path);
         }
+        let Some(directory) = working_directory else {
+            return Ok(path);
+        };
+        let directory = std::fs::canonicalize(PathBuf::from(os_string(directory)))
+            .map_err(|_| ExternalExecutionError::Failed)?;
+        Ok(directory.join(path))
     }
 }
 
@@ -97,7 +106,7 @@ impl CommandExecutor for LinuxShellCommandExecutor {
             };
 
             for redirection in external_stage.redirections() {
-                let path = Self::redirection_path(redirection.target(), working_directory);
+                let path = Self::redirection_path(redirection.target(), working_directory)?;
                 let redirection = match redirection.kind() {
                     ExternalRedirectionKind::Input => PipelineRedirection::Input(path),
                     ExternalRedirectionKind::Output => PipelineRedirection::Output(path),
@@ -306,6 +315,62 @@ mod pipeline_tests {
             "HELLO\n"
         );
         fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn ffi_shell_resolves_relative_redirections_against_relative_working_directory() {
+        use std::ffi::CString;
+        use std::path::PathBuf;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let directory = PathBuf::from(format!(
+            ".devil-eye-app-relative-cwd-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).expect("create relative working directory");
+        let working_directory = CString::new(directory.to_string_lossy().as_bytes())
+            .expect("working directory has no NUL");
+        let context = ExecutionContext {
+            environment: &[],
+            working_directory: Some(&working_directory),
+        };
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let result = shell
+            .execute(
+                b"/usr/bin/printf relative > command-output.txt",
+                &context,
+                Some(&mut executor),
+            )
+            .expect("execute command with relative working directory");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(directory.join("command-output.txt"))
+                .expect("read command redirection"),
+            "relative"
+        );
+
+        let result = shell
+            .execute(b"> redirection-only.txt", &context, Some(&mut executor))
+            .expect("execute redirection-only stage with relative working directory");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read(directory.join("redirection-only.txt"))
+                .expect("read redirection-only output"),
+            b""
+        );
+
+        let duplicated = directory.join(&directory).join("command-output.txt");
+        assert!(!duplicated.exists(), "relative working directory was joined twice");
+
+        fs::remove_file(directory.join("command-output.txt")).expect("remove command output");
+        fs::remove_file(directory.join("redirection-only.txt"))
+            .expect("remove redirection-only output");
+        fs::remove_dir(directory).expect("remove relative working directory");
     }
 
     #[test]

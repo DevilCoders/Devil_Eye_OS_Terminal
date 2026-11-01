@@ -53,6 +53,8 @@ The C core does not open files, create pipes, duplicate descriptors, or spawn ch
 - Open `<` targets read-only; open `>` and `2>` targets with create/truncate; open `>>` and `2>>` targets with create/append.
 - Apply multiple redirections in source order, closing superseded descriptors while preserving earlier filesystem side effects.
 - Connect each stage's stdout to the next stage's stdin, with explicit stdin/stdout redirections overriding the corresponding pipe endpoint; stderr redirections replace only the stage's stderr stream.
+- Resolve relative redirection targets against the stage's configured working directory, not the application process's working directory.
+- Enforce the 64-stage and 1,024 aggregate-redirection limits even when the runtime API is called directly rather than through DE-Shell.
 - Launch all stages before waiting, close parent pipe copies promptly, and wait/reap every started child.
 - On any setup or launch failure, terminate already-started children, close every owned descriptor, and reap all children before returning an error.
 - Return the last stage's exit code; no `pipefail` behavior is implied.
