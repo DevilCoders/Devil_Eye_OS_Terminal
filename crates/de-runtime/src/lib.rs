@@ -291,10 +291,14 @@ pub enum PipelineRedirection {
     ErrorAppend(PathBuf),
 }
 
-/// One stage in a foreground pipeline. A missing program is valid only for a
-/// single-stage redirection-only operation.
+/// One stage in a foreground pipeline.
+///
+/// A redirection-only stage has no program and no empty-command marker. An
+/// empty-command stage represents a shell command word that expands to an
+/// empty string: it starts no child and completes with exit status 127.
 pub struct PipelineStage {
     pub(crate) program: Option<ProgramSpec>,
+    pub(crate) empty_command: bool,
     pub(crate) redirections: Vec<PipelineRedirection>,
 }
 
@@ -302,6 +306,7 @@ impl PipelineStage {
     pub fn command(program: ProgramSpec) -> Self {
         Self {
             program: Some(program),
+            empty_command: false,
             redirections: Vec::new(),
         }
     }
@@ -309,6 +314,20 @@ impl PipelineStage {
     pub fn redirection_only() -> Self {
         Self {
             program: None,
+            empty_command: false,
+            redirections: Vec::new(),
+        }
+    }
+
+    /// Creates a command stage for an empty decoded command word.
+    ///
+    /// The runtime does not spawn a process for this stage. It still applies
+    /// redirection side effects and wires neighboring pipeline stages so they
+    /// observe the closed stream endpoints.
+    pub fn empty_command() -> Self {
+        Self {
+            program: None,
+            empty_command: true,
             redirections: Vec::new(),
         }
     }
