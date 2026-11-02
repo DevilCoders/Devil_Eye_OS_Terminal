@@ -98,6 +98,9 @@ impl CommandExecutor for LinuxShellCommandExecutor {
                 .and_then(|command| command.working_directory())
                 .or(pipeline.working_directory());
             let mut stage = match external_stage.command() {
+                Some(command) if command.executable().to_bytes().is_empty() => {
+                    PipelineStage::empty_command()
+                }
                 Some(command) => PipelineStage::command(Self::program_spec(
                     command,
                     pipeline.working_directory(),
@@ -315,6 +318,46 @@ mod pipeline_tests {
             "HELLO\n"
         );
         fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn ffi_shell_empty_command_words_keep_pipeline_status_and_redirection_semantics() {
+        let output = temporary_path("empty-command-output");
+        let redirection = temporary_path("empty-command-redirection");
+        let mut shell = Shell::new().expect("create DE-Shell");
+        let context = ExecutionContext::new();
+        let mut executor = LinuxShellCommandExecutor::new();
+
+        let source = format!("\"\" | /usr/bin/cat > {}", output.display());
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute pipeline with an empty quoted command");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.commands_executed, 2usize);
+        assert_eq!(fs::read(&output).expect("read downstream output"), b"");
+
+        shell
+            .execute(b"EMPTY=", &context, Some(&mut executor))
+            .expect("set empty command variable");
+        let result = shell
+            .execute(
+                b"/usr/bin/printf payload | $EMPTY",
+                &context,
+                Some(&mut executor),
+            )
+            .expect("execute pipeline with an empty expanded command");
+        assert_eq!(result.exit_code, 127);
+        assert_eq!(result.commands_executed, 2usize);
+
+        let source = format!("\"\" > {}", redirection.display());
+        let result = shell
+            .execute(source.as_bytes(), &context, Some(&mut executor))
+            .expect("execute empty command with output redirection");
+        assert_eq!(result.exit_code, 127);
+        assert_eq!(fs::read(&redirection).expect("read created redirection file"), b"");
+
+        fs::remove_file(output).expect("remove downstream output");
+        fs::remove_file(redirection).expect("remove empty-command redirection");
     }
 
     #[test]
