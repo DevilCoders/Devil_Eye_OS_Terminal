@@ -115,10 +115,20 @@ impl LinuxRuntime {
         if redirection_count > MAX_PIPELINE_REDIRECTIONS {
             return Err(RuntimeError::ResourceLimitExceeded);
         }
-        if stages.len() > 1usize && stages.iter().any(|stage| stage.program.is_none()) {
+        if stages
+            .iter()
+            .any(|stage| stage.empty_command && stage.program.is_some())
+        {
             return Err(RuntimeError::InvalidArgument);
         }
-        if stages.len() == 1usize && stages[0].program.is_none() {
+        if stages.len() > 1usize
+            && stages
+                .iter()
+                .any(|stage| stage.program.is_none() && !stage.empty_command)
+        {
+            return Err(RuntimeError::InvalidArgument);
+        }
+        if stages.len() == 1usize && stages[0].program.is_none() && !stages[0].empty_command {
             if stages[0].redirections.is_empty() {
                 return Err(RuntimeError::InvalidArgument);
             }
@@ -130,15 +140,30 @@ impl LinuxRuntime {
                 stage_statuses: vec![ProcessExitStatus::Exited(0)],
             });
         }
+        if stages.len() == 1usize && stages[0].empty_command {
+            for redirection in &stages[0].redirections {
+                let _file = open_pipeline_redirection(redirection, None)?;
+            }
+            return Ok(PipelineExecutionResult {
+                exit_code: 127,
+                stage_statuses: vec![ProcessExitStatus::Exited(127)],
+            });
+        }
 
         let mut resolved = Vec::with_capacity(stages.len());
         for stage in stages {
-            let program = stage
-                .program
-                .as_ref()
-                .ok_or(RuntimeError::InvalidArgument)?;
-            program.validate().map_err(RuntimeError::InvalidProgram)?;
-            resolved.push(resolve_program(program).map_err(RuntimeError::InvalidProgram)?);
+            if stage.empty_command {
+                resolved.push(None);
+            } else {
+                let program = stage
+                    .program
+                    .as_ref()
+                    .ok_or(RuntimeError::InvalidArgument)?;
+                program.validate().map_err(RuntimeError::InvalidProgram)?;
+                resolved.push(Some(
+                    resolve_program(program).map_err(RuntimeError::InvalidProgram)?,
+                ));
+            }
             for redirection in &stage.redirections {
                 let path = match redirection {
                     PipelineRedirection::Input(path)
@@ -168,7 +193,9 @@ impl LinuxRuntime {
                 // immediately while retaining its create/truncate side effect.
                 stage_redirections[stream] = Some(open_pipeline_redirection(
                     redirection,
-                    resolved[index].working_directory.as_deref(),
+                    resolved[index]
+                        .as_ref()
+                        .and_then(|program| program.working_directory.as_deref()),
                 )?);
             }
             prepared_redirections.push(stage_redirections);
@@ -182,11 +209,43 @@ impl LinuxRuntime {
         }
 
         let mut children: Vec<Child> = Vec::with_capacity(stages.len());
+        let mut child_stage_indices = Vec::with_capacity(stages.len());
+        let mut stage_statuses: Vec<Option<ProcessExitStatus>> =
+            std::iter::repeat_with(|| None).take(stages.len()).collect();
         let mut process_group: Option<libc::pid_t> = None;
 
         for (index, stage) in stages.iter().enumerate() {
+            if stage.empty_command {
+                if index > 0usize {
+                    match pipes[index - 1usize].0.take() {
+                        Some(descriptor) => drop(descriptor),
+                        None => {
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::IoFailed);
+                        }
+                    }
+                }
+                if index + 1usize < stages.len() {
+                    match pipes[index].1.take() {
+                        Some(descriptor) => drop(descriptor),
+                        None => {
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::IoFailed);
+                        }
+                    }
+                }
+                for redirection in &mut prepared_redirections[index] {
+                    drop(redirection.take());
+                }
+                stage_statuses[index] = Some(ProcessExitStatus::Exited(127));
+                continue;
+            }
+
             let program = stage
                 .program
+                .as_ref()
+                .ok_or(RuntimeError::InvalidArgument)?;
+            let resolved_program = resolved[index]
                 .as_ref()
                 .ok_or(RuntimeError::InvalidArgument)?;
             let mut stdin = if index == 0usize {
@@ -225,7 +284,7 @@ impl LinuxRuntime {
                 stderr = Stdio::from(file);
             }
 
-            let mut command = Command::new(&resolved[index].executable);
+            let mut command = Command::new(&resolved_program.executable);
             command.arg0(program.program());
             command.args(program.args());
             if program.environment_inheritance() == EnvironmentInheritance::Clear {
@@ -237,7 +296,7 @@ impl LinuxRuntime {
                     .iter()
                     .map(|(key, value)| (key, value)),
             );
-            if let Some(directory) = resolved[index].working_directory.as_deref() {
+            if let Some(directory) = resolved_program.working_directory.as_deref() {
                 command.current_dir(directory);
             }
             command.stdin(stdin).stdout(stdout).stderr(stderr);
@@ -261,11 +320,13 @@ impl LinuxRuntime {
                         process_group = i32::try_from(child.id()).ok();
                         if process_group.is_none() {
                             children.push(child);
+                            child_stage_indices.push(index);
                             terminate_pipeline_children(&mut children, process_group);
                             return Err(RuntimeError::ResourceLimitExceeded);
                         }
                     }
                     children.push(child);
+                    child_stage_indices.push(index);
                 }
                 Err(error) => {
                     terminate_pipeline_children(&mut children, process_group);
@@ -277,16 +338,19 @@ impl LinuxRuntime {
         // All unused parent-side pipe endpoints are closed before waiting.
         drop(pipes);
 
-        let mut stage_statuses = Vec::with_capacity(children.len());
         let mut exit_code = 0;
-        for index in 0..children.len() {
-            match children[index].wait() {
+        for child_index in 0..children.len() {
+            let stage_index = child_stage_indices[child_index];
+            match children[child_index].wait() {
                 Ok(status) => {
-                    exit_code = status.code().unwrap_or_else(|| {
+                    let stage_exit_code = status.code().unwrap_or_else(|| {
                         use std::os::unix::process::ExitStatusExt;
                         128 + status.signal().unwrap_or(0)
                     });
-                    stage_statuses.push(map_exit_status(status));
+                    if stage_index + 1usize == stages.len() {
+                        exit_code = stage_exit_code;
+                    }
+                    stage_statuses[stage_index] = Some(map_exit_status(status));
                 }
                 Err(_error) => {
                     terminate_pipeline_children(&mut children, process_group);
@@ -294,6 +358,13 @@ impl LinuxRuntime {
                 }
             }
         }
+        if stages[stages.len() - 1usize].empty_command {
+            exit_code = 127;
+        }
+        let stage_statuses = stage_statuses
+            .into_iter()
+            .map(|status| status.ok_or(RuntimeError::WaitFailed))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(PipelineExecutionResult {
             exit_code,
@@ -1386,6 +1457,47 @@ mod tests {
             "HELLO\n"
         );
         fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn empty_command_stages_close_pipe_ends_and_preserve_status_order() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("empty-command-downstream");
+        let stages = [
+            PipelineStage::empty_command(),
+            PipelineStage::command(ProgramSpec::new("/usr/bin/cat").expect("cat"))
+                .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute downstream stage after an empty command");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stage_statuses,
+            vec![ProcessExitStatus::Exited(127), ProcessExitStatus::Exited(0)]
+        );
+        assert_eq!(fs::read(&output).expect("read downstream output"), b"");
+
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/printf")
+                    .expect("printf")
+                    .with_arg("payload"),
+            ),
+            PipelineStage::empty_command(),
+        ];
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute pipeline ending in an empty command");
+        assert_eq!(result.exit_code, 127);
+        assert_eq!(result.stage_statuses.len(), 2usize);
+        assert_eq!(
+            result.stage_statuses[1],
+            ProcessExitStatus::Exited(127)
+        );
+
+        fs::remove_file(output).expect("remove downstream output");
     }
 
     #[test]
