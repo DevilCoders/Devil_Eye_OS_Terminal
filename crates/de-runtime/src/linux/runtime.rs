@@ -91,11 +91,12 @@ impl LinuxRuntime {
     /// Executes a bounded foreground pipeline with runtime-owned pipes,
     /// redirection files, process-group cancellation, and deterministic reaping.
     ///
-    /// Every stage is spawned before any stage is waited on. Explicit
-    /// redirections are applied in source order and override the matching
-    /// pipeline endpoint. A pipeline containing only one redirection-only
-    /// stage performs the requested file operations without changing the
-    /// application's standard streams.
+    /// Every executable stage is spawned before any child is waited on.
+    /// Empty-command stages spawn no child; their redirection side effects and
+    /// pipe-end closure are completed during setup. Explicit redirections are
+    /// applied in source order and override the matching pipeline endpoint. A
+    /// single redirection-only stage performs file operations without
+    /// changing the application's standard streams.
     pub fn execute_pipeline(
         &self,
         stages: &[PipelineStage],
