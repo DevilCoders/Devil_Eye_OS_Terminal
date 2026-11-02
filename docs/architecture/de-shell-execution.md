@@ -59,7 +59,7 @@ The C core does not open files, create pipes, duplicate descriptors, or spawn ch
 - On any setup or launch failure, terminate already-started children, close every owned descriptor, and reap all children before returning an error.
 - Return the last stage's exit code; no `pipefail` behavior is implied.
 
-A redirection-only command is represented by one stage with `command == NULL`; the runtime performs the open/close operation without permanently changing the application's standard streams. Built-ins inside pipelines or with redirections are rejected until isolated child-context execution is defined.
+A redirection-only command is represented by one stage with `command == NULL`; the runtime performs the open/close operation without permanently changing the application's standard streams. A command word that decodes to an empty string is a distinct empty-command stage: no child is spawned, its redirections still take effect, and its stage status is 127. The runtime closes that stage's pipe endpoints so a downstream command observes EOF and an upstream writer observes a broken pipe. Pipeline status still comes from the final stage, so `"" | cat` can succeed when `cat` succeeds, while `printf data | ""` returns 127. Built-ins inside pipelines or with redirections are rejected until isolated child-context execution is defined.
 
 ## Explicitly unsupported execution nodes
 
@@ -92,4 +92,4 @@ The C core owns its temporary token, AST, argument, and traversal buffers and fr
 
 ## Tests
 
-CTest covers built-in exit and short-circuiting, quote removal and empty arguments, explicit environment/working-directory forwarding, AND/OR/sequence control flow, callback error propagation, missing executor behavior, malformed input, unsupported background/group nodes; typed pipeline/redirection plan dispatch, reentrancy/destruction guards, context validation, source bounds, empty input, scalar/braced/status expansion, single-quote and escape suppression, assignment persistence, temporary command-prefix environment overrides, non-recursive values, skipped-operand laziness, and expansion output limits.
+CTest covers built-in exit and short-circuiting, quote removal and empty arguments, explicit environment/working-directory forwarding, AND/OR/sequence control flow, callback error propagation, missing executor behavior, malformed input, unsupported background/group nodes; typed pipeline/redirection plan dispatch, reentrancy/destruction guards, context validation, source bounds, empty input, scalar/braced/status expansion, single-quote and escape suppression, assignment persistence, temporary command-prefix environment overrides, non-recursive values, skipped-operand laziness, and expansion output limits. Rust runtime and app-level FFI integration tests cover empty quoted and expanded command words, exit status 127, redirection side effects, downstream EOF, and ordered per-stage outcomes.
