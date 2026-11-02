@@ -354,7 +354,10 @@ mod pipeline_tests {
             .execute(source.as_bytes(), &context, Some(&mut executor))
             .expect("execute empty command with output redirection");
         assert_eq!(result.exit_code, 127);
-        assert_eq!(fs::read(&redirection).expect("read created redirection file"), b"");
+        assert_eq!(
+            fs::read(&redirection).expect("read created redirection file"),
+            b""
+        );
 
         fs::remove_file(output).expect("remove downstream output");
         fs::remove_file(redirection).expect("remove empty-command redirection");
