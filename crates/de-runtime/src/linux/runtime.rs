@@ -1492,10 +1492,7 @@ mod tests {
             .expect("execute pipeline ending in an empty command");
         assert_eq!(result.exit_code, 127);
         assert_eq!(result.stage_statuses.len(), 2usize);
-        assert_eq!(
-            result.stage_statuses[1],
-            ProcessExitStatus::Exited(127)
-        );
+        assert_eq!(result.stage_statuses[1], ProcessExitStatus::Exited(127));
 
         fs::remove_file(output).expect("remove downstream output");
     }
