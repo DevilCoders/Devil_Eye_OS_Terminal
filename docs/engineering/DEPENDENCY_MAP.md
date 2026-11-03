@@ -57,3 +57,41 @@ The dependency-status workflow derives blocked/ready labels from the task's Depe
 ## Subtask hierarchy note
 
 The 63 implementation Tasks each contain a Markdown subtask checklist. These checklist items clarify execution order but do not create dependency edges or native GitHub parent-child issue relationships. Only dependencies explicitly listed in each Task's `Dependencies` section are consumed by the dependency-status automation. If a checklist item becomes independently schedulable, promote it to a new Issue and update the catalog and dependency graph.
+
+
+## Later milestone dependencies
+
+The initial graph above is retained as the foundation path. The following later task edges are also present in the canonical GitHub issue bodies and must be kept in sync:
+
+```text
+DE-011-01 #55 ─> DE-011-02 #56
+      │                 ▲
+      └─> DE-011-03 #80 │
+DE-014-01 #59 ──────────┘
+
+DE-015-01 #61 ─> DE-015-02 #62 ─> DE-018-02 #70
+DE-014-01 #59 ─────────────────> DE-018-02 #70
+
+DE-016-01 #63 + DE-002-02 #30 ─> DE-017-01 #67 ─> DE-017-02 #68
+DE-005-01 #42 + DE-011-01 #55 ─> DE-018-01 #69
+
+DE-021-01 #73 + DE-019-01 #38 ─> DE-021-02 #74
+DE-023-01 #77 + DE-019-01 #38 ─> DE-023-02 #78
+
+DE-012-02 #58 + DE-006-03 #47 + DE-004-05 #37 ─> DE-012-03 #79
+
+DE-015-01 #61 + DE-011-01 #55 ─> DE-011-03 #80
+DE-016-01 #63 + DE-019-01 #38 + DE-022-01 #75 ─> DE-024-01 #81
+DE-023-02 #78 + DE-024-01 #81 ─> DE-024-02 #82
+```
+
+### Explicit architecture decision gates
+
+- **#55 (GUI window/surface):** do not begin implementation until the user records the GUI/windowing toolkit decision. This is an additional project-level gate beyond the issue's prerequisite tasks.
+- **#62 (configuration persistence):** do not begin implementation until the user records the storage format/codec decision.
+- Tasks depending on #55 or #62 remain blocked by those gates even if their issue labels have not yet been reconciled. Do not relabel them Ready or start implementation until the decision is recorded.
+- #67 is independent of the GUI and persistence decisions. Its issue prerequisites #63 and #30 are closed; verify the branch/PR inventory before starting it.
+- #74 prerequisites #73 and #38 are closed. #78 prerequisites #77 and #38 are closed, but #82 remains downstream of both #78 and #81.
+- #79 implementation is under PR #151; keep the issue open until merge and post-merge verification.
+
+The GitHub Issue `Dependencies` sections remain authoritative. If a graph edge and an issue body disagree, reconcile the issue first and then update this map; do not silently choose one source.
