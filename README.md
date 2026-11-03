@@ -56,6 +56,7 @@ Implementation claims are limited to code and validation present on the checked-
 - [Dependency map](docs/engineering/DEPENDENCY_MAP.md)
 - [Milestone exit criteria](docs/engineering/MILESTONES.md)
 - [Architecture index](docs/architecture/README.md)
+- [Plugin capability and permission model](docs/architecture/plugin-capabilities.md) — normative future security gate; plugin execution is disabled.
 - [Security threat model](docs/security/THREAT_MODEL.md)
 - [Linux packaging strategy](docs/packaging/linux-packaging.md)
 
