@@ -500,7 +500,7 @@ impl PipelineJobControl {
             // SAFETY: this group is private to the current pipeline.
             let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
         }
-        self.group_leader_release.take();
+        drop(self.group_leader_release.take());
         if let Some(pid) = self.group_leader_pid.take() {
             let _ = reap_pipeline_group_leader(pid);
         }
