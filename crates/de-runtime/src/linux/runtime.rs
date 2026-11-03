@@ -384,7 +384,6 @@ impl LinuxRuntime {
     }
 }
 
-
 /// Owns the process group and controlling-terminal foreground handoff for one
 /// synchronous pipeline. A short-lived group leader reserves the group before
 /// any executable stage can run, eliminating the SIGTTIN launch race.
@@ -445,7 +444,7 @@ impl PipelineJobControl {
 
         let (group_leader_pid, group_leader_release) =
             spawn_pipeline_group_leader().map_err(map_io_error)?;
-        let mut control = Self {
+        let control = Self {
             terminal: Some(terminal),
             shell_process_group: Some(shell_process_group),
             process_group: Some(group_leader_pid),
@@ -476,7 +475,7 @@ impl PipelineJobControl {
     }
 
     fn finish(&mut self) -> Result<(), RuntimeError> {
-        self.group_leader_release.take();
+        drop(self.group_leader_release.take());
         if let Some(pid) = self.group_leader_pid {
             if let Err(error) = reap_pipeline_group_leader(pid) {
                 self.abort();
@@ -555,11 +554,7 @@ fn spawn_pipeline_group_leader() -> io::Result<(libc::pid_t, OwnedFd)> {
             close_pipeline_group_leader_descriptors(read_fd, max_fd);
             let mut byte = 0u8;
             loop {
-                let result = libc::read(
-                    read_fd,
-                    (&mut byte as *mut u8).cast::<libc::c_void>(),
-                    1,
-                );
+                let result = libc::read(read_fd, (&mut byte as *mut u8).cast::<libc::c_void>(), 1);
                 if result <= 0 {
                     break;
                 }
@@ -637,30 +632,20 @@ fn set_terminal_foreground(terminal: &File, process_group: libc::pid_t) -> io::R
         return Err(io::Error::last_os_error());
     }
 
-    let mask_result = unsafe {
-        libc::pthread_sigmask(
-            libc::SIG_BLOCK,
-            &blocked_signals,
-            &mut previous_signals,
-        )
-    };
+    let mask_result =
+        unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &blocked_signals, &mut previous_signals) };
     if mask_result != 0 {
         return Err(io::Error::from_raw_os_error(mask_result));
     }
 
-    let terminal_result =
-        unsafe { libc::tcsetpgrp(terminal.as_raw_fd(), process_group) };
+    let terminal_result = unsafe { libc::tcsetpgrp(terminal.as_raw_fd(), process_group) };
     let terminal_error = if terminal_result == -1 {
         Some(io::Error::last_os_error())
     } else {
         None
     };
     let restore_mask_result = unsafe {
-        libc::pthread_sigmask(
-            libc::SIG_SETMASK,
-            &previous_signals,
-            std::ptr::null_mut(),
-        )
+        libc::pthread_sigmask(libc::SIG_SETMASK, &previous_signals, std::ptr::null_mut())
     };
 
     if let Some(error) = terminal_error {

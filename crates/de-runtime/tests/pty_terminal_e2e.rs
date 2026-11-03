@@ -1,8 +1,8 @@
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
-    IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
-    RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize, TerminationMode,
-    WriteOutcome,
+    IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest,
+    ProgramSpec, PtyConfig, ReadOutcome, RuntimeError, RuntimeProcess, RuntimeService, Signal,
+    TerminalSize, TerminationMode, WriteOutcome,
 };
 use de_terminal_core::parser::{TerminalEvent, VtParser};
 use de_terminal_core::screen::{
@@ -254,7 +254,11 @@ fn write_pty_all(process: &mut dyn RuntimeProcess, input: &[u8]) {
 }
 
 fn run_foreground_pipeline_child(mode: &str) {
-    if std::env::var("DE_RUNTIME_PIPELINE_TTY_CHILD").ok().as_deref() != Some(mode) {
+    if std::env::var("DE_RUNTIME_PIPELINE_TTY_CHILD")
+        .ok()
+        .as_deref()
+        != Some(mode)
+    {
         return;
     }
 
@@ -406,4 +410,3 @@ fn foreground_pipeline_restores_shell_group_after_setup_failure() {
         "shell foreground process group was not restored after setup failure: {output:?}"
     );
 }
-
