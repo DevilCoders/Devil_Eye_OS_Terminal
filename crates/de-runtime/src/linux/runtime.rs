@@ -179,6 +179,14 @@ impl LinuxRuntime {
             }
         }
 
+        let has_executable_stage = stages.iter().any(|stage| !stage.empty_command);
+        let mut job_control = if has_executable_stage {
+            PipelineJobControl::new()?
+        } else {
+            PipelineJobControl::without_terminal()
+        };
+        let mut process_group = job_control.process_group();
+
         let mut prepared_redirections: Vec<[Option<File>; 3]> = Vec::with_capacity(stages.len());
         for (index, stage) in stages.iter().enumerate() {
             let mut stage_redirections: [Option<File>; 3] = [None, None, None];
@@ -213,7 +221,6 @@ impl LinuxRuntime {
         let mut child_stage_indices = Vec::with_capacity(stages.len());
         let mut stage_statuses: Vec<Option<ProcessExitStatus>> =
             std::iter::repeat_with(|| None).take(stages.len()).collect();
-        let mut process_group: Option<libc::pid_t> = None;
 
         for (index, stage) in stages.iter().enumerate() {
             if stage.empty_command {
@@ -311,7 +318,7 @@ impl LinuxRuntime {
                     if libc::setpgid(0, group) == -1 {
                         return Err(io::Error::last_os_error());
                     }
-                    Ok(())
+                    reset_child_signal_state()
                 });
             }
 
@@ -319,12 +326,13 @@ impl LinuxRuntime {
                 Ok(child) => {
                     if process_group.is_none() {
                         process_group = i32::try_from(child.id()).ok();
-                        if process_group.is_none() {
+                        let Some(group) = process_group else {
                             children.push(child);
                             child_stage_indices.push(index);
                             terminate_pipeline_children(&mut children, process_group);
                             return Err(RuntimeError::ResourceLimitExceeded);
-                        }
+                        };
+                        job_control.register_process_group(group);
                     }
                     children.push(child);
                     child_stage_indices.push(index);
@@ -367,11 +375,334 @@ impl LinuxRuntime {
             .map(|status| status.ok_or(RuntimeError::WaitFailed))
             .collect::<Result<Vec<_>, _>>()?;
 
+        job_control.finish()?;
+
         Ok(PipelineExecutionResult {
             exit_code,
             stage_statuses,
         })
     }
+}
+
+
+/// Owns the process group and controlling-terminal foreground handoff for one
+/// synchronous pipeline. A short-lived group leader reserves the group before
+/// any executable stage can run, eliminating the SIGTTIN launch race.
+struct PipelineJobControl {
+    terminal: Option<File>,
+    shell_process_group: Option<libc::pid_t>,
+    process_group: Option<libc::pid_t>,
+    group_leader_pid: Option<libc::pid_t>,
+    group_leader_release: Option<OwnedFd>,
+    foreground_handed_off: bool,
+    finished: bool,
+}
+
+impl PipelineJobControl {
+    fn without_terminal() -> Self {
+        Self {
+            terminal: None,
+            shell_process_group: None,
+            process_group: None,
+            group_leader_pid: None,
+            group_leader_release: None,
+            foreground_handed_off: false,
+            finished: false,
+        }
+    }
+
+    fn new() -> Result<Self, RuntimeError> {
+        let terminal = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
+            Ok(terminal) => terminal,
+            Err(error)
+                if matches!(
+                    error.raw_os_error(),
+                    Some(libc::ENXIO)
+                        | Some(libc::ENOENT)
+                        | Some(libc::ENODEV)
+                        | Some(libc::ENOTTY)
+                ) =>
+            {
+                return Ok(Self::without_terminal());
+            }
+            Err(error) => return Err(map_io_error(error)),
+        };
+
+        let shell_process_group = unsafe { libc::getpgrp() };
+        let foreground_process_group = unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) };
+        if foreground_process_group == -1 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ENOTTY) {
+                return Ok(Self::without_terminal());
+            }
+            return Err(map_io_error(error));
+        }
+        if foreground_process_group != shell_process_group {
+            // A background caller must not steal the controlling terminal or
+            // launch children that would immediately stop with SIGTTIN.
+            return Err(RuntimeError::IoFailed);
+        }
+
+        let (group_leader_pid, group_leader_release) =
+            spawn_pipeline_group_leader().map_err(map_io_error)?;
+        let mut control = Self {
+            terminal: Some(terminal),
+            shell_process_group: Some(shell_process_group),
+            process_group: Some(group_leader_pid),
+            group_leader_pid: Some(group_leader_pid),
+            group_leader_release: Some(group_leader_release),
+            // Set before tcsetpgrp so Drop retries restoration even if the
+            // terminal ioctl succeeds but restoring the signal mask fails.
+            foreground_handed_off: true,
+            finished: false,
+        };
+        set_terminal_foreground(
+            control.terminal.as_ref().expect("terminal was initialized"),
+            group_leader_pid,
+        )
+        .map_err(map_io_error)?;
+
+        Ok(control)
+    }
+
+    fn process_group(&self) -> Option<libc::pid_t> {
+        self.process_group
+    }
+
+    fn register_process_group(&mut self, group: libc::pid_t) {
+        if self.process_group.is_none() {
+            self.process_group = Some(group);
+        }
+    }
+
+    fn finish(&mut self) -> Result<(), RuntimeError> {
+        self.group_leader_release.take();
+        if let Some(pid) = self.group_leader_pid {
+            if let Err(error) = reap_pipeline_group_leader(pid) {
+                self.abort();
+                return Err(map_io_error(error));
+            }
+            self.group_leader_pid = None;
+        }
+
+        if self.foreground_handed_off {
+            let terminal = self.terminal.as_ref().ok_or(RuntimeError::IoFailed)?;
+            let shell_group = self.shell_process_group.ok_or(RuntimeError::IoFailed)?;
+            set_terminal_foreground(terminal, shell_group).map_err(map_io_error)?;
+            self.foreground_handed_off = false;
+        }
+
+        self.finished = true;
+        Ok(())
+    }
+
+    fn abort(&mut self) {
+        if let Some(group) = self.process_group {
+            // SAFETY: this group is private to the current pipeline.
+            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+        self.group_leader_release.take();
+        if let Some(pid) = self.group_leader_pid.take() {
+            let _ = reap_pipeline_group_leader(pid);
+        }
+        if self.foreground_handed_off {
+            if let (Some(terminal), Some(shell_group)) =
+                (self.terminal.as_ref(), self.shell_process_group)
+            {
+                if set_terminal_foreground(terminal, shell_group).is_ok() {
+                    self.foreground_handed_off = false;
+                }
+            }
+        }
+        if !self.foreground_handed_off {
+            self.finished = true;
+        }
+    }
+}
+
+impl Drop for PipelineJobControl {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.abort();
+        }
+    }
+}
+
+/// Creates a process-group leader that remains alive until the parent closes
+/// the release pipe. The parent can hand off the terminal to this group before
+/// spawning any command, so no child can read from a background terminal group.
+fn spawn_pipeline_group_leader() -> io::Result<(libc::pid_t, OwnedFd)> {
+    let (read_end, write_end) = create_cloexec_pipe()?;
+    let read_fd = read_end.as_raw_fd();
+
+    let mut descriptor_limit = std::mem::MaybeUninit::<libc::rlimit>::zeroed();
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, descriptor_limit.as_mut_ptr()) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    let descriptor_limit = unsafe { descriptor_limit.assume_init() };
+    let max_fd = descriptor_limit.rlim_cur.min(1_048_576 as libc::rlim_t) as libc::c_int;
+
+    // SAFETY: the fork child uses only async-signal-safe libc calls before _exit.
+    let pid = unsafe { libc::fork() };
+    if pid == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    if pid == 0 {
+        unsafe {
+            if libc::setpgid(0, 0) == -1 {
+                libc::_exit(127);
+            }
+            close_pipeline_group_leader_descriptors(read_fd, max_fd);
+            let mut byte = 0u8;
+            loop {
+                let result = libc::read(
+                    read_fd,
+                    (&mut byte as *mut u8).cast::<libc::c_void>(),
+                    1,
+                );
+                if result <= 0 {
+                    break;
+                }
+            }
+            libc::_exit(0);
+        }
+    }
+
+    drop(read_end);
+    if unsafe { libc::setpgid(pid, pid) } == -1 {
+        let error = io::Error::last_os_error();
+        if unsafe { libc::getpgid(pid) } != pid {
+            let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+            let _ = reap_pipeline_group_leader(pid);
+            return Err(error);
+        }
+    }
+
+    Ok((pid, write_end))
+}
+
+/// Closes every inherited descriptor except the helper's release-pipe reader.
+unsafe fn close_pipeline_group_leader_descriptors(keep_fd: libc::c_int, max_fd: libc::c_int) {
+    let lower_result = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            0u32,
+            keep_fd.saturating_sub(1) as u32,
+            0u32,
+        )
+    };
+    let upper_result = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            keep_fd.saturating_add(1) as u32,
+            u32::MAX,
+            0u32,
+        )
+    };
+    if lower_result == -1 || upper_result == -1 {
+        for descriptor in 0..max_fd {
+            if descriptor != keep_fd {
+                unsafe {
+                    libc::close(descriptor);
+                }
+            }
+        }
+    }
+}
+
+fn reap_pipeline_group_leader(pid: libc::pid_t) -> io::Result<()> {
+    let mut status = 0;
+    loop {
+        let result = unsafe { libc::waitpid(pid, &mut status, 0) };
+        if result == pid {
+            return Ok(());
+        }
+        if result == -1 {
+            let error = io::Error::last_os_error();
+            match error.raw_os_error() {
+                Some(libc::EINTR) => continue,
+                Some(libc::ECHILD) => return Ok(()),
+                _ => return Err(error),
+            }
+        }
+    }
+}
+
+fn set_terminal_foreground(terminal: &File, process_group: libc::pid_t) -> io::Result<()> {
+    let mut blocked_signals: libc::sigset_t = unsafe { std::mem::zeroed() };
+    let mut previous_signals: libc::sigset_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sigemptyset(&mut blocked_signals) } == -1
+        || unsafe { libc::sigaddset(&mut blocked_signals, libc::SIGTTOU) } == -1
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mask_result = unsafe {
+        libc::pthread_sigmask(
+            libc::SIG_BLOCK,
+            &blocked_signals,
+            &mut previous_signals,
+        )
+    };
+    if mask_result != 0 {
+        return Err(io::Error::from_raw_os_error(mask_result));
+    }
+
+    let terminal_result =
+        unsafe { libc::tcsetpgrp(terminal.as_raw_fd(), process_group) };
+    let terminal_error = if terminal_result == -1 {
+        Some(io::Error::last_os_error())
+    } else {
+        None
+    };
+    let restore_mask_result = unsafe {
+        libc::pthread_sigmask(
+            libc::SIG_SETMASK,
+            &previous_signals,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if let Some(error) = terminal_error {
+        return Err(error);
+    }
+    if restore_mask_result != 0 {
+        return Err(io::Error::from_raw_os_error(restore_mask_result));
+    }
+    Ok(())
+}
+
+/// External commands must not inherit ignored job-control/interrupt signals or
+/// a blocked signal mask from the application process.
+fn reset_child_signal_state() -> io::Result<()> {
+    let mut empty_mask: libc::sigset_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sigemptyset(&mut empty_mask) } == -1
+        || unsafe { libc::sigprocmask(libc::SIG_SETMASK, &empty_mask, std::ptr::null_mut()) } == -1
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut default_action: libc::sigaction = unsafe { std::mem::zeroed() };
+    default_action.sa_sigaction = libc::SIG_DFL;
+    default_action.sa_flags = 0;
+    if unsafe { libc::sigemptyset(&mut default_action.sa_mask) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+
+    for signal in [
+        libc::SIGINT,
+        libc::SIGQUIT,
+        libc::SIGTSTP,
+        libc::SIGTTIN,
+        libc::SIGTTOU,
+        libc::SIGPIPE,
+    ] {
+        if unsafe { libc::sigaction(signal, &default_action, std::ptr::null_mut()) } == -1 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+
+    Ok(())
 }
 
 fn open_pipeline_redirection(

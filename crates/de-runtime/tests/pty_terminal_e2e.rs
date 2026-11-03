@@ -1,6 +1,6 @@
 use de_runtime::linux::runtime::LinuxRuntime;
 use de_runtime::{
-    IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
+    IoAttachment, PipelineRedirection, PipelineStage, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, PtyConfig, ReadOutcome,
     RuntimeError, RuntimeProcess, RuntimeService, Signal, TerminalSize, TerminationMode,
     WriteOutcome,
 };
@@ -237,3 +237,173 @@ fn pty_signal_exit_and_drop_cleanup_do_not_leak_children() {
         .expect("execute kill -0 probe");
     assert!(!status.success(), "dropped PTY child PID is still alive");
 }
+
+fn write_pty_all(process: &mut dyn RuntimeProcess, input: &[u8]) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut offset = 0usize;
+    while offset < input.len() {
+        match process
+            .write_stdin(&input[offset..])
+            .expect("write PTY input")
+        {
+            WriteOutcome::Written(count) => offset += count.get(),
+            WriteOutcome::WouldBlock => thread::sleep(Duration::from_millis(1)),
+        }
+        assert!(Instant::now() < deadline, "PTY input write timed out");
+    }
+}
+
+fn run_foreground_pipeline_child(mode: &str) {
+    if std::env::var("DE_RUNTIME_PIPELINE_TTY_CHILD").ok().as_deref() != Some(mode) {
+        return;
+    }
+
+    let shell_group = unsafe { libc::getpgrp() };
+    assert_eq!(unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) }, shell_group);
+
+    let mut terminal = std::mem::MaybeUninit::<libc::termios>::zeroed();
+    assert_eq!(
+        unsafe { libc::tcgetattr(libc::STDIN_FILENO, terminal.as_mut_ptr()) },
+        0
+    );
+    let mut terminal = unsafe { terminal.assume_init() };
+    terminal.c_lflag &= !libc::ECHO;
+    assert_eq!(
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &terminal) },
+        0
+    );
+
+    if mode == "failure" {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let missing = std::env::temp_dir().join(format!(
+            "devil-eye-missing-pipeline-input-{}-{nonce}",
+            std::process::id()
+        ));
+        let stage = PipelineStage::command(ProgramSpec::new("/bin/cat").expect("pipeline stage"))
+            .with_redirection(PipelineRedirection::Input(missing));
+        assert!(matches!(
+            LinuxRuntime.execute_pipeline(&[stage]),
+            Err(RuntimeError::IoFailed)
+        ));
+        assert_eq!(unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) }, shell_group);
+        println!("PIPELINE_FAILURE_RESTORED");
+        std::io::stdout().flush().expect("flush child marker");
+        return;
+    }
+
+    let first = ProgramSpec::new("/bin/sh")
+        .expect("pipeline stage")
+        .with_arg("-c")
+        .with_arg("printf PIPELINE_READY; exec /bin/cat");
+    let second = ProgramSpec::new("/bin/cat").expect("pipeline stage");
+    let result = LinuxRuntime
+        .execute_pipeline(&[
+            PipelineStage::command(first),
+            PipelineStage::command(second),
+        ])
+        .expect("execute foreground PTY pipeline");
+
+    assert_eq!(unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) }, shell_group);
+    if mode == "success" {
+        assert_eq!(result.exit_code, 0);
+        println!("PIPELINE_SUCCESS_RESTORED");
+    } else {
+        assert_eq!(result.exit_code, 130);
+        println!("PIPELINE_INTERRUPT_RESTORED");
+    }
+    std::io::stdout().flush().expect("flush child marker");
+}
+
+#[test]
+fn pipeline_foreground_tty_success_child() {
+    run_foreground_pipeline_child("success");
+}
+
+#[test]
+fn pipeline_foreground_tty_interrupt_child() {
+    run_foreground_pipeline_child("interrupt");
+}
+
+#[test]
+fn pipeline_foreground_tty_failure_child() {
+    run_foreground_pipeline_child("failure");
+}
+
+fn spawn_foreground_pipeline_test(mode: &str) -> Box<dyn RuntimeProcess> {
+    let test_name = match mode {
+        "success" => "pipeline_foreground_tty_success_child",
+        "interrupt" => "pipeline_foreground_tty_interrupt_child",
+        "failure" => "pipeline_foreground_tty_failure_child",
+        _ => panic!("unsupported pipeline test mode"),
+    };
+    let program = ProgramSpec::new(std::env::current_exe().expect("test executable"))
+        .expect("test helper program")
+        .with_arg("--exact")
+        .with_arg(test_name)
+        .with_arg("--nocapture")
+        .with_env("DE_RUNTIME_PIPELINE_TTY_CHILD", mode);
+    spawn_pty(program)
+}
+
+#[test]
+fn foreground_pipeline_reads_inherited_terminal_and_restores_shell_group() {
+    let mut process = spawn_foreground_pipeline_test("success");
+    let mut output =
+        read_until_marker(process.as_mut(), b"PIPELINE_READY").expect("pipeline became foreground");
+    write_pty_all(process.as_mut(), b"pipeline-tty-input\n\x04");
+    let (remaining, status) =
+        drain_until_exit(process.as_mut()).expect("foreground pipeline completed");
+    output.extend_from_slice(&remaining);
+
+    assert_eq!(status, ProcessExitStatus::Exited(0));
+    assert!(
+        output
+            .windows(b"pipeline-tty-input".len())
+            .any(|window| window == b"pipeline-tty-input"),
+        "pipeline did not forward terminal input: {output:?}"
+    );
+    assert!(
+        output
+            .windows(b"PIPELINE_SUCCESS_RESTORED".len())
+            .any(|window| window == b"PIPELINE_SUCCESS_RESTORED"),
+        "shell foreground process group was not restored: {output:?}"
+    );
+}
+
+#[test]
+fn foreground_pipeline_restores_shell_group_after_terminal_interrupt() {
+    let mut process = spawn_foreground_pipeline_test("interrupt");
+    let mut output =
+        read_until_marker(process.as_mut(), b"PIPELINE_READY").expect("pipeline became foreground");
+    write_pty_all(process.as_mut(), b"\x03");
+    let (remaining, status) =
+        drain_until_exit(process.as_mut()).expect("interrupted pipeline completed");
+    output.extend_from_slice(&remaining);
+
+    assert_eq!(status, ProcessExitStatus::Exited(0));
+    assert!(
+        output
+            .windows(b"PIPELINE_INTERRUPT_RESTORED".len())
+            .any(|window| window == b"PIPELINE_INTERRUPT_RESTORED"),
+        "shell foreground process group was not restored after SIGINT: {output:?}"
+    );
+}
+
+#[test]
+fn foreground_pipeline_restores_shell_group_after_setup_failure() {
+    let mut process = spawn_foreground_pipeline_test("failure");
+    let (output, status) =
+        drain_until_exit(process.as_mut()).expect("failed pipeline helper completed");
+
+    assert_eq!(status, ProcessExitStatus::Exited(0));
+    assert!(
+        output
+            .windows(b"PIPELINE_FAILURE_RESTORED".len())
+            .any(|window| window == b"PIPELINE_FAILURE_RESTORED"),
+        "shell foreground process group was not restored after setup failure: {output:?}"
+    );
+}
+
