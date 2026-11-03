@@ -954,11 +954,39 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
         }
 
         if (assignment_count == node->word_count && node->word_count != 0U) {
-            de_shell_set_diagnostic(
-                diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
-                (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, node->source_offset);
-            status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
-            goto cleanup;
+            if (stage_count != 1U || node->redirection_count == 0U) {
+                de_shell_set_diagnostic(
+                    diagnostic, DE_SHELL_EXECUTION_STAGE_PIPELINE,
+                    (int)DE_SHELL_STATUS_UNSUPPORTED_OPERATION, node->source_offset);
+                status = DE_SHELL_STATUS_UNSUPPORTED_OPERATION;
+                goto cleanup;
+            }
+
+            for (word_index = 0U; word_index < assignment_count; word_index += 1U) {
+                char *equals = strchr((char *)current->argv[word_index], '=');
+                de_shell_status_t assignment_status;
+
+                if (equals == NULL) {
+                    status = DE_SHELL_STATUS_INTERNAL_ERROR;
+                    goto cleanup;
+                }
+                *equals = '\\0';
+                assignment_status = de_shell_set_variable(
+                    shell,
+                    current->argv[word_index],
+                    strlen(current->argv[word_index]),
+                    equals + 1);
+                if (assignment_status != DE_SHELL_STATUS_OK) {
+                    de_shell_set_diagnostic(
+                        diagnostic, DE_SHELL_EXECUTION_STAGE_EXPAND,
+                        (int)assignment_status,
+                        ast->words[node->first_word + word_index].source_offset);
+                    status = assignment_status;
+                    goto cleanup;
+                }
+            }
+            command_argc = 0U;
+            assignment_count = 0U;
         }
 
         for (word_index = 0U; word_index < assignment_count; word_index += 1U) {
