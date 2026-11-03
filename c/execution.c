@@ -970,7 +970,7 @@ static de_shell_status_t de_shell_execute_pipeline_nodes(
                     status = DE_SHELL_STATUS_INTERNAL_ERROR;
                     goto cleanup;
                 }
-                *equals = '\\0';
+                *equals = '\0';
                 assignment_status = de_shell_set_variable(
                     shell,
                     current->argv[word_index],
