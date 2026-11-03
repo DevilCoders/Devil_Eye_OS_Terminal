@@ -16,9 +16,10 @@
 This section records a dated baseline, not a replacement for live GitHub state.
 
 - Master baseline: `e8241c1e16b537b992ed3114b63a3e6712ef1beb`.
-- PR #151 is an open Draft for DE-012-03 (#79). Its documented head is `dc9b10f1587a4bdaf9cd202a2ecc4342a06a039e`; pipelines, redirections, and interactive foreground job control remain unmerged and must not be described as master functionality.
+- PR #151 is an open Draft for DE-012-03 (#79). Its documented head is `184ea73f96bcff96a856664332478f416acf7f33`; pipelines, redirections, and interactive foreground job control remain unmerged and must not be described as master functionality.
 - The current open backlog inventory is 37 Issues: 24 parent Epics (#1–#24) and 13 task Issues (#55, #56, #62, #67–#70, #74, #78–#82). Query [live open Issues](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues?q=is%3Aissue+is%3Aopen) for current state; this dated count will become stale.
 - GUI implementation task #55 remains gated on the user's GUI/windowing toolkit decision. Persistence task #62 remains gated on the user's storage format/codec decision.
+- Plugin capability design is documented in [PR #153](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/153); execution remains disabled pending real isolation, package verification, quotas, and broker implementation.
 - Documentation reconciliation is active under [DE-022 (#22)](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues/22); [PR #152](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/152) refreshes README and the build guide.
 - Production 1.0 is not complete. Release qualification, artifact integrity, feature work, and outstanding issue acceptance criteria remain open.
 
