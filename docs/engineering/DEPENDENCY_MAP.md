@@ -90,7 +90,7 @@ DE-023-02 #78 + DE-024-01 #81 ─> DE-024-02 #82
 - **#55 (GUI window/surface):** do not begin implementation until the user records the GUI/windowing toolkit decision. This is an additional project-level gate beyond the issue's prerequisite tasks.
 - **#62 (configuration persistence):** do not begin implementation until the user records the storage format/codec decision.
 - Tasks depending on #55 or #62 remain blocked by those gates even if their issue labels have not yet been reconciled. Do not relabel them Ready or start implementation until the decision is recorded.
-- #67 is independent of the GUI and persistence decisions. Its issue prerequisites #63 and #30 are closed; verify the branch/PR inventory before starting it.
+- #67 (plugin capability contract) is implemented and merged in PR #153; its issue is marked `status:done`. #68 is a separate runtime/isolation task and remains blocked until the Linux sandbox mechanism, package-signing/trust policy, and measurable quota policy are selected and recorded.
 - #74 prerequisites #73 and #38 are closed. #78 prerequisites #77 and #38 are closed, but #82 remains downstream of both #78 and #81.
 - #79 implementation is under PR #151; keep the issue open until merge and post-merge verification.
 
