@@ -15,12 +15,12 @@
 
 This section records a dated baseline, not a replacement for live GitHub state.
 
-- Master baseline: `e8241c1e16b537b992ed3114b63a3e6712ef1beb`.
+- Master baseline: `dbaa9596404e6e8258b8578f87879edf0b916cc0`.
 - PR #151 is an open Draft for DE-012-03 (#79). Its documented head is `184ea73f96bcff96a856664332478f416acf7f33`; pipelines, redirections, and interactive foreground job control remain unmerged and must not be described as master functionality.
-- The current open backlog inventory is 37 Issues: 24 parent Epics (#1–#24) and 13 task Issues (#55, #56, #62, #67–#70, #74, #78–#82). Query [live open Issues](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues?q=is%3Aissue+is%3Aopen) for current state; this dated count will become stale.
+- The current open backlog inventory is 37 Issues: 24 parent Epics (#1–#24) and 13 task Issues (#55, #56, #62, #67–#70, #74, #78–#82). Issue #67 is implementation-complete and marked `status:done`; it remains open pending the documentation reconciliation PR #154's close reference. Query [live open Issues](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues?q=is%3Aissue+is%3Aopen) for current state; this dated count will become stale.
 - GUI implementation task #55 remains gated on the user's GUI/windowing toolkit decision. Persistence task #62 remains gated on the user's storage format/codec decision.
-- Plugin capability design is documented in [PR #153](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/153); execution remains disabled pending real isolation, package verification, quotas, and broker implementation.
-- Documentation reconciliation is active under [DE-022 (#22)](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues/22); [PR #152](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/152) refreshes README and the build guide.
+- Plugin capability design is merged in [PR #153](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/153); Issue #67 is marked done. Issue #68 is now ready to prototype candidate Linux isolation models. Actual plugin execution remains disabled pending validated isolation, package verification, quotas, and broker implementation.
+- Documentation reconciliation is active under [DE-022 (#22)](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/issues/22); [PR #152](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/152) is merged and refreshed README/build guidance.
 - Production 1.0 is not complete. Release qualification, artifact integrity, feature work, and outstanding issue acceptance criteria remain open.
 
 ## Epics

@@ -33,7 +33,11 @@ This directory contains the system architecture baseline, component contracts, a
 - [DE-Shell Command Registry](de-shell-command-registry.md) — per-shell command metadata, registration/collision policy, lookup, built-in dispatch, and ownership.
 - [DE-Shell Execution Engine](de-shell-execution.md) — bounded AST evaluation, quote removal, explicit external-executor callback, environment/working-directory forwarding, exit propagation, and unsupported alpha nodes.
 
-## Plugin architecture\n\n- [Plugin Capability and Permission Model](plugin-capabilities.md) — deny-by-default capability catalog, digest-bound consent, versioned host API, resource quotas, isolation gates, and revocation semantics. This is a design contract; plugin execution remains disabled.\n\n## Runtime and application lifecycle
+## Plugin architecture
+
+- [Plugin Capability and Permission Model](plugin-capabilities.md) — deny-by-default capability catalog, digest-bound consent, versioned host API, resource quotas, isolation gates, and revocation semantics. This is a design contract; plugin execution remains disabled.
+
+## Runtime and application lifecycle
 
 - [DE-Runtime Process Interface](runtime-interface.md) — process launch configuration, stdio/PTY attachment, signals, exit status, capabilities, and ownership.
 - [Linux Process Runtime Adapter](linux-runtime.md) — concrete Linux stdio/PTY process spawning, nonblocking I/O, process groups, signals, EOF semantics, and child reaping.

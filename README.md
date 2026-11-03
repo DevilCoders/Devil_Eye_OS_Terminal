@@ -30,7 +30,7 @@ Implementation claims are limited to code and validation present on the checked-
 
 ## In progress — not yet part of master
 
-[PR #151](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/151) implements DE-012-03: typed pipeline plans, stdin/stdout/stderr redirections, Linux pipeline execution, and foreground terminal job control. Its latest documented head is dc9b10f1587a4bdaf9cd202a2ecc4342a06a039e; the PR remains Draft pending its review gate. Do not treat these features as merged or available in the master build until the PR is merged.
+[PR #151](https://github.com/DevilCoders/Devil_Eye_OS_Terminal/pull/151) implements DE-012-03: typed pipeline plans, stdin/stdout/stderr redirections, Linux pipeline execution, and foreground terminal job control. Its latest documented head is 184ea73f96bcff96a856664332478f416acf7f33; the PR remains Draft pending its review gate. Do not treat these features as merged or available in the master build until the PR is merged.
 
 ## Architecture constraints
 
