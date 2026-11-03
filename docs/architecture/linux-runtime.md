@@ -31,6 +31,26 @@ resize_pty applies the terminal dimensions to the PTY. close_stdin sends the ter
 
 On Linux, a PTY master may report EIO after the slave side closes; the adapter maps that condition to stream EOF.
 
+## Foreground pipeline job control
+
+When a controlling terminal is available, a foreground pipeline receives a private
+process group before any command stage is spawned. The runtime creates a short-lived
+group leader, transfers the terminal foreground to that group, and only then launches
+the pipeline stages into it. This ordering prevents a stage that inherits terminal
+stdin from racing the foreground handoff and stopping with SIGTTIN.
+
+The runtime waits for all direct stages, releases and reaps the group leader, then
+restores the original shell process group as the terminal foreground. SIGTTOU is
+blocked around tcsetpgrp so restoration remains valid after the shell group becomes
+background. Error and cancellation paths kill the private group, reap owned children,
+and attempt the same terminal restoration. External stages receive a clean signal
+mask and default interrupt/job-control dispositions.
+
+If the process has no controlling terminal, the runtime retains its private process
+group and cleanup behavior without attempting a terminal handoff. A caller that has
+a controlling terminal but is not its current foreground process group fails closed
+rather than launching a pipeline that could stop while reading terminal input.
+
 ## Failure and ownership rules
 
 - The complete ProcessSpawnRequest is validated before OS resources are acquired.

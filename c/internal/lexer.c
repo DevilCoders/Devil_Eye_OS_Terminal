@@ -251,8 +251,21 @@ de_shell_lex_status_t de_shell_lex(
             continue;
         }
 
-        operator_size = de_shell_operator_length(
-            source, source_length, offset, &operator_type);
+        if (source[offset] == (unsigned char)'2'
+            && offset + 1U < source_length
+            && source[offset + 1U] == (unsigned char)'>') {
+            if (offset + 2U < source_length
+                && source[offset + 2U] == (unsigned char)'>') {
+                operator_type = DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND;
+                operator_size = 3U;
+            } else {
+                operator_type = DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT;
+                operator_size = 2U;
+            }
+        } else {
+            operator_size = de_shell_operator_length(
+                source, source_length, offset, &operator_type);
+        }
 
         if (operator_size != 0U) {
             const de_shell_lex_status_t status = de_shell_emit_token(

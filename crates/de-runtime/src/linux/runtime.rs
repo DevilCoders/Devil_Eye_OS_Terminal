@@ -1,17 +1,18 @@
 //! Linux implementation of the platform-neutral process runtime contracts.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::{
-    EnvironmentInheritance, IoAttachment, PlatformCapabilities, ProcessExitStatus,
-    ProcessSpawnRequest, ProgramSpec, ProgramSpecError, ReadOutcome, RuntimeCapability,
-    RuntimeError, RuntimeProcess, RuntimeService, Signal, StdioConfig, StreamAttachment,
-    TerminalSize, TerminationMode, WriteOutcome,
+    EnvironmentInheritance, IoAttachment, PipelineExecutionResult, PipelineRedirection,
+    PipelineStage, PlatformCapabilities, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec,
+    ProgramSpecError, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
+    Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
 };
 
 use super::process::{map_exit_status, reap_detached_child, resolve_program, LinuxPtyChild};
@@ -24,6 +25,7 @@ impl RuntimeService for LinuxRuntime {
     fn capabilities(&self) -> PlatformCapabilities {
         PlatformCapabilities::new([
             RuntimeCapability::StdioPipes,
+            RuntimeCapability::PipelineExecution,
             RuntimeCapability::PseudoTerminal,
             RuntimeCapability::TerminalResize,
             RuntimeCapability::Signals,
@@ -32,6 +34,13 @@ impl RuntimeService for LinuxRuntime {
             RuntimeCapability::WorkingDirectory,
             RuntimeCapability::NonBlockingIo,
         ])
+    }
+
+    fn execute_pipeline(
+        &self,
+        stages: &[PipelineStage],
+    ) -> Result<PipelineExecutionResult, RuntimeError> {
+        LinuxRuntime::execute_pipeline(self, stages)
     }
 
     fn spawn(&self, request: ProcessSpawnRequest) -> Result<Box<dyn RuntimeProcess>, RuntimeError> {
@@ -75,6 +84,668 @@ impl RuntimeService for LinuxRuntime {
                 Ok(Box::new(LinuxRuntimeProcess::Stdio(process)))
             }
         }
+    }
+}
+
+impl LinuxRuntime {
+    /// Executes a bounded foreground pipeline with runtime-owned pipes,
+    /// redirection files, process-group cancellation, and deterministic reaping.
+    ///
+    /// Every executable stage is spawned before any child is waited on.
+    /// Empty-command stages spawn no child; their redirection side effects and
+    /// pipe-end closure are completed during setup. Explicit redirections are
+    /// applied in source order and override the matching pipeline endpoint. A
+    /// single redirection-only stage performs file operations without
+    /// changing the application's standard streams.
+    pub fn execute_pipeline(
+        &self,
+        stages: &[PipelineStage],
+    ) -> Result<PipelineExecutionResult, RuntimeError> {
+        const MAX_PIPELINE_STAGES: usize = 64usize;
+        const MAX_PIPELINE_REDIRECTIONS: usize = 1_024usize;
+
+        if stages.is_empty() || stages.len() > MAX_PIPELINE_STAGES {
+            return Err(RuntimeError::ResourceLimitExceeded);
+        }
+        let redirection_count = stages
+            .iter()
+            .try_fold(0usize, |count, stage| {
+                count.checked_add(stage.redirections.len())
+            })
+            .ok_or(RuntimeError::ResourceLimitExceeded)?;
+        if redirection_count > MAX_PIPELINE_REDIRECTIONS {
+            return Err(RuntimeError::ResourceLimitExceeded);
+        }
+        if stages
+            .iter()
+            .any(|stage| stage.empty_command && stage.program.is_some())
+        {
+            return Err(RuntimeError::InvalidArgument);
+        }
+        if stages.len() > 1usize
+            && stages
+                .iter()
+                .any(|stage| stage.program.is_none() && !stage.empty_command)
+        {
+            return Err(RuntimeError::InvalidArgument);
+        }
+        if stages.len() == 1usize && stages[0].program.is_none() && !stages[0].empty_command {
+            if stages[0].redirections.is_empty() {
+                return Err(RuntimeError::InvalidArgument);
+            }
+            for redirection in &stages[0].redirections {
+                let _file = open_pipeline_redirection(redirection, None)?;
+            }
+            return Ok(PipelineExecutionResult {
+                exit_code: 0,
+                stage_statuses: vec![ProcessExitStatus::Exited(0)],
+            });
+        }
+        if stages.len() == 1usize && stages[0].empty_command {
+            for redirection in &stages[0].redirections {
+                let _file = open_pipeline_redirection(redirection, None)?;
+            }
+            return Ok(PipelineExecutionResult {
+                exit_code: 127,
+                stage_statuses: vec![ProcessExitStatus::Exited(127)],
+            });
+        }
+
+        let mut resolved = Vec::with_capacity(stages.len());
+        for stage in stages {
+            if stage.empty_command {
+                resolved.push(None);
+            } else {
+                let program = stage
+                    .program
+                    .as_ref()
+                    .ok_or(RuntimeError::InvalidArgument)?;
+                program.validate().map_err(RuntimeError::InvalidProgram)?;
+                resolved.push(Some(
+                    resolve_program(program).map_err(RuntimeError::InvalidProgram)?,
+                ));
+            }
+            for redirection in &stage.redirections {
+                let path = match redirection {
+                    PipelineRedirection::Input(path)
+                    | PipelineRedirection::Output(path)
+                    | PipelineRedirection::Append(path)
+                    | PipelineRedirection::ErrorOutput(path)
+                    | PipelineRedirection::ErrorAppend(path) => path,
+                };
+                if path.as_os_str().as_encoded_bytes().contains(&0u8) {
+                    return Err(RuntimeError::InvalidArgument);
+                }
+            }
+        }
+
+        let has_executable_stage = stages.iter().any(|stage| !stage.empty_command);
+        let mut job_control = if has_executable_stage {
+            PipelineJobControl::new()?
+        } else {
+            PipelineJobControl::without_terminal()
+        };
+        let mut process_group = job_control.process_group();
+
+        let mut prepared_redirections: Vec<[Option<File>; 3]> = Vec::with_capacity(stages.len());
+        for (index, stage) in stages.iter().enumerate() {
+            let mut stage_redirections: [Option<File>; 3] = [None, None, None];
+            for redirection in &stage.redirections {
+                let stream = match redirection {
+                    PipelineRedirection::Input(_) => 0usize,
+                    PipelineRedirection::Output(_) | PipelineRedirection::Append(_) => 1usize,
+                    PipelineRedirection::ErrorOutput(_) | PipelineRedirection::ErrorAppend(_) => {
+                        2usize
+                    }
+                };
+                // Replacing an earlier redirection closes its descriptor
+                // immediately while retaining its create/truncate side effect.
+                stage_redirections[stream] = Some(open_pipeline_redirection(
+                    redirection,
+                    resolved[index]
+                        .as_ref()
+                        .and_then(|program| program.working_directory.as_deref()),
+                )?);
+            }
+            prepared_redirections.push(stage_redirections);
+        }
+
+        let mut pipes: Vec<(Option<OwnedFd>, Option<OwnedFd>)> =
+            Vec::with_capacity(stages.len().saturating_sub(1usize));
+        for _ in 0..stages.len().saturating_sub(1usize) {
+            let (read_end, write_end) = create_cloexec_pipe().map_err(map_io_error)?;
+            pipes.push((Some(read_end), Some(write_end)));
+        }
+
+        let mut children: Vec<Child> = Vec::with_capacity(stages.len());
+        let mut child_stage_indices = Vec::with_capacity(stages.len());
+        let mut stage_statuses: Vec<Option<ProcessExitStatus>> =
+            std::iter::repeat_with(|| None).take(stages.len()).collect();
+
+        for (index, stage) in stages.iter().enumerate() {
+            if stage.empty_command {
+                if index > 0usize {
+                    match pipes[index - 1usize].0.take() {
+                        Some(descriptor) => drop(descriptor),
+                        None => {
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::IoFailed);
+                        }
+                    }
+                }
+                if index + 1usize < stages.len() {
+                    match pipes[index].1.take() {
+                        Some(descriptor) => drop(descriptor),
+                        None => {
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::IoFailed);
+                        }
+                    }
+                }
+                for redirection in &mut prepared_redirections[index] {
+                    drop(redirection.take());
+                }
+                stage_statuses[index] = Some(ProcessExitStatus::Exited(127));
+                continue;
+            }
+
+            let program = stage
+                .program
+                .as_ref()
+                .ok_or(RuntimeError::InvalidArgument)?;
+            let resolved_program = resolved[index]
+                .as_ref()
+                .ok_or(RuntimeError::InvalidArgument)?;
+            let mut stdin = if index == 0usize {
+                Stdio::inherit()
+            } else {
+                let read_end = match pipes[index - 1usize].0.take() {
+                    Some(descriptor) => descriptor,
+                    None => {
+                        terminate_pipeline_children(&mut children, process_group);
+                        return Err(RuntimeError::IoFailed);
+                    }
+                };
+                Stdio::from(read_end)
+            };
+            let mut stdout = if index + 1usize == stages.len() {
+                Stdio::inherit()
+            } else {
+                let write_end = match pipes[index].1.take() {
+                    Some(descriptor) => descriptor,
+                    None => {
+                        terminate_pipeline_children(&mut children, process_group);
+                        return Err(RuntimeError::IoFailed);
+                    }
+                };
+                Stdio::from(write_end)
+            };
+            let mut stderr = Stdio::inherit();
+
+            if let Some(file) = prepared_redirections[index][0].take() {
+                stdin = Stdio::from(file);
+            }
+            if let Some(file) = prepared_redirections[index][1].take() {
+                stdout = Stdio::from(file);
+            }
+            if let Some(file) = prepared_redirections[index][2].take() {
+                stderr = Stdio::from(file);
+            }
+
+            let mut command = Command::new(&resolved_program.executable);
+            command.arg0(program.program());
+            command.args(program.args());
+            if program.environment_inheritance() == EnvironmentInheritance::Clear {
+                command.env_clear();
+            }
+            command.envs(
+                program
+                    .environment()
+                    .iter()
+                    .map(|(key, value)| (key, value)),
+            );
+            if let Some(directory) = resolved_program.working_directory.as_deref() {
+                command.current_dir(directory);
+            }
+            command.stdin(stdin).stdout(stdout).stderr(stderr);
+
+            let requested_group = process_group;
+            // SAFETY: setpgid is async-signal-safe. The first stage creates a
+            // private group; subsequent stages join that exact group.
+            unsafe {
+                command.pre_exec(move || {
+                    let group = requested_group.unwrap_or(0);
+                    if libc::setpgid(0, group) == -1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    reset_child_signal_state()
+                });
+            }
+
+            match command.spawn() {
+                Ok(child) => {
+                    if process_group.is_none() {
+                        process_group = i32::try_from(child.id()).ok();
+                        let Some(group) = process_group else {
+                            children.push(child);
+                            child_stage_indices.push(index);
+                            terminate_pipeline_children(&mut children, process_group);
+                            return Err(RuntimeError::ResourceLimitExceeded);
+                        };
+                        job_control.register_process_group(group);
+                    }
+                    children.push(child);
+                    child_stage_indices.push(index);
+                }
+                Err(error) => {
+                    terminate_pipeline_children(&mut children, process_group);
+                    return Err(map_spawn_error(error));
+                }
+            }
+        }
+
+        // All unused parent-side pipe endpoints are closed before waiting.
+        drop(pipes);
+
+        let mut exit_code = 0;
+        for child_index in 0..children.len() {
+            let stage_index = child_stage_indices[child_index];
+            match children[child_index].wait() {
+                Ok(status) => {
+                    let stage_exit_code = status.code().unwrap_or_else(|| {
+                        use std::os::unix::process::ExitStatusExt;
+                        128 + status.signal().unwrap_or(0)
+                    });
+                    if stage_index + 1usize == stages.len() {
+                        exit_code = stage_exit_code;
+                    }
+                    stage_statuses[stage_index] = Some(map_exit_status(status));
+                }
+                Err(_error) => {
+                    terminate_pipeline_children(&mut children, process_group);
+                    return Err(RuntimeError::WaitFailed);
+                }
+            }
+        }
+        if stages[stages.len() - 1usize].empty_command {
+            exit_code = 127;
+        }
+        let stage_statuses = stage_statuses
+            .into_iter()
+            .map(|status| status.ok_or(RuntimeError::WaitFailed))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        job_control.finish()?;
+
+        Ok(PipelineExecutionResult {
+            exit_code,
+            stage_statuses,
+        })
+    }
+}
+
+/// Owns the process group and controlling-terminal foreground handoff for one
+/// synchronous pipeline. A short-lived group leader reserves the group before
+/// any executable stage can run, eliminating the SIGTTIN launch race.
+struct PipelineJobControl {
+    terminal: Option<File>,
+    shell_process_group: Option<libc::pid_t>,
+    process_group: Option<libc::pid_t>,
+    group_leader_pid: Option<libc::pid_t>,
+    group_leader_release: Option<OwnedFd>,
+    foreground_handed_off: bool,
+    finished: bool,
+}
+
+impl PipelineJobControl {
+    fn without_terminal() -> Self {
+        Self {
+            terminal: None,
+            shell_process_group: None,
+            process_group: None,
+            group_leader_pid: None,
+            group_leader_release: None,
+            foreground_handed_off: false,
+            finished: false,
+        }
+    }
+
+    fn new() -> Result<Self, RuntimeError> {
+        let terminal = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
+            Ok(terminal) => terminal,
+            Err(error)
+                if matches!(
+                    error.raw_os_error(),
+                    Some(libc::ENXIO)
+                        | Some(libc::ENOENT)
+                        | Some(libc::ENODEV)
+                        | Some(libc::ENOTTY)
+                ) =>
+            {
+                return Ok(Self::without_terminal());
+            }
+            Err(error) => return Err(map_io_error(error)),
+        };
+
+        let shell_process_group = unsafe { libc::getpgrp() };
+        let foreground_process_group = unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) };
+        if foreground_process_group == -1 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ENOTTY) {
+                return Ok(Self::without_terminal());
+            }
+            return Err(map_io_error(error));
+        }
+        if foreground_process_group != shell_process_group {
+            // A background caller must not steal the controlling terminal or
+            // launch children that would immediately stop with SIGTTIN.
+            return Err(RuntimeError::IoFailed);
+        }
+
+        let (group_leader_pid, group_leader_release) =
+            spawn_pipeline_group_leader().map_err(map_io_error)?;
+        let control = Self {
+            terminal: Some(terminal),
+            shell_process_group: Some(shell_process_group),
+            process_group: Some(group_leader_pid),
+            group_leader_pid: Some(group_leader_pid),
+            group_leader_release: Some(group_leader_release),
+            // Set before tcsetpgrp so Drop retries restoration even if the
+            // terminal ioctl succeeds but restoring the signal mask fails.
+            foreground_handed_off: true,
+            finished: false,
+        };
+        set_terminal_foreground(
+            control.terminal.as_ref().expect("terminal was initialized"),
+            group_leader_pid,
+        )
+        .map_err(map_io_error)?;
+
+        Ok(control)
+    }
+
+    fn process_group(&self) -> Option<libc::pid_t> {
+        self.process_group
+    }
+
+    fn register_process_group(&mut self, group: libc::pid_t) {
+        if self.process_group.is_none() {
+            self.process_group = Some(group);
+        }
+    }
+
+    fn finish(&mut self) -> Result<(), RuntimeError> {
+        drop(self.group_leader_release.take());
+        if let Some(pid) = self.group_leader_pid {
+            if let Err(error) = reap_pipeline_group_leader(pid) {
+                self.abort();
+                return Err(map_io_error(error));
+            }
+            self.group_leader_pid = None;
+        }
+
+        if self.foreground_handed_off {
+            let terminal = self.terminal.as_ref().ok_or(RuntimeError::IoFailed)?;
+            let shell_group = self.shell_process_group.ok_or(RuntimeError::IoFailed)?;
+            set_terminal_foreground(terminal, shell_group).map_err(map_io_error)?;
+            self.foreground_handed_off = false;
+        }
+
+        self.finished = true;
+        Ok(())
+    }
+
+    fn abort(&mut self) {
+        if let Some(group) = self.process_group {
+            // SAFETY: this group is private to the current pipeline.
+            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+        drop(self.group_leader_release.take());
+        if let Some(pid) = self.group_leader_pid.take() {
+            let _ = reap_pipeline_group_leader(pid);
+        }
+        if self.foreground_handed_off {
+            if let (Some(terminal), Some(shell_group)) =
+                (self.terminal.as_ref(), self.shell_process_group)
+            {
+                if set_terminal_foreground(terminal, shell_group).is_ok() {
+                    self.foreground_handed_off = false;
+                }
+            }
+        }
+        if !self.foreground_handed_off {
+            self.finished = true;
+        }
+    }
+}
+
+impl Drop for PipelineJobControl {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.abort();
+        }
+    }
+}
+
+/// Creates a process-group leader that remains alive until the parent closes
+/// the release pipe. The parent can hand off the terminal to this group before
+/// spawning any command, so no child can read from a background terminal group.
+fn spawn_pipeline_group_leader() -> io::Result<(libc::pid_t, OwnedFd)> {
+    let (read_end, write_end) = create_cloexec_pipe()?;
+    let read_fd = read_end.as_raw_fd();
+
+    let mut descriptor_limit = std::mem::MaybeUninit::<libc::rlimit>::zeroed();
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, descriptor_limit.as_mut_ptr()) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    let descriptor_limit = unsafe { descriptor_limit.assume_init() };
+    let max_fd = descriptor_limit.rlim_cur.min(1_048_576 as libc::rlim_t) as libc::c_int;
+
+    // SAFETY: the fork child uses only async-signal-safe libc calls before _exit.
+    let pid = unsafe { libc::fork() };
+    if pid == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    if pid == 0 {
+        unsafe {
+            if libc::setpgid(0, 0) == -1 {
+                libc::_exit(127);
+            }
+            close_pipeline_group_leader_descriptors(read_fd, max_fd);
+            let mut byte = 0u8;
+            loop {
+                let result = libc::read(read_fd, (&mut byte as *mut u8).cast::<libc::c_void>(), 1);
+                if result <= 0 {
+                    break;
+                }
+            }
+            libc::_exit(0);
+        }
+    }
+
+    drop(read_end);
+    if unsafe { libc::setpgid(pid, pid) } == -1 {
+        let error = io::Error::last_os_error();
+        if unsafe { libc::getpgid(pid) } != pid {
+            let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+            let _ = reap_pipeline_group_leader(pid);
+            return Err(error);
+        }
+    }
+
+    Ok((pid, write_end))
+}
+
+/// Closes every inherited descriptor except the helper's release-pipe reader.
+unsafe fn close_pipeline_group_leader_descriptors(keep_fd: libc::c_int, max_fd: libc::c_int) {
+    let lower_result = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            0u32,
+            keep_fd.saturating_sub(1) as u32,
+            0u32,
+        )
+    };
+    let upper_result = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            keep_fd.saturating_add(1) as u32,
+            u32::MAX,
+            0u32,
+        )
+    };
+    if lower_result == -1 || upper_result == -1 {
+        for descriptor in 0..max_fd {
+            if descriptor != keep_fd {
+                unsafe {
+                    libc::close(descriptor);
+                }
+            }
+        }
+    }
+}
+
+fn reap_pipeline_group_leader(pid: libc::pid_t) -> io::Result<()> {
+    let mut status = 0;
+    loop {
+        let result = unsafe { libc::waitpid(pid, &mut status, 0) };
+        if result == pid {
+            return Ok(());
+        }
+        if result == -1 {
+            let error = io::Error::last_os_error();
+            match error.raw_os_error() {
+                Some(libc::EINTR) => continue,
+                Some(libc::ECHILD) => return Ok(()),
+                _ => return Err(error),
+            }
+        }
+    }
+}
+
+fn set_terminal_foreground(terminal: &File, process_group: libc::pid_t) -> io::Result<()> {
+    let mut blocked_signals: libc::sigset_t = unsafe { std::mem::zeroed() };
+    let mut previous_signals: libc::sigset_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sigemptyset(&mut blocked_signals) } == -1
+        || unsafe { libc::sigaddset(&mut blocked_signals, libc::SIGTTOU) } == -1
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mask_result =
+        unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &blocked_signals, &mut previous_signals) };
+    if mask_result != 0 {
+        return Err(io::Error::from_raw_os_error(mask_result));
+    }
+
+    let terminal_result = unsafe { libc::tcsetpgrp(terminal.as_raw_fd(), process_group) };
+    let terminal_error = if terminal_result == -1 {
+        Some(io::Error::last_os_error())
+    } else {
+        None
+    };
+    let restore_mask_result = unsafe {
+        libc::pthread_sigmask(libc::SIG_SETMASK, &previous_signals, std::ptr::null_mut())
+    };
+
+    if let Some(error) = terminal_error {
+        return Err(error);
+    }
+    if restore_mask_result != 0 {
+        return Err(io::Error::from_raw_os_error(restore_mask_result));
+    }
+    Ok(())
+}
+
+/// External commands must not inherit ignored job-control/interrupt signals or
+/// a blocked signal mask from the application process.
+fn reset_child_signal_state() -> io::Result<()> {
+    let mut empty_mask: libc::sigset_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sigemptyset(&mut empty_mask) } == -1
+        || unsafe { libc::sigprocmask(libc::SIG_SETMASK, &empty_mask, std::ptr::null_mut()) } == -1
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut default_action: libc::sigaction = unsafe { std::mem::zeroed() };
+    default_action.sa_sigaction = libc::SIG_DFL;
+    default_action.sa_flags = 0;
+    if unsafe { libc::sigemptyset(&mut default_action.sa_mask) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+
+    for signal in [
+        libc::SIGINT,
+        libc::SIGQUIT,
+        libc::SIGTSTP,
+        libc::SIGTTIN,
+        libc::SIGTTOU,
+        libc::SIGPIPE,
+    ] {
+        if unsafe { libc::sigaction(signal, &default_action, std::ptr::null_mut()) } == -1 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+
+    Ok(())
+}
+
+fn open_pipeline_redirection(
+    redirection: &PipelineRedirection,
+    working_directory: Option<&Path>,
+) -> Result<File, RuntimeError> {
+    let target = match redirection {
+        PipelineRedirection::Input(path)
+        | PipelineRedirection::Output(path)
+        | PipelineRedirection::Append(path)
+        | PipelineRedirection::ErrorOutput(path)
+        | PipelineRedirection::ErrorAppend(path) => path,
+    };
+    let resolved_path = match working_directory {
+        Some(directory) if !target.is_absolute() => directory.join(target),
+        _ => target.to_path_buf(),
+    };
+
+    let mut options = OpenOptions::new();
+    match redirection {
+        PipelineRedirection::Input(_) => {
+            options.read(true);
+        }
+        PipelineRedirection::Output(_) | PipelineRedirection::ErrorOutput(_) => {
+            options.write(true).create(true).truncate(true);
+        }
+        PipelineRedirection::Append(_) | PipelineRedirection::ErrorAppend(_) => {
+            options.write(true).create(true).append(true);
+        }
+    }
+    options.open(&resolved_path).map_err(map_io_error)
+}
+
+fn create_cloexec_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    let mut descriptors = [-1; 2];
+    // SAFETY: descriptors points to two writable integers and pipe2 initializes
+    // both descriptors atomically with close-on-exec set.
+    if unsafe { libc::pipe2(descriptors.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: pipe2 returned two fresh owned descriptors.
+    let read_end = unsafe { OwnedFd::from_raw_fd(descriptors[0]) };
+    // SAFETY: pipe2 returned two fresh owned descriptors.
+    let write_end = unsafe { OwnedFd::from_raw_fd(descriptors[1]) };
+    Ok((read_end, write_end))
+}
+
+fn terminate_pipeline_children(children: &mut [Child], process_group: Option<libc::pid_t>) {
+    if let Some(group) = process_group {
+        // SAFETY: a negative PID addresses only the private process group
+        // created for this pipeline.
+        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+    }
+    for child in children.iter_mut() {
+        let _ = child.kill();
+    }
+    for child in children.iter_mut() {
+        let _ = child.wait();
     }
 }
 
@@ -532,15 +1203,24 @@ fn map_io_error(error: io::Error) -> RuntimeError {
 
 #[cfg(test)]
 mod tests {
-    use super::LinuxRuntime;
+    use super::{LinuxRuntime, PipelineRedirection, PipelineStage};
     use crate::{
         IoAttachment, ProcessExitStatus, ProcessSpawnRequest, ProgramSpec, ProgramSpecError,
         PtyConfig, ReadOutcome, RuntimeCapability, RuntimeError, RuntimeProcess, RuntimeService,
         Signal, StdioConfig, StreamAttachment, TerminalSize, TerminationMode, WriteOutcome,
     };
+    use std::fs;
     use std::num::NonZeroUsize;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("devil-eye-{label}-{}-{nonce}", std::process::id()))
+    }
 
     fn size() -> TerminalSize {
         TerminalSize::new(80u16, 24u16).expect("valid terminal size")
@@ -676,6 +1356,7 @@ mod tests {
         let capabilities = LinuxRuntime.capabilities();
         for capability in [
             RuntimeCapability::StdioPipes,
+            RuntimeCapability::PipelineExecution,
             RuntimeCapability::PseudoTerminal,
             RuntimeCapability::TerminalResize,
             RuntimeCapability::Signals,
@@ -1060,6 +1741,306 @@ mod tests {
                 ProgramSpecError::ExecutableNotFound
             ))
         ));
+    }
+
+    #[test]
+    fn pipeline_connects_stages_and_applies_output_redirection() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("pipeline-output");
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/printf")
+                    .expect("printf")
+                    .with_arg("hello\\n"),
+            ),
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/tr")
+                    .expect("tr")
+                    .with_arg("a-z")
+                    .with_arg("A-Z"),
+            )
+            .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = RuntimeService::execute_pipeline(&LinuxRuntime, &stages)
+            .expect("execute two-stage pipeline");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stage_statuses,
+            vec![ProcessExitStatus::Exited(0), ProcessExitStatus::Exited(0)]
+        );
+        assert_eq!(
+            fs::read_to_string(&output).expect("read pipeline output"),
+            "HELLO\n"
+        );
+        fs::remove_file(output).expect("remove pipeline output");
+    }
+
+    #[test]
+    fn empty_command_stages_close_pipe_ends_and_preserve_status_order() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("empty-command-downstream");
+        let stages = [
+            PipelineStage::empty_command(),
+            PipelineStage::command(ProgramSpec::new("/usr/bin/cat").expect("cat"))
+                .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute downstream stage after an empty command");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stage_statuses,
+            vec![ProcessExitStatus::Exited(127), ProcessExitStatus::Exited(0)]
+        );
+        assert_eq!(fs::read(&output).expect("read downstream output"), b"");
+
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/printf")
+                    .expect("printf")
+                    .with_arg("payload"),
+            ),
+            PipelineStage::empty_command(),
+        ];
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute pipeline ending in an empty command");
+        assert_eq!(result.exit_code, 127);
+        assert_eq!(result.stage_statuses.len(), 2usize);
+        assert_eq!(result.stage_statuses[1], ProcessExitStatus::Exited(127));
+
+        fs::remove_file(output).expect("remove downstream output");
+    }
+
+    #[test]
+    fn relative_redirections_resolve_against_stage_working_directory() {
+        let _guard = runtime_test_lock();
+        let directory = temporary_path("pipeline-relative-redirection");
+        fs::create_dir(&directory).expect("create stage working directory");
+        fs::write(directory.join("input.txt"), "stage-input").expect("write stage input");
+
+        let stage = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/cat")
+                .expect("cat")
+                .with_working_directory(directory.clone()),
+        )
+        .with_redirection(PipelineRedirection::Input("input.txt".into()))
+        .with_redirection(PipelineRedirection::Output("output.txt".into()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[stage])
+            .expect("execute relative redirections in stage working directory");
+
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(directory.join("output.txt")).expect("read stage output"),
+            "stage-input"
+        );
+
+        fs::remove_file(directory.join("input.txt")).expect("remove stage input");
+        fs::remove_file(directory.join("output.txt")).expect("remove stage output");
+        fs::remove_dir(directory).expect("remove stage working directory");
+    }
+
+    #[test]
+    fn pipeline_enforces_aggregate_redirection_limit() {
+        let _guard = runtime_test_lock();
+
+        let mut at_limit = PipelineStage::redirection_only();
+        for _ in 0..1_024usize {
+            at_limit = at_limit.with_redirection(PipelineRedirection::Input("/dev/null".into()));
+        }
+        let result = LinuxRuntime
+            .execute_pipeline(&[at_limit])
+            .expect("the documented redirection limit is accepted");
+        assert_eq!(result.exit_code, 0);
+
+        let mut over_limit = PipelineStage::command(
+            ProgramSpec::new("/definitely/not/a/devil-eye-executable")
+                .expect("syntactically valid executable path"),
+        );
+        for _ in 0..1_025usize {
+            over_limit =
+                over_limit.with_redirection(PipelineRedirection::Output("/dev/null".into()));
+        }
+        assert!(matches!(
+            LinuxRuntime.execute_pipeline(&[over_limit]),
+            Err(RuntimeError::ResourceLimitExceeded)
+        ));
+    }
+
+    #[test]
+    fn input_append_and_redirection_only_operations_are_owned_by_runtime() {
+        let _guard = runtime_test_lock();
+        let input = temporary_path("pipeline-input");
+        let output = temporary_path("pipeline-append");
+        fs::write(&input, "from-file").expect("write input fixture");
+
+        let cat = PipelineStage::command(ProgramSpec::new("/usr/bin/cat").expect("cat"))
+            .with_redirection(PipelineRedirection::Input(input.clone()))
+            .with_redirection(PipelineRedirection::Output(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[cat])
+            .expect("execute redirected cat");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(&output).expect("read redirected output"),
+            "from-file"
+        );
+
+        let append = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/printf")
+                .expect("printf")
+                .with_arg("-tail"),
+        )
+        .with_redirection(PipelineRedirection::Append(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[append])
+            .expect("execute append redirection");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read_to_string(&output).expect("read appended output"),
+            "from-file-tail"
+        );
+
+        let first_output = temporary_path("superseded-redirection");
+        let final_output = temporary_path("final-redirection");
+        let multiple = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/printf")
+                .expect("printf")
+                .with_arg("final"),
+        )
+        .with_redirection(PipelineRedirection::Output(first_output.clone()))
+        .with_redirection(PipelineRedirection::Output(final_output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[multiple])
+            .expect("execute ordered multiple redirections");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            fs::read(&first_output).expect("read superseded output"),
+            b""
+        );
+        assert_eq!(
+            fs::read_to_string(&final_output).expect("read final output"),
+            "final"
+        );
+
+        let empty = temporary_path("redirection-only");
+        let redirection_only = PipelineStage::redirection_only()
+            .with_redirection(PipelineRedirection::Output(empty.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[redirection_only])
+            .expect("execute redirection-only command");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(fs::read(&empty).expect("read created file"), b"");
+
+        fs::remove_file(input).expect("remove input fixture");
+        fs::remove_file(output).expect("remove output fixture");
+        fs::remove_file(empty).expect("remove redirection-only file");
+        fs::remove_file(first_output).expect("remove superseded output");
+        fs::remove_file(final_output).expect("remove final output");
+    }
+
+    #[test]
+    fn stderr_output_and_append_redirections_capture_child_errors() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("stderr-redirection");
+        let missing = "/definitely/not/a/devil-eye-file";
+
+        let truncate = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/ls")
+                .expect("ls")
+                .with_arg(missing),
+        )
+        .with_redirection(PipelineRedirection::ErrorOutput(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[truncate])
+            .expect("execute stderr truncate redirection");
+        assert_eq!(result.exit_code, 2);
+        let first = fs::read_to_string(&output).expect("read stderr output");
+        assert!(first.contains(missing));
+
+        fs::write(&output, "prefix\\n").expect("write stderr append prefix");
+        let append = PipelineStage::command(
+            ProgramSpec::new("/usr/bin/ls")
+                .expect("ls")
+                .with_arg(missing),
+        )
+        .with_redirection(PipelineRedirection::ErrorAppend(output.clone()));
+        let result = LinuxRuntime
+            .execute_pipeline(&[append])
+            .expect("execute stderr append redirection");
+        assert_eq!(result.exit_code, 2);
+        let combined = fs::read_to_string(&output).expect("read appended stderr");
+        assert!(combined.starts_with("prefix\\n"));
+        assert!(combined.matches(missing).count() >= 1usize);
+
+        fs::remove_file(output).expect("remove stderr output");
+    }
+
+    #[test]
+    fn broken_pipe_pipeline_reaps_all_stages() {
+        let _guard = runtime_test_lock();
+        let output = temporary_path("broken-pipe");
+        let stages = [
+            PipelineStage::command(ProgramSpec::new("/usr/bin/yes").expect("yes")),
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/head")
+                    .expect("head")
+                    .with_arg("-n")
+                    .with_arg("1"),
+            )
+            .with_redirection(PipelineRedirection::Output(output.clone())),
+        ];
+
+        let result = LinuxRuntime
+            .execute_pipeline(&stages)
+            .expect("execute broken-pipe pipeline");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stage_statuses.len(), 2usize);
+        assert_eq!(
+            fs::read_to_string(&output).expect("read head output"),
+            "y\n"
+        );
+        fs::remove_file(output).expect("remove broken-pipe output");
+    }
+
+    #[test]
+    fn spawn_failure_terminates_and_reaps_already_started_pipeline_stages() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = runtime_test_lock();
+        let broken_program = temporary_path("missing-interpreter");
+        fs::write(
+            &broken_program,
+            b"#!/definitely/missing/devil-eye-interpreter\\n",
+        )
+        .expect("write executable fixture");
+        fs::set_permissions(&broken_program, fs::Permissions::from_mode(0o755))
+            .expect("make fixture executable");
+
+        let stages = [
+            PipelineStage::command(
+                ProgramSpec::new("/usr/bin/sleep")
+                    .expect("sleep")
+                    .with_arg("30"),
+            ),
+            PipelineStage::command(
+                ProgramSpec::new(broken_program.as_os_str()).expect("broken interpreter path"),
+            ),
+        ];
+
+        let started = Instant::now();
+        let result = LinuxRuntime.execute_pipeline(&stages);
+        let elapsed = started.elapsed();
+        fs::remove_file(broken_program).expect("remove executable fixture");
+
+        assert!(result.is_err());
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "a child process survived the failed pipeline launch"
+        );
     }
 
     #[test]

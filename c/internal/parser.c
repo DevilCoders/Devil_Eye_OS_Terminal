@@ -41,6 +41,10 @@ static size_t de_shell_expected_token_length(de_shell_token_type_t type)
     case DE_SHELL_TOKEN_OR_IF:
     case DE_SHELL_TOKEN_REDIRECT_APPEND:
         return 2U;
+    case DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT:
+        return 2U;
+    case DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND:
+        return 3U;
     case DE_SHELL_TOKEN_WORD:
     case DE_SHELL_TOKEN_PIPE:
     case DE_SHELL_TOKEN_SEMICOLON:
@@ -157,6 +161,12 @@ static de_shell_parse_status_t de_shell_append_redirection(
     case DE_SHELL_TOKEN_REDIRECT_APPEND:
         redirection->type = DE_SHELL_REDIRECTION_APPEND;
         break;
+    case DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT:
+        redirection->type = DE_SHELL_REDIRECTION_ERROR_OUTPUT;
+        break;
+    case DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND:
+        redirection->type = DE_SHELL_REDIRECTION_ERROR_APPEND;
+        break;
     default:
         return de_shell_set_error(
             parser,
@@ -203,7 +213,9 @@ static de_shell_parse_status_t de_shell_parse_simple_command(
 
         if (token->type == DE_SHELL_TOKEN_REDIRECT_INPUT
             || token->type == DE_SHELL_TOKEN_REDIRECT_OUTPUT
-            || token->type == DE_SHELL_TOKEN_REDIRECT_APPEND) {
+            || token->type == DE_SHELL_TOKEN_REDIRECT_APPEND
+            || token->type == DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT
+            || token->type == DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND) {
             const de_shell_token_t *target;
 
             parser->cursor += 1U;
@@ -336,7 +348,9 @@ static de_shell_parse_status_t de_shell_parse_primary(
     if (token->type == DE_SHELL_TOKEN_WORD
         || token->type == DE_SHELL_TOKEN_REDIRECT_INPUT
         || token->type == DE_SHELL_TOKEN_REDIRECT_OUTPUT
-        || token->type == DE_SHELL_TOKEN_REDIRECT_APPEND) {
+        || token->type == DE_SHELL_TOKEN_REDIRECT_APPEND
+        || token->type == DE_SHELL_TOKEN_REDIRECT_ERROR_OUTPUT
+        || token->type == DE_SHELL_TOKEN_REDIRECT_ERROR_APPEND) {
         return de_shell_parse_simple_command(parser, out_node);
     }
 

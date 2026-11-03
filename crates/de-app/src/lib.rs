@@ -47,4 +47,4 @@ pub use workspace::{
 pub mod linux_runtime;
 
 #[cfg(target_os = "linux")]
-pub use linux_runtime::{LinuxRuntimeProcess, LinuxRuntimeService};
+pub use linux_runtime::{LinuxRuntimeProcess, LinuxRuntimeService, LinuxShellCommandExecutor};

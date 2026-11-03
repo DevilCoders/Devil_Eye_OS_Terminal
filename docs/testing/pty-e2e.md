@@ -13,6 +13,9 @@ It is intentionally a headless harness. It does not require a desktop session, G
 3. **Resize:** a child queries its terminal dimensions after the parent applies `TIOCSWINSZ`; the observed rows and columns must match the requested dimensions.
 4. **Signals and exit:** a semantic SIGTERM targets only the child session's process group and produces the expected signaled exit status.
 5. **Drop cleanup:** dropping a live default `kill_on_drop` PTY handle terminates and reaps the child; a subsequent `kill -0` probe must fail.
+6. **Foreground pipeline input:** a PTY child executes `cat | cat`; the first stage inherits terminal stdin, receives canonical input and EOF, and the shell regains foreground ownership after the pipeline exits.
+7. **Foreground pipeline interruption:** Ctrl-C sent through the PTY reaches the pipeline process group, terminates its stages, and the shell regains foreground ownership before returning.
+8. **Foreground pipeline setup failure:** a redirection-open failure after terminal handoff aborts the private group and restores the shell foreground process group.
 
 Every polling loop has a finite deadline. The harness does not wait for a child before draining output where doing so could deadlock on a full PTY buffer.
 

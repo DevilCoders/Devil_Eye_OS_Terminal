@@ -19,7 +19,7 @@ Both build paths compile the same C source files. If the source list changes, up
 
 ## Public Rust API
 
-- Shell::new() negotiates ABI version 0.1.0 and creates an opaque C-owned shell.
+- Shell::new() negotiates ABI version 0.2.0 and creates an opaque C-owned shell.
 - Shell::execute() executes one bounded source buffer with an explicit environment/working-directory context and optional CommandExecutor.
 - Shell::close() destroys the C handle; repeated close calls are idempotent.
 - Drop performs best-effort destruction.
@@ -29,7 +29,7 @@ Environment values, working directory, executable, and arguments use borrowed CS
 
 ## External command callback
 
-The C execution engine does not call system(), popen(), fork(), exec(), or an implicit command interpreter. When it encounters an external command, it invokes the Rust-provided CommandExecutor synchronously.
+The C execution engine does not call system(), popen(), fork(), exec(), or an implicit command interpreter. It invokes the Rust-provided CommandExecutor synchronously for simple external commands and invokes CommandExecutor::execute_pipeline for typed pipeline/redirection plans.
 
 ExternalCommand exposes:
 - executable as a borrowed CStr;
@@ -39,7 +39,13 @@ ExternalCommand exposes:
 
 The C request and all pointed-to strings are valid only until the callback returns. The callback must not retain them. The host runtime is responsible for actual process creation and should not block the GUI thread.
 
-If no executor is supplied, external commands return EXECUTION_UNAVAILABLE. A host executor failure is translated by the C engine to EXTERNAL_EXECUTION_FAILED; the diagnostic code preserves the callback's original status.
+If no executor is supplied, external commands and pipeline/redirection plans return EXECUTION_UNAVAILABLE. Existing closure-based CommandExecutor implementations remain valid for single commands and fail closed for pipeline plans unless they override execute_pipeline.
+
+ExternalPipeline exposes ordered stages, the top-level environment/working directory, and per-stage commands/redirections. Each ExternalPipelineStage contains an optional ExternalCommand (None only for a single redirection-only stage) and redirections in source order. ExternalRedirection exposes Input, Output, Append, ErrorOutput, or ErrorAppend, a borrowed target CStr, and the source offset. All borrowed strings are valid only for the callback duration. A host runtime should convert this typed plan to its native process API; it must never reparse a joined command string.
+
+The Linux application crate provides `LinuxShellCommandExecutor`, a concrete `CommandExecutor` adapter that converts borrowed CStr arguments/environment/path values into native `ProgramSpec` and `PipelineStage` values, then calls `RuntimeService::execute_pipeline`. It preserves non-UTF-8 Unix path/argument bytes and inherits the shell host's standard streams unless a redirection overrides them. Relative redirection targets are anchored once against the configured working directory; the adapter canonicalizes that directory so command stages and redirection-only stages behave identically even when the supplied directory is relative. This closes the C parser → Rust FFI → Linux runtime execution path without joining or reparsing command strings.
+
+The C execution engine rejects built-ins inside pipeline/redirection plans until isolated child-context semantics are specified. A host executor failure is translated by the C engine to EXTERNAL_EXECUTION_FAILED; the diagnostic code preserves the callback's original status.
 
 ## Panic and error containment
 
@@ -59,6 +65,8 @@ The wrapper preserves unknown status values through DeStatus::from_raw. Executio
 - Source: 65,536 bytes.
 - External argv entries: at most 256, including argv[0].
 - Environment overrides: at most 256.
+- Pipeline stages: at most 64.
+- Redirections across one pipeline plan: at most 1,024.
 - Environment keys must not be empty.
 - All C-owned handles are destroyed by the C library; Rust never frees them directly.
 - Callback pointers and temporary arrays remain alive for the entire synchronous C call only.
@@ -76,6 +84,6 @@ The wrapper preserves unknown status values through DeStatus::from_raw. Executio
 
 ## Cross-language verification
 
-Rust tests link and execute the actual C library. They cover ABI layout/version negotiation, NULL argument rejection, repeated create/destroy cycles, closed-handle behavior, source limits, C lexer/parser error translation, missing executor behavior, argv/environment/working-directory forwarding, host callback failure, and callback panic containment.
+Rust tests link and execute the actual C library. They cover ABI layout/version negotiation, NULL argument rejection, repeated create/destroy cycles, closed-handle behavior, source limits, C lexer/parser error translation, missing executor behavior, argv/environment/working-directory forwarding, pipeline-stage and redirection decoding, redirection-only plans, host callback failure, and callback panic containment.
 
 The CMake/CTest suite remains independently runnable and validates the native C subsystem without the Rust wrapper.

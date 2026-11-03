@@ -22,7 +22,7 @@ DE-008-01 freezes the binary contract shared by Rust and the C DE-Shell library.
 
 Required layout: size 6 bytes, alignment 2 bytes. C static assertions and Rust layout tests enforce field offsets, size, and alignment.
 
-Current version: **0.1.0**.
+Current version: **0.2.0**. Minor version 0.2 appends the pipeline-stage pointer/count to the external-command request and introduces fixed-layout pipeline-stage and redirection descriptors. Rust 0.2 rejects a 0.1 native library before using the expanded callback layout; 0.1 callers remain compatible with 0.2 for the original single-command path.
 
 ### Status values
 
@@ -87,6 +87,6 @@ The Rust `DeAbiVersion::is_compatible_with` method mirrors the C policy. Feature
 
 ## Verification
 
-C tests use `_Static_assert` to verify status width and ABI version size/alignment/field offsets. Runtime C tests verify current version reporting, NULL handling, older minor compatibility, patch compatibility, rejection of future minor/major versions, and C-owned handle creation/destruction with idempotent NULL cleanup. Rust tests verify the same layout, status numeric assignments, unknown-status preservation, and version compatibility semantics.
+C tests use `_Static_assert` to verify status width, ABI version size/alignment/field offsets, and the x86_64 layouts of the extended external-command, pipeline-stage, and redirection descriptors. Runtime C tests verify current version reporting, NULL handling, older minor compatibility, patch compatibility, rejection of future minor/major versions, and C-owned handle creation/destruction with idempotent NULL cleanup. Rust tests verify the same layout, status numeric assignments, unknown-status preservation, and version compatibility semantics.
 
 The C and Rust tests intentionally verify the same constants independently; a mismatch fails CI instead of silently crossing the language boundary.

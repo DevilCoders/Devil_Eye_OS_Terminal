@@ -29,6 +29,18 @@ typedef struct de_shell de_shell_t;
 de_shell_status_t de_shell_create(de_shell_t **out_shell);
 
 /**
+ * Creates a shell handle with an explicitly negotiated ABI version.
+ *
+ * Callers that need ABI 0.2 pipeline/redirection callback descriptors must
+ * use this entry point and pass the version they negotiated. The legacy
+ * de_shell_create() entry point deliberately creates an ABI 0.1 handle so
+ * old callbacks never receive a plan-shaped request they cannot interpret.
+ */
+de_shell_status_t de_shell_create_with_abi(
+    const de_shell_abi_version_t *requested_version,
+    de_shell_t **out_shell);
+
+/**
  * Destroys an owned DE-Shell instance and clears the caller's handle.
  *
  * Passing a valid pointer whose value is NULL is permitted and succeeds,

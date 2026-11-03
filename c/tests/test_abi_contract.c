@@ -1,8 +1,24 @@
 #include "de_shell/abi.h"
+#include "de_shell/execution.h"
 #include "de_shell/shell.h"
 
 #include <stddef.h>
 #include <stdio.h>
+
+_Static_assert(sizeof(de_shell_external_command_t) == 64U, "external command ABI size mismatch");
+_Static_assert(_Alignof(de_shell_external_command_t) == 8U, "external command ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_external_command_t, pipeline_stages) == 48U, "pipeline pointer offset mismatch");
+_Static_assert(offsetof(de_shell_external_command_t, pipeline_stage_count) == 56U, "pipeline count offset mismatch");
+_Static_assert(sizeof(de_shell_pipeline_stage_t) == 24U, "pipeline stage ABI size mismatch");
+_Static_assert(_Alignof(de_shell_pipeline_stage_t) == 8U, "pipeline stage ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, command) == 0U, "pipeline command offset mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, redirections) == 8U, "pipeline redirection offset mismatch");
+_Static_assert(offsetof(de_shell_pipeline_stage_t, redirection_count) == 16U, "pipeline redirection count offset mismatch");
+_Static_assert(sizeof(de_shell_io_redirection_t) == 24U, "redirection ABI size mismatch");
+_Static_assert(_Alignof(de_shell_io_redirection_t) == 8U, "redirection ABI alignment mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, type) == 0U, "redirection kind offset mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, target) == 8U, "redirection target offset mismatch");
+_Static_assert(offsetof(de_shell_io_redirection_t, source_offset) == 16U, "redirection source offset mismatch");
 
 _Static_assert(sizeof(de_shell_status_t) == 4U, "ABI status must be 32-bit");
 _Static_assert(_Alignof(de_shell_status_t) == 4U, "ABI status alignment must be 4");
@@ -38,12 +54,14 @@ static int test_version_query(void)
 
 static int test_version_compatibility(void)
 {
-    const de_shell_abi_version_t older_minor = {0U, 0U, 99U};
-    const de_shell_abi_version_t same_minor_new_patch = {0U, 1U, 99U};
-    const de_shell_abi_version_t future_minor = {0U, 2U, 0U};
+    const de_shell_abi_version_t oldest_minor = {0U, 0U, 99U};
+    const de_shell_abi_version_t older_minor = {0U, 1U, 99U};
+    const de_shell_abi_version_t same_minor_new_patch = {0U, 2U, 99U};
+    const de_shell_abi_version_t future_minor = {0U, 3U, 0U};
     const de_shell_abi_version_t future_major = {1U, 0U, 0U};
 
     if (de_shell_check_abi_version(NULL) != DE_SHELL_STATUS_INVALID_ARGUMENT
+        || de_shell_check_abi_version(&oldest_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&older_minor) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&same_minor_new_patch) != DE_SHELL_STATUS_OK
         || de_shell_check_abi_version(&future_minor) != DE_SHELL_STATUS_ABI_MISMATCH
