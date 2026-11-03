@@ -454,6 +454,57 @@ static int test_redirection_only_command_and_failure_cleanup_contract(void)
     return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
 }
 
+
+static int test_assignment_only_command_with_redirection(void)
+{
+    de_shell_t *shell = NULL;
+    static const unsigned char assignment[] = "MODE=redirected > output";
+    static const unsigned char expanded[] = "tool \"$MODE\"";
+    executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
+        DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    const de_shell_execution_context_t pipeline_context = {
+        NULL, 0U, NULL, fake_executor, &state
+    };
+    expansion_expectation_t expectation = {
+        {"tool", "redirected", NULL, NULL, NULL, NULL, NULL, NULL},
+        2U, NULL, NULL, 0U, 0, 0U, 0
+    };
+    const de_shell_execution_context_t expansion_context = {
+        NULL, 0U, NULL, expansion_executor, &expectation
+    };
+    de_shell_execution_result_t result;
+    de_shell_execution_diagnostic_t diagnostic;
+
+    if (de_shell_create_with_abi(&current_abi_version, &shell) != DE_SHELL_STATUS_OK) {
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, assignment, sizeof(assignment) - 1U,
+            &pipeline_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || state.calls != 1U
+        || state.environment_valid == 0
+        || result.commands_executed != 1U
+        || result.exit_code != 0) {
+        (void)fprintf(stderr, "assignment-only redirection plan was not dispatched\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    if (de_shell_execute_source(
+            shell, expanded, sizeof(expanded) - 1U,
+            &expansion_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
+        || expectation.calls != 1U
+        || expectation.matched == 0
+        || result.commands_executed != 1U) {
+        (void)fprintf(stderr, "assignment was not persisted before redirection dispatch\\n");
+        (void)de_shell_destroy(&shell);
+        return 1;
+    }
+
+    return de_shell_destroy(&shell) == DE_SHELL_STATUS_OK ? 0 : 1;
+}
+
 static int test_reentrancy_and_destroy_guard(void)
 {
     de_shell_t *shell = NULL;
@@ -1030,6 +1081,7 @@ int main(void)
         || test_external_failures_and_missing_executor() != 0
         || test_parse_errors_and_unsupported_nodes() != 0
         || test_redirection_only_command_and_failure_cleanup_contract() != 0
+        || test_assignment_only_command_with_redirection() != 0
         || test_reentrancy_and_destroy_guard() != 0
         || test_context_validation_and_resource_limit() != 0
         || test_parameter_expansion_and_persistent_variables() != 0
