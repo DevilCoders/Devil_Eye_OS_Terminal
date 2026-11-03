@@ -30,6 +30,7 @@ This document defines behavioral contracts. A component must not silently change
 | Terminal core | Renderer | Immutable frame/damage view | Terminal core owns cells; renderer borrows frame data |
 | Input mapper | Session manager | Encoded terminal input bytes | Session manager owns transport and write queue |
 | Configuration service | `de-app` | Validated immutable configuration snapshot | Configuration service owns persisted representation |
+| Future plugin process | Capability broker | Versioned, authenticated, bounded IPC requests | Host owns broker, authorization state, and native resources; plugin owns only its isolated process state |
 
 ## 3. Common identifiers and value semantics
 
@@ -284,3 +285,25 @@ Contract tests must use real implementations at the boundary under test. Mocks m
 8. Add cross-component integration tests and expand the continuous QA harness (#38, #65–#66).
 
 A dependent implementation must not invent a conflicting interface locally. Update this contract first, then implement and test the change.
+
+
+## 15. Future plugin host and capability broker (design gate)
+
+The normative plugin contract is [DE-PLUGIN-CAP-001](plugin-capabilities.md). Its version is independent of the terminal engine, Rust/C DE-Shell ABI, manifest schema, and capability catalog.
+
+**This section is a design contract only. No plugin loader, broker, sandbox, or plugin execution path is implemented. Plugin execution is prohibited until the security gates in the linked contract pass.**
+
+- Plugin requests are typed, bounded IPC messages authenticated to one plugin instance, immutable package digest, and authorization generation.
+- The broker owns the capability catalog, consent grants, normalized scopes, quota counters, audit events, and revocation state.
+- Each operation is authorized at point of use. Startup authorization alone is insufficient.
+- Capabilities are deny-by-default and independent: session read/write, UI panel, filesystem read/write, process spawn, network connect, clipboard read/write, and configuration read/write.
+- No native pointers, raw OS handles, borrowed application objects, host service references, or unrestricted session registry access cross the IPC boundary.
+- A grant is bound to plugin ID, package digest, publisher identity, host API major, capability ID, and normalized scope. Package changes require fresh verification and consent.
+- Quota accounting and enforcement are host-owned. Resource classes include CPU, memory, child processes, descriptors, filesystem/network I/O, API concurrency/rate, queues, output, and lifetime.
+- Revocation increments the authorization generation, denies stale requests, cancels cancellable work, and terminates the plugin process tree when safe revocation cannot otherwise be guaranteed.
+- The plugin host must execute outside the application process under a separately reviewed OS-enforced isolation mechanism. A same-UID child process alone is not an adequate sandbox.
+- Persistent consent is unavailable until the storage/codec decision (#62) and secure persistence implementation are complete; initial grants are session-scoped.
+
+The following failure classes are stable at the broker boundary: unknown plugin, unverified package, invalid signature, incompatible API, unknown capability, missing grant, scope denial, quota exceeded, revoked authorization, stale generation, unavailable isolation, protocol violation, and unavailable host. Error details must not leak secrets or sensitive paths.
+
+Future broker conformance tests must exercise real isolation and include invalid manifests, unknown capabilities, package digest changes, selective consent/denial, overbroad scopes, exact/over quota boundaries, concurrent requests, stale generations, revocation races, plugin crash/hang, broker failure, process-tree cleanup, descriptor leaks, and audit redaction. Mocks do not prove OS enforcement.
