@@ -455,6 +455,32 @@ static int test_redirection_only_command_and_failure_cleanup_contract(void)
 }
 
 
+typedef struct assignment_verification_state {
+    size_t calls;
+    int matched;
+} assignment_verification_state_t;
+
+static de_shell_status_t assignment_verification_executor(
+    const de_shell_external_command_t *command,
+    int *out_exit_code,
+    void *user_data)
+{
+    assignment_verification_state_t *state =
+        (assignment_verification_state_t *)user_data;
+    state->calls += 1U;
+    if (command == NULL || out_exit_code == NULL
+        || command->argc != 2U
+        || command->argv == NULL
+        || strcmp(command->argv[0], "tool") != 0
+        || strcmp(command->argv[1], "redirected") != 0
+        || command->environment_count != 0U) {
+        return DE_SHELL_STATUS_INVALID_ARGUMENT;
+    }
+    state->matched = 1;
+    *out_exit_code = 0;
+    return DE_SHELL_STATUS_OK;
+}
+
 static int test_assignment_only_command_with_redirection(void)
 {
     de_shell_t *shell = NULL;
@@ -462,15 +488,12 @@ static int test_assignment_only_command_with_redirection(void)
     static const unsigned char expanded[] = "tool \"$MODE\"";
     executor_state_t state = {0U, 0, DE_SHELL_STATUS_OK, 0, 0, 0, NULL,
         DE_SHELL_STATUS_OK, DE_SHELL_STATUS_OK};
+    assignment_verification_state_t verification = {0U, 0};
     const de_shell_execution_context_t pipeline_context = {
         NULL, 0U, NULL, fake_executor, &state
     };
-    expansion_expectation_t expectation = {
-        {"tool", "redirected", NULL, NULL, NULL, NULL, NULL, NULL},
-        2U, NULL, NULL, 0U, 0, 0U, 0
-    };
     const de_shell_execution_context_t expansion_context = {
-        NULL, 0U, NULL, expansion_executor, &expectation
+        NULL, 0U, NULL, assignment_verification_executor, &verification
     };
     de_shell_execution_result_t result;
     de_shell_execution_diagnostic_t diagnostic;
@@ -486,7 +509,7 @@ static int test_assignment_only_command_with_redirection(void)
         || state.environment_valid == 0
         || result.commands_executed != 1U
         || result.exit_code != 0) {
-        (void)fprintf(stderr, "assignment-only redirection plan was not dispatched\\n");
+        (void)fprintf(stderr, "assignment-only redirection plan was not dispatched\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
@@ -494,10 +517,10 @@ static int test_assignment_only_command_with_redirection(void)
     if (de_shell_execute_source(
             shell, expanded, sizeof(expanded) - 1U,
             &expansion_context, &result, &diagnostic) != DE_SHELL_STATUS_OK
-        || expectation.calls != 1U
-        || expectation.matched == 0
+        || verification.calls != 1U
+        || verification.matched == 0
         || result.commands_executed != 1U) {
-        (void)fprintf(stderr, "assignment was not persisted before redirection dispatch\\n");
+        (void)fprintf(stderr, "assignment was not persisted before redirection dispatch\n");
         (void)de_shell_destroy(&shell);
         return 1;
     }
