@@ -87,7 +87,7 @@ Assumption: the OS kernel and the current user's account boundary are trusted. A
 | T-10 | Secrets leak through diagnostics or crash context | Information Disclosure | High | Redact environment values, tokens, passwords, and raw sensitive input; bounded structured diagnostics | Typed diagnostics model implemented; redaction policy must be enforced at every call site |
 | T-11 | Configuration tampering changes launch or resource policy | Tampering / Elevation / DoS | High | Explicit schema version; unknown-key rejection; strict validation; safe defaults; atomic persistence and backup | Versioned schema and semantic validation are implemented (#61); file-format parsing/serialization, atomic persistence, backup, recovery, and migration remain unimplemented (#62) |
 | T-12 | Path or symlink race redirects file/process operations | Tampering / Elevation | High | Validate path inputs; avoid privileged writes; use OS-safe open/exec APIs; define symlink policy for persistence | Runtime validation exists; persistence policy remains to be implemented |
-| T-13 | Future plugin obtains ambient core privileges | Elevation / Information Disclosure | Critical | Capability-based permissions; deny by default; separate process boundary where practical; resource quotas; revocation | Plugin model not implemented; must be designed before plugin execution |
+| T-13 | Future plugin obtains ambient core privileges | Elevation / Information Disclosure | Critical | Deny-by-default capability broker; digest-bound explicit grants; enforced OS isolation; hard quotas; point-of-use authorization and revocation | Normative design is defined in [Plugin Capability and Permission Model](../architecture/plugin-capabilities.md); no plugin execution, broker, sandbox, or quota enforcement is implemented |
 | T-14 | Dependency or build action compromise contaminates release | Tampering / Elevation | High | Pinned toolchain; lockfile review; minimal dependencies; pinned action revisions; artifact integrity checks and provenance | Rust toolchain pinned; dependency/release controls remain in release tasks |
 | T-15 | Renderer consumes malformed dimensions or glyph data | Tampering / DoS | High | Validate dimensions and bitmap lengths; checked pixel arithmetic; bounded surfaces; safe fallback glyph | Headless CPU software renderer is implemented in master; glyph validation, checked surface arithmetic, pixel limits, clipping, and redraw regression tests are present. GPU/window integration and font discovery remain separate work. |
 
@@ -152,11 +152,18 @@ Severity is based on plausible impact to the user's account, terminal process ex
 
 ### SEC-008 — Plugin isolation (future gate)
 
-- No plugin execution before a reviewed permission/capability model exists.
-- Default capability set is empty.
-- Filesystem, process launch, network, clipboard, and session access are separate permissions.
-- Plugin resource use is bounded and revocable.
-- A plugin must not receive raw internal pointers or unrestricted access to the session registry.
+The normative contract is [DE-PLUGIN-CAP-001](../architecture/plugin-capabilities.md), API contract 1.0 / capability catalog 1.
+
+- Plugin execution remains disabled. A design document is not an implemented sandbox or permission broker.
+- Default capability set is empty; unknown capabilities fail closed.
+- Filesystem read/write, process spawn, network connect, clipboard read/write, configuration read/write, and terminal session read/write are independent grants with explicit resource scopes.
+- Grants bind to plugin identity, immutable package digest, publisher, host API major, capability, and normalized scope. Package updates do not inherit grants.
+- Every privileged operation is checked at the broker boundary; raw pointers, OS handles, host objects, and unrestricted session-registry access are prohibited.
+- CPU, memory, processes, descriptors, I/O, network, API calls, queues, output, and lifetime require host-enforced hard quotas. Missing numeric limits block enablement.
+- Revocation invalidates authorization generations, denies new calls immediately, cancels in-flight work where possible, and terminates the plugin when required.
+- Plugin code must run outside the application process under an OS-enforced isolation policy. A separate same-UID process alone is insufficient.
+- Persistent consent is blocked on the configuration storage/codec decision (#62); grants remain session-scoped until secure persistence exists.
+- No plugin execution before package verification, isolation, broker, quotas, revocation, and adversarial tests are implemented and reviewed.
 
 ## 7. Security test strategy
 
@@ -181,7 +188,7 @@ The following distinction prevents design intent from being mistaken for shipped
 
 - **Implemented in current master:** validated `ProgramSpec` values; separate executable/argument/environment fields; Rust/C ABI types and versioning foundation; terminal screen dimension limits; structured application diagnostics; Linux PTY/process runtime with kill-on-drop behavior; headless CPU software renderer with bounded surface/glyph validation and clipped redraw; key/text input mapping; versioned AppConfig schema and semantic validation; DE-Shell grammar/semantics specification (#126, merged); Linux platform capability reporting; pinned Rust toolchain and CI.
 - **Under review in open PRs:** Linux process/environment hardening (#138); core architecture decision records (#132); renderer profiling and optimization (#137).
-- **Not yet implemented:** concrete configuration file parsing/serialization and persistence; paste, mouse, and focus input handling; complete side-effecting OSC policy; full parser fuzz coverage; persistent configuration atomic-write/backup flow; plugin capability isolation; complete cross-session adversarial integration suite; release artifact provenance/signing.
+- **Not yet implemented:** concrete configuration file parsing/serialization and persistence; paste, mouse, and focus input handling; complete side-effecting OSC policy; full parser fuzz coverage; persistent configuration atomic-write/backup flow; plugin capability broker, sandbox, and runtime enforcement; complete cross-session adversarial integration suite; release artifact provenance/signing.
 
 An open PR is not a shipped mitigation. Release qualification must re-evaluate this table against the merged `master` branch.
 
