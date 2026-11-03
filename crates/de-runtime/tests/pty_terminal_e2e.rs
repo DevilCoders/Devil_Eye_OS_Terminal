@@ -8,6 +8,7 @@ use de_terminal_core::parser::{TerminalEvent, VtParser};
 use de_terminal_core::screen::{
     CellAttributes, CellContent, Color, GraphemeWidth, StyleFlags, TerminalScreen,
 };
+use std::io::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -253,6 +254,7 @@ fn write_pty_all(process: &mut dyn RuntimeProcess, input: &[u8]) {
     }
 }
 
+#[allow(unsafe_code)]
 fn run_foreground_pipeline_child(mode: &str) {
     if std::env::var("DE_RUNTIME_PIPELINE_TTY_CHILD")
         .ok()
