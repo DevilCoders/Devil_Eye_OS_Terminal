@@ -50,7 +50,7 @@ flowchart TB
     Shell --> Runtime
 ```
 
-The diagram describes logical ownership, not a claim that every component is already implemented. The Rust workspace currently contains only foundational contracts. DE-Shell and the runtime adapters are delivered by their own tasks.
+The diagram describes logical ownership, not a claim that every component is already implemented. The Rust workspace now contains application, terminal, runtime, FFI, and Linux process implementations alongside their contracts. DE-Shell and its runtime integration are implemented in their respective C and Rust components. Architecture diagrams describe logical ownership; they do not imply that future GUI, persistence, plugin, or cross-platform components are shipped.
 
 ### Dependency direction
 
