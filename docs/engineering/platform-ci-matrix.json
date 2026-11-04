@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "initialTarget": "linux-x86_64",
+    "nonLinuxStatus": "not-enabled",
+    "nativeIntegrationRequired": true,
+    "crossCompileAloneQualifies": false
+  },
+  "targets": [
+    {
+      "id": "linux-x86_64",
+      "os": "Linux",
+      "architecture": "x86_64",
+      "status": "required",
+      "runner": "ubuntu-24.04",
+      "rustTarget": "x86_64-unknown-linux-gnu",
+      "rustToolchain": "1.99.1",
+      "cToolchains": ["GCC", "Clang"],
+      "requiredWorkflows": ["Rust CI", "C CI"],
+      "supplementalWorkflows": [
+        "Parser Fuzzing",
+        "Performance Benchmarks",
+        "Repository automation tests"
+      ]
+    },
+    {
+      "id": "windows-x86_64",
+      "os": "Windows",
+      "architecture": "x86_64",
+      "status": "not-enabled",
+      "runnerRequirement": "Native Windows x86_64 hosted runner; verify the current image before activation.",
+      "runnerCandidate": "windows-2022",
+      "rustTarget": "x86_64-pc-windows-msvc",
+      "cToolchain": "Visual Studio 2022 MSVC and CMake with C17 support",
+      "blockers": [
+        "crates/de-ffi/build.rs rejects every target except Linux x86_64 and currently uses GCC/Clang-style flags and an ar archiver.",
+        "de-runtime exposes only the Linux adapter; Windows process, Job Object, handle-inheritance, and ConPTY semantics are not implemented.",
+        "No native Windows process or ConPTY integration suite exists."
+      ],
+      "enablementCriteria": [
+        "Make DE-Shell C compilation and archiving target-aware, then pass native MSVC and CMake builds.",
+        "Implement the Windows process adapter with explicit handle ownership, Job Object containment, environment and path handling, and deterministic cleanup.",
+        "Implement ConPTY allocation, resize, non-blocking I/O, cancellation, and native integration tests.",
+        "Add a Windows workflow for formatting, build, unit, and integration checks; require it only after a clean native run and stable runner/toolchain pinning."
+      ]
+    },
+    {
+      "id": "macos-arm64",
+      "os": "macOS",
+      "architecture": "arm64",
+      "status": "not-enabled",
+      "runnerRequirement": "Native Apple Silicon macOS hosted runner; verify the current image and label before activation.",
+      "runnerCandidate": "macOS arm64 hosted runner (label intentionally not pinned)",
+      "rustTarget": "aarch64-apple-darwin",
+      "cToolchain": "Apple Clang and CMake with C17 support",
+      "blockers": [
+        "crates/de-ffi/build.rs rejects every target except Linux x86_64 and uses Linux-oriented compiler and archive assumptions.",
+        "de-runtime exposes only the Linux adapter; macOS process, PTY, signal, and filesystem behavior is not implemented.",
+        "No native macOS process or PTY integration suite exists."
+      ],
+      "enablementCriteria": [
+        "Make DE-Shell C compilation and archiving target-aware and validate the native Apple Clang/CMake build.",
+        "Implement the macOS process and PTY adapter with explicit descriptor ownership, signal semantics, non-blocking I/O, and cleanup.",
+        "Run native arm64 process, PTY, resize, I/O, environment, exit, and cleanup tests.",
+        "Add and require a native arm64 workflow only after a clean run on a verified hosted runner."
+      ]
+    },
+    {
+      "id": "macos-x86_64",
+      "os": "macOS",
+      "architecture": "x86_64",
+      "status": "not-enabled",
+      "runnerRequirement": "Native Intel macOS runner; verify that a supported hosted image remains available before activation.",
+      "runnerCandidate": "macOS Intel hosted runner (label intentionally not pinned)",
+      "rustTarget": "x86_64-apple-darwin",
+      "cToolchain": "Apple Clang and CMake with C17 support",
+      "blockers": [
+        "crates/de-ffi/build.rs rejects every target except Linux x86_64 and uses Linux-oriented compiler and archive assumptions.",
+        "de-runtime exposes only the Linux adapter; macOS process, PTY, signal, and filesystem behavior is not implemented.",
+        "No native Intel macOS process or PTY integration suite exists."
+      ],
+      "enablementCriteria": [
+        "Make DE-Shell C compilation and archiving target-aware and validate the native Apple Clang/CMake build.",
+        "Implement and test the macOS process and PTY adapter on native Intel hardware.",
+        "Run native x86_64 process, PTY, resize, I/O, environment, exit, and cleanup tests.",
+        "Add and require an Intel macOS workflow only if a supported native runner is available and the full suite passes."
+      ]
+    }
+  ]
+}

@@ -159,3 +159,7 @@ Linux tests run on Linux CI and must exercise real OS behavior. Windows and macO
 7. Add native CI before marking the target supported.
 
 Do not claim cross-platform support from a successful cross-compile alone.
+
+## 9. CI target readiness
+
+The native CI contract and future-target enablement gates are maintained in [Cross-Platform CI Strategy](../engineering/PLATFORM_CI_MATRIX.md). Its machine-readable target inventory is `docs/engineering/platform-ci-matrix.json`; the readiness workflow reports Windows and macOS as **NOT ENABLED** until native adapters, toolchains, runners, and integration evidence satisfy the enablement gate. A successful policy-report job is not evidence of cross-platform support.
