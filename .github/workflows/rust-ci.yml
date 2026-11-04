@@ -11,6 +11,8 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "crates/**"
+      - "c/**"
+      - "include/**"
       - "src/**"
       - ".github/workflows/rust-ci.yml"
   push:
@@ -26,6 +28,8 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "crates/**"
+      - "c/**"
+      - "include/**"
       - "src/**"
       - ".github/workflows/rust-ci.yml"
 
