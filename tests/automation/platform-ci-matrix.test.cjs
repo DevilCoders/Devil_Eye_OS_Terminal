@@ -19,6 +19,7 @@ test('Linux x86_64 remains the required native CI target', () => {
   assert.equal(linux.status, 'required');
   assert.equal(linux.runner, 'ubuntu-24.04');
   assert.equal(linux.rustTarget, 'x86_64-unknown-linux-gnu');
+  assert.equal(linux.cmakeMinimumVersion, '3.25');
   assert.deepEqual(linux.cToolchains, ['GCC', 'Clang']);
   assert.ok(linux.requiredWorkflows.includes('Rust CI'));
   assert.ok(linux.requiredWorkflows.includes('C CI'));
@@ -43,10 +44,10 @@ test('future Windows and macOS targets are explicitly not enabled', () => {
 test('the readiness summary reports future targets as not enabled, never passed', () => {
   const summary = renderSummary(manifest);
 
-  assert.match(summary, /linux-x86_64 \\| REQUIRED — active native CI/);
+  assert.match(summary, /linux-x86_64 \| REQUIRED — active native CI/);
   assert.equal((summary.match(/NOT ENABLED — no native jobs scheduled/g) || []).length, 3);
   assert.match(summary, /not mark a not-enabled target as built, tested, supported, or passed/);
-  assert.doesNotMatch(summary, /\\| (windows|macos)[^\\n]*\\| PASS\\b/i);
+  assert.doesNotMatch(summary, /\| (windows|macos)[^\n]*\| PASS\b/i);
 });
 
 test('the policy rejects promoting a future target without changing the gate', () => {
@@ -61,4 +62,27 @@ test('the policy rejects duplicate target identifiers', () => {
   invalid.targets.push(structuredClone(invalid.targets[0]));
 
   assert.ok(validateMatrix(invalid).includes('target IDs must be unique'));
+});
+
+test('the policy rejects malformed target entries without throwing', () => {
+  const invalid = structuredClone(manifest);
+  invalid.targets[1] = null;
+
+  assert.ok(validateMatrix(invalid).includes('every target must be an object with a non-empty ID'));
+});
+
+test('C and Rust FFI source changes trigger both native CI workflows', () => {
+  const rustWorkflow = fs.readFileSync(
+    path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'),
+    'utf8',
+  );
+  const cWorkflow = fs.readFileSync(
+    path.resolve(__dirname, '../../.github/workflows/c-ci.yml'),
+    'utf8',
+  );
+  const occurrences = (source, snippet) => source.split(snippet).length - 1;
+
+  assert.equal(occurrences(rustWorkflow, '      - "c/**"'), 2);
+  assert.equal(occurrences(rustWorkflow, '      - "include/**"'), 2);
+  assert.equal(occurrences(cWorkflow, '      - "crates/de-ffi/**"'), 2);
 });

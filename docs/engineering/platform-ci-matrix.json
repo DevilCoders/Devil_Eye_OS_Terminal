@@ -15,13 +15,20 @@
       "runner": "ubuntu-24.04",
       "rustTarget": "x86_64-unknown-linux-gnu",
       "rustToolchain": "1.99.1",
-      "cToolchains": ["GCC", "Clang"],
-      "requiredWorkflows": ["Rust CI", "C CI"],
+      "cToolchains": [
+        "GCC",
+        "Clang"
+      ],
+      "requiredWorkflows": [
+        "Rust CI",
+        "C CI"
+      ],
       "supplementalWorkflows": [
         "Parser Fuzzing",
         "Performance Benchmarks",
         "Repository automation tests"
-      ]
+      ],
+      "cmakeMinimumVersion": "3.25"
     },
     {
       "id": "windows-x86_64",

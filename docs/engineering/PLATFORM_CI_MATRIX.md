@@ -9,7 +9,7 @@ The machine-readable target inventory is [`platform-ci-matrix.json`](platform-ci
 | Layer | Runner/toolchain | Required evidence | Workflow |
 | --- | --- | --- | --- |
 | Rust static and correctness checks | `ubuntu-24.04`; pinned Rust `1.99.1`; `x86_64-unknown-linux-gnu` | `cargo fmt --all -- --check`, workspace tests, Clippy with warnings denied, Rust coverage artifact | Rust CI |
-| C build and correctness checks | `ubuntu-24.04`; C17 GCC and Clang; Debug and Release | CMake configure/build, CTest, strict warnings-as-errors, C coverage artifact | C CI |
+| C build and correctness checks | `ubuntu-24.04`; C17 GCC and Clang; CMake 3.25+; Debug and Release | CMake configure/build, CTest, strict warnings-as-errors, C coverage artifact | C CI |
 | Parser robustness | `ubuntu-24.04`; pinned nightly toolchain and AddressSanitizer | bounded `shell_lexer_parser` and `vt_parser` fuzz runs; crash artifacts retained | Parser Fuzzing |
 | Performance regression evidence | `ubuntu-24.04`; pinned Rust toolchain | reproducible terminal-core, renderer-allocation, and Linux session/PTY measurements with environment metadata | Performance Benchmarks |
 | Repository automation | `ubuntu-24.04`; Node.js 22 | dependency/taxonomy and platform-matrix policy tests | Repository automation tests |

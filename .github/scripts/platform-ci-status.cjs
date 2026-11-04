@@ -26,12 +26,16 @@ function validateMatrix(matrix) {
   }
 
   const ids = matrix.targets.map((target) => target && target.id);
+  if (matrix.targets.some((target) =>
+    !target || typeof target !== 'object' || typeof target.id !== 'string' || target.id.length === 0)) {
+    errors.push('every target must be an object with a non-empty ID');
+  }
   if (new Set(ids).size !== ids.length) {
     errors.push('target IDs must be unique');
   }
 
   const initialTarget = matrix.policy?.initialTarget;
-  const linux = matrix.targets.find((target) => target.id === initialTarget);
+  const linux = matrix.targets.find((target) => target && target.id === initialTarget);
   if (!linux) {
     errors.push(`initial target ${String(initialTarget)} is missing`);
   } else {
@@ -46,6 +50,9 @@ function validateMatrix(matrix) {
     }
     if (linux.rustTarget !== 'x86_64-unknown-linux-gnu') {
       errors.push('the Linux Rust target triple is incorrect');
+    }
+    if (linux.cmakeMinimumVersion !== '3.25') {
+      errors.push('the Linux CMake minimum version must remain 3.25');
     }
     if (!Array.isArray(linux.requiredWorkflows)
       || !linux.requiredWorkflows.includes('Rust CI')
