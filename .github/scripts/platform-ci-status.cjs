@@ -54,6 +54,9 @@ function validateMatrix(matrix) {
     if (linux.cmakeMinimumVersion !== '3.25') {
       errors.push('the Linux CMake minimum version must remain 3.25');
     }
+    if (linux.cmakeMinimumVersion !== '3.25') {
+      errors.push('the Linux CMake minimum version must remain 3.25');
+    }
     if (!Array.isArray(linux.requiredWorkflows)
       || !linux.requiredWorkflows.includes('Rust CI')
       || !linux.requiredWorkflows.includes('C CI')) {
